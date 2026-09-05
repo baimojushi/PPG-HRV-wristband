@@ -794,7 +794,9 @@ class MainWindow(QMainWindow):
                 f"LFnu {freq.lf_nu:.1f}%  ·  "
                 f"HFnu {freq.hf_nu:.1f}%  ·  "
                 f"LF/HF {freq.lf_hf:.2f}  ·  "
-                f"Welch/Lomb {freq.spectral_agreement * 100:.0f}%  ·  "
+                f"稳健Welch/Lomb {freq.spectral_agreement * 100:.0f}%  ·  "
+                f"原始逐点 {freq.spectral_agreement_raw * 100:.0f}%  ·  "
+                f"频带一致 {freq.band_power_agreement * 100:.0f}%  ·  "
                 f"插值一致 {freq.interpolation_agreement * 100:.0f}%"
             )
             self.psd_curve.setData(

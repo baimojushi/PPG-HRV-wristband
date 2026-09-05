@@ -73,7 +73,8 @@ LIMITED 最大范围：
 未解决异常 ≤5%
 连续未解决异常 ≤2
 采样 p95 ≤4 ms
-Welch/Lomb 谱形一致性 ≥70%
+Welch/Lomb 稳健一致性 ≥80%
+VLF/LF/HF 频带分布一致性 ≥82%
 PCHIP/Linear 谱形一致性 ≥95%
 ```
 
@@ -91,3 +92,41 @@ rmssd_95ci_ms
 区间使用短块 bootstrap，用于表达有限窗口统计波动。
 
 它不替代 SQI，也不表示医学诊断置信度。
+
+
+## v0.3.3 Welch / Lomb 互证尺度
+
+原始逐频点 Pearson：
+
+```text
+spectral_agreement_raw
+```
+
+继续作为调试量。
+
+它不再直接决定 VALID / LIMITED / INVALID。
+
+正式：
+
+```text
+spectral_agreement =
+0.70 × spectral_shape_agreement
++ 0.30 × band_power_agreement
+```
+
+其中：
+
+```text
+spectral_shape_agreement
+```
+
+是在约 0.02 Hz 频率尺度平滑后比较 Welch 与 Lomb–Scargle。
+
+```text
+band_power_agreement
+```
+
+比较 VLF / LF / HF 三个归一化频带功率分布。
+
+这样可以容忍有限窗泄漏和缓峰噪声造成的轻微谱峰错位，
+同时保留对 LF↔HF 大尺度错误的独立约束。

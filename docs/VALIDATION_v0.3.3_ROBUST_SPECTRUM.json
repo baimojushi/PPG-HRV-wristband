@@ -1,0 +1,250 @@
+{
+  "source": "uploaded v0.3.2 hrv_export.zip",
+  "sample_quality": {
+    "effective_sample_rate_hz": 124.99999999999999,
+    "timing_jitter_p95_ms": 0.0039999999999995595,
+    "timing_overrun_ratio": 0.0,
+    "sqi": 0.9983064516129033
+  },
+  "timeline_quality": {
+    "raw_rr_count": 746,
+    "accepted_nn_count": 743,
+    "detected_artifact_ratio": 0.00402,
+    "corrected_interval_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.00402,
+    "valid_nn_ratio": 0.99598,
+    "max_consecutive_artifacts": 1
+  },
+  "old_final_frequency": {
+    "valid": true,
+    "status": "VALID",
+    "validity_reason": "",
+    "progress": 1.0,
+    "duration_seconds": 299.9,
+    "total_power_ms2": 1823.874,
+    "vlf_ms2": 795.643,
+    "lf_ms2": 739.531,
+    "hf_ms2": 231.53,
+    "lf_nu": 76.157,
+    "hf_nu": 23.843,
+    "lf_hf": 3.1941,
+    "hf_lf": 0.3131,
+    "spectral_agreement": 0.8283,
+    "interpolation_agreement": 1.0,
+    "max_consecutive_artifacts": 1
+  },
+  "rolling_windows": [
+    {
+      "t_us": 740056517,
+      "old_status": "VALID",
+      "old_raw_pointwise": 0.8140950763278606,
+      "new_status": "LIMITED",
+      "robust_agreement": 0.9141705609841928,
+      "raw_pointwise": 0.8143917025508461,
+      "smoothed_shape": 0.9335261401597233,
+      "band_power_agreement": 0.8690075429079553,
+      "interpolation_agreement": 0.9999681253122772,
+      "lf_hf": 2.5703423766252733
+    },
+    {
+      "t_us": 760616520,
+      "old_status": "LIMITED",
+      "old_raw_pointwise": 0.742811379739065,
+      "new_status": "LIMITED",
+      "robust_agreement": 0.8982795931523331,
+      "raw_pointwise": 0.7441758608506231,
+      "smoothed_shape": 0.8885929524229168,
+      "band_power_agreement": 0.9208817548543049,
+      "interpolation_agreement": 0.9999632443593092,
+      "lf_hf": 2.354492525162745
+    },
+    {
+      "t_us": 781144517,
+      "old_status": "INVALID",
+      "old_raw_pointwise": 0.6311129012628053,
+      "new_status": "LIMITED",
+      "robust_agreement": 0.8708453622014787,
+      "raw_pointwise": 0.6355114618469685,
+      "smoothed_shape": 0.8344601356293747,
+      "band_power_agreement": 0.9557442242030548,
+      "interpolation_agreement": 0.9999615114986825,
+      "lf_hf": 2.149258042333443
+    },
+    {
+      "t_us": 801352518,
+      "old_status": "INVALID",
+      "old_raw_pointwise": 0.5182479605736785,
+      "new_status": "LIMITED",
+      "robust_agreement": 0.8154420220940374,
+      "raw_pointwise": 0.5200429317063879,
+      "smoothed_shape": 0.788289971803581,
+      "band_power_agreement": 0.8787968061051025,
+      "interpolation_agreement": 0.9999551562030156,
+      "lf_hf": 2.0736125880671157
+    },
+    {
+      "t_us": 821528517,
+      "old_status": "INVALID",
+      "old_raw_pointwise": 0.5965332796729083,
+      "new_status": "LIMITED",
+      "robust_agreement": 0.8648391668216605,
+      "raw_pointwise": 0.5984283396230186,
+      "smoothed_shape": 0.8359475743500445,
+      "band_power_agreement": 0.9322528825887648,
+      "interpolation_agreement": 0.9999403993674769,
+      "lf_hf": 2.0027842222109187
+    },
+    {
+      "t_us": 841728517,
+      "old_status": "INVALID",
+      "old_raw_pointwise": 0.6885303145659173,
+      "new_status": "VALID",
+      "robust_agreement": 0.9170101748371258,
+      "raw_pointwise": 0.6916013981228898,
+      "smoothed_shape": 0.8986639294479901,
+      "band_power_agreement": 0.9598180807451093,
+      "interpolation_agreement": 0.9999071668024455,
+      "lf_hf": 1.8365223096389884
+    },
+    {
+      "t_us": 862144517,
+      "old_status": "VALID",
+      "old_raw_pointwise": 0.835418432405518,
+      "new_status": "VALID",
+      "robust_agreement": 0.9716470773203576,
+      "raw_pointwise": 0.8370108143444163,
+      "smoothed_shape": 0.9747491991296243,
+      "band_power_agreement": 0.9644087930987353,
+      "interpolation_agreement": 0.9998887128813517,
+      "lf_hf": 1.692252036067136
+    },
+    {
+      "t_us": 882448517,
+      "old_status": "LIMITED",
+      "old_raw_pointwise": 0.7268846100024778,
+      "new_status": "VALID",
+      "robust_agreement": 0.9521738012058385,
+      "raw_pointwise": 0.7260148882783579,
+      "smoothed_shape": 0.9596162543082442,
+      "band_power_agreement": 0.9348080773002252,
+      "interpolation_agreement": 0.9999246775864544,
+      "lf_hf": 1.6902470251196011
+    },
+    {
+      "t_us": 902960519,
+      "old_status": "LIMITED",
+      "old_raw_pointwise": 0.7003396575066139,
+      "new_status": "VALID",
+      "robust_agreement": 0.9307149578402538,
+      "raw_pointwise": 0.7000027357330028,
+      "smoothed_shape": 0.9265086298256601,
+      "band_power_agreement": 0.9405297232076394,
+      "interpolation_agreement": 0.999951282506785,
+      "lf_hf": 1.8813736332733377
+    },
+    {
+      "t_us": 923336517,
+      "old_status": "LIMITED",
+      "old_raw_pointwise": 0.7138001061645621,
+      "new_status": "VALID",
+      "robust_agreement": 0.9191289472056149,
+      "raw_pointwise": 0.7123064542313158,
+      "smoothed_shape": 0.8920807632611072,
+      "band_power_agreement": 0.9822413764094663,
+      "interpolation_agreement": 0.9999624528439321,
+      "lf_hf": 2.281084204101013
+    },
+    {
+      "t_us": 943984517,
+      "old_status": "LIMITED",
+      "old_raw_pointwise": 0.7971976437454102,
+      "new_status": "VALID",
+      "robust_agreement": 0.9556616949079545,
+      "raw_pointwise": 0.795970338982153,
+      "smoothed_shape": 0.9418067242299378,
+      "band_power_agreement": 0.9879899598233269,
+      "interpolation_agreement": 0.9999614107360969,
+      "lf_hf": 2.9023334871782915
+    },
+    {
+      "t_us": 952264517,
+      "old_status": "VALID",
+      "old_raw_pointwise": 0.8283108922359755,
+      "new_status": "VALID",
+      "robust_agreement": 0.9482349024585586,
+      "raw_pointwise": 0.8279085409816603,
+      "smoothed_shape": 0.9408458485488707,
+      "band_power_agreement": 0.965476028247831,
+      "interpolation_agreement": 0.999962612874085,
+      "lf_hf": 3.194110548919178
+    }
+  ],
+  "old_status_counts": {
+    "LIMITED": 5,
+    "INVALID": 4,
+    "VALID": 3
+  },
+  "new_status_counts": {
+    "VALID": 7,
+    "LIMITED": 5
+  },
+  "raw_pointwise_range": [
+    0.5200429317063879,
+    0.8370108143444163
+  ],
+  "robust_agreement_range": [
+    0.8154420220940374,
+    0.9716470773203576
+  ],
+  "band_power_agreement_range": [
+    0.8690075429079553,
+    0.9879899598233269
+  ],
+  "fiducial_ab": [
+    {
+      "method": "原始峰值",
+      "raw_pointwise": 0.8279474210725495,
+      "robust_agreement": 0.9482494364009064,
+      "band_power_agreement": 0.9655777000740442,
+      "lf_hf": 3.1956915767589447,
+      "rmssd_ms": 20.82965950558588,
+      "frequency_status": "VALID"
+    },
+    {
+      "method": "二次插值峰值",
+      "raw_pointwise": 0.8105428709999071,
+      "robust_agreement": 0.9423744744778149,
+      "band_power_agreement": 0.9628036099927068,
+      "lf_hf": 4.183033853438959,
+      "rmssd_ms": 19.384390105950224,
+      "frequency_status": "LIMITED"
+    },
+    {
+      "method": "最大上升斜率",
+      "raw_pointwise": 0.823995801316253,
+      "robust_agreement": 0.9472192887371362,
+      "band_power_agreement": 0.9642508024349321,
+      "lf_hf": 3.466234140574641,
+      "rmssd_ms": 21.64712384582788,
+      "frequency_status": "VALID"
+    },
+    {
+      "method": "半幅上升沿",
+      "raw_pointwise": 0.816288197291312,
+      "robust_agreement": 0.9439409618553029,
+      "band_power_agreement": 0.9611206554968292,
+      "lf_hf": 4.596050944746126,
+      "rmssd_ms": 19.595134376174595,
+      "frequency_status": "VALID"
+    },
+    {
+      "method": "切线足点",
+      "raw_pointwise": 0.8257822674157036,
+      "robust_agreement": 0.9471740325002809,
+      "band_power_agreement": 0.9630039357029692,
+      "lf_hf": 4.243814002587588,
+      "rmssd_ms": 21.98365779777086,
+      "frequency_status": "VALID"
+    }
+  ]
+}

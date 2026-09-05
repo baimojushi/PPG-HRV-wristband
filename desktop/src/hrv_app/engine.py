@@ -386,6 +386,15 @@ class AnalysisEngine:
             "spectral_agreement": (
                 frequency.spectral_agreement
             ),
+            "spectral_agreement_raw": (
+                frequency.spectral_agreement_raw
+            ),
+            "spectral_shape_agreement": (
+                frequency.spectral_shape_agreement
+            ),
+            "band_power_agreement": (
+                frequency.band_power_agreement
+            ),
             "interpolation_agreement": (
                 frequency.interpolation_agreement
             ),
@@ -1105,6 +1114,30 @@ class AnalysisEngine:
                         4,
                     )
                     if frequency.spectral_agreement > 0
+                    else None
+                ),
+                "spectral_agreement_raw": (
+                    round(
+                        frequency.spectral_agreement_raw,
+                        4,
+                    )
+                    if frequency.spectral_agreement_raw > 0
+                    else None
+                ),
+                "spectral_shape_agreement": (
+                    round(
+                        frequency.spectral_shape_agreement,
+                        4,
+                    )
+                    if frequency.spectral_shape_agreement > 0
+                    else None
+                ),
+                "band_power_agreement": (
+                    round(
+                        frequency.band_power_agreement,
+                        4,
+                    )
+                    if frequency.band_power_agreement > 0
                     else None
                 ),
                 "interpolation_agreement": (

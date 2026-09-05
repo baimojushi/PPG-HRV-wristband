@@ -1,0 +1,85 @@
+{
+  "snapshot_t_us": 952264517,
+  "hr_bpm": 88.4,
+  "result_status": "VALID",
+  "time_domain": {
+    "valid": true,
+    "status": "VALID",
+    "validity_reason": "",
+    "nn_count": 60,
+    "mean_nn_ms": 670.45,
+    "mean_hr_bpm": 89.492,
+    "rmssd_ms": 20.736,
+    "rmssd_95ci_ms": [
+      16.584,
+      25.061
+    ],
+    "sdnn_ms": 30.607,
+    "pnn50_percent": 1.695,
+    "candidate_rmssd_ms": 20.736,
+    "detected_artifact_ratio": 0.0,
+    "corrected_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.0,
+    "max_consecutive_artifacts": 0
+  },
+  "frequency_domain": {
+    "valid": true,
+    "status": "VALID",
+    "validity_reason": "",
+    "progress": 1.0,
+    "duration_seconds": 299.9,
+    "total_power_ms2": 1823.874,
+    "vlf_ms2": 795.643,
+    "lf_ms2": 739.531,
+    "hf_ms2": 231.53,
+    "lf_nu": 76.157,
+    "hf_nu": 23.843,
+    "lf_hf": 3.1941,
+    "hf_lf": 0.3131,
+    "spectral_agreement": 0.8283,
+    "interpolation_agreement": 1.0,
+    "max_consecutive_artifacts": 1
+  },
+  "signal_quality": {
+    "sqi": 0.9997,
+    "status": "VALID",
+    "wear_ratio": 1.0,
+    "clip_low_ratio": 0.0,
+    "clip_high_ratio": 0.0,
+    "sequence_drop_ratio": 0.0,
+    "effective_sample_rate_hz": 125.0,
+    "timing_jitter_p95_ms": 0.004,
+    "timing_overrun_ratio": 0.0,
+    "protocol_error_ratio": 0.0,
+    "reasons": [
+      "PPG 与传输质量稳定"
+    ]
+  },
+  "timeline_quality": {
+    "raw_rr_count": 746,
+    "accepted_nn_count": 743,
+    "detected_artifact_ratio": 0.00402,
+    "corrected_interval_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.00402,
+    "valid_nn_ratio": 0.99598,
+    "max_consecutive_artifacts": 1
+  },
+  "protocol_health": {
+    "mode": "framed",
+    "ok_frames": 65590,
+    "crc_errors": 0,
+    "format_errors": 0,
+    "resync_count": 0,
+    "sample_seq_gaps": 0,
+    "error_ratio": 0.0
+  },
+  "quality": {
+    "sqi": 0.9997,
+    "status": "VALID",
+    "time_status": "VALID",
+    "frequency_status": "VALID",
+    "reasons": [
+      "PPG 与传输质量稳定"
+    ]
+  }
+}

@@ -30,6 +30,388 @@ def _band_power(
     return float(np.trapezoid(psd[mask], freqs[mask]))
 
 
+
+def _normalize_shape(
+    values: np.ndarray,
+) -> np.ndarray:
+    values = np.asarray(
+        values,
+        dtype=float,
+    )
+
+    total = float(
+        np.sum(
+            np.clip(
+                values,
+                0.0,
+                None,
+            )
+        )
+    )
+
+    if (
+        not np.isfinite(total)
+        or total <= 1e-12
+    ):
+        return np.zeros_like(
+            values,
+            dtype=float,
+        )
+
+    return (
+        np.clip(
+            values,
+            0.0,
+            None,
+        )
+        / total
+    )
+
+
+def _pearson_similarity(
+    first: np.ndarray,
+    second: np.ndarray,
+) -> float:
+    first = np.asarray(
+        first,
+        dtype=float,
+    )
+    second = np.asarray(
+        second,
+        dtype=float,
+    )
+
+    if (
+        first.size < 3
+        or second.size != first.size
+        or np.std(first) <= 1e-12
+        or np.std(second) <= 1e-12
+    ):
+        return 0.0
+
+    corr = float(
+        np.corrcoef(
+            first,
+            second,
+        )[0, 1]
+    )
+
+    if not np.isfinite(corr):
+        return 0.0
+
+    return float(
+        np.clip(
+            corr,
+            0.0,
+            1.0,
+        )
+    )
+
+
+def _frequency_smooth(
+    freqs: np.ndarray,
+    shape: np.ndarray,
+    width_hz: float,
+) -> np.ndarray:
+    """
+    在频率轴上做小尺度平滑，仅用于“谱形互证”。
+
+    Welch 仍保留原始 PSD，VLF/LF/HF 绝对功率也仍从原始 Welch 积分。
+    这里的平滑只降低：
+    - 有限窗泄漏；
+    - 1~2 个频率 bin 的轻微偏移；
+    - 缓峰 / 采集噪声造成的窄带线抖动。
+
+    v0.3.3 默认宽度约 0.02 Hz。
+    """
+    freqs = np.asarray(
+        freqs,
+        dtype=float,
+    )
+    shape = np.asarray(
+        shape,
+        dtype=float,
+    )
+
+    if (
+        freqs.size < 3
+        or shape.size != freqs.size
+        or width_hz <= 0
+    ):
+        return shape.copy()
+
+    spacing = float(
+        np.median(
+            np.diff(
+                freqs
+            )
+        )
+    )
+
+    if (
+        not np.isfinite(spacing)
+        or spacing <= 0
+    ):
+        return shape.copy()
+
+    bins = max(
+        int(
+            round(
+                width_hz
+                / spacing
+            )
+        ),
+        1,
+    )
+
+    # 使用奇数窗口保证零相位中心。
+    if bins % 2 == 0:
+        bins += 1
+
+    bins = min(
+        bins,
+        int(shape.size)
+        if shape.size % 2 == 1
+        else max(
+            int(shape.size) - 1,
+            1,
+        ),
+    )
+
+    if bins <= 1:
+        return shape.copy()
+
+    kernel = (
+        np.ones(
+            bins,
+            dtype=float,
+        )
+        / bins
+    )
+
+    return np.convolve(
+        shape,
+        kernel,
+        mode="same",
+    )
+
+
+def _band_fraction_vector(
+    freqs: np.ndarray,
+    psd: np.ndarray,
+    config: AnalysisConfig,
+) -> np.ndarray:
+    powers = np.asarray(
+        [
+            _band_power(
+                freqs,
+                psd,
+                config.vlf_low_hz,
+                config.vlf_high_hz,
+            ),
+            _band_power(
+                freqs,
+                psd,
+                config.lf_low_hz,
+                config.lf_high_hz,
+            ),
+            _band_power(
+                freqs,
+                psd,
+                config.hf_low_hz,
+                config.hf_high_hz,
+            ),
+        ],
+        dtype=float,
+    )
+
+    total = float(
+        np.sum(
+            powers
+        )
+    )
+
+    if (
+        not np.isfinite(total)
+        or total <= 1e-12
+    ):
+        return np.zeros(
+            3,
+            dtype=float,
+        )
+
+    return (
+        powers
+        / total
+    )
+
+
+def _band_distribution_agreement(
+    first: np.ndarray,
+    second: np.ndarray,
+) -> float:
+    """
+    归一化频带分布的重叠度。
+
+    1.0 = VLF/LF/HF 分布完全一致；
+    0.0 = 两个分布完全落在不同频带。
+    """
+    first = np.asarray(
+        first,
+        dtype=float,
+    )
+    second = np.asarray(
+        second,
+        dtype=float,
+    )
+
+    if (
+        first.size != 3
+        or second.size != 3
+    ):
+        return 0.0
+
+    distance = (
+        0.5
+        * float(
+            np.sum(
+                np.abs(
+                    first
+                    - second
+                )
+            )
+        )
+    )
+
+    return float(
+        np.clip(
+            1.0 - distance,
+            0.0,
+            1.0,
+        )
+    )
+
+
+def _spectral_agreement_metrics(
+    freqs: np.ndarray,
+    welch_psd: np.ndarray,
+    lomb_psd: np.ndarray,
+    config: AnalysisConfig,
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+]:
+    """
+    返回：
+    robust, raw_pointwise, smoothed_shape, band_distribution
+
+    正式门使用 robust；
+    raw_pointwise 只保留作 Debug。
+    """
+    welch_shape = _normalize_shape(
+        welch_psd
+    )
+    lomb_shape = _normalize_shape(
+        lomb_psd
+    )
+
+    raw_pointwise = (
+        _pearson_similarity(
+            welch_shape,
+            lomb_shape,
+        )
+    )
+
+    welch_smooth = (
+        _frequency_smooth(
+            freqs,
+            welch_shape,
+            config.frequency_agreement_smoothing_hz,
+        )
+    )
+    lomb_smooth = (
+        _frequency_smooth(
+            freqs,
+            lomb_shape,
+            config.frequency_agreement_smoothing_hz,
+        )
+    )
+
+    smoothed_shape = (
+        _pearson_similarity(
+            welch_smooth,
+            lomb_smooth,
+        )
+    )
+
+    welch_bands = (
+        _band_fraction_vector(
+            freqs,
+            welch_psd,
+            config,
+        )
+    )
+    lomb_bands = (
+        _band_fraction_vector(
+            freqs,
+            lomb_psd,
+            config,
+        )
+    )
+
+    band_distribution = (
+        _band_distribution_agreement(
+            welch_bands,
+            lomb_bands,
+        )
+    )
+
+    weight_shape = float(
+        np.clip(
+            config.frequency_shape_agreement_weight,
+            0.0,
+            1.0,
+        )
+    )
+    weight_band = float(
+        np.clip(
+            config.frequency_band_agreement_weight,
+            0.0,
+            1.0,
+        )
+    )
+
+    weight_total = (
+        weight_shape
+        + weight_band
+    )
+
+    if weight_total <= 1e-12:
+        robust = smoothed_shape
+    else:
+        robust = (
+            weight_shape
+            * smoothed_shape
+            + weight_band
+            * band_distribution
+        ) / weight_total
+
+    return (
+        float(
+            np.clip(
+                robust,
+                0.0,
+                1.0,
+            )
+        ),
+        raw_pointwise,
+        smoothed_shape,
+        band_distribution,
+    )
+
+
 def prepare_tachogram(
     nn_intervals: Sequence[NNInterval],
     config: AnalysisConfig,
@@ -116,13 +498,13 @@ def compute_frequency_domain(
     """
     5 分钟 HRV 频域。
 
-    v0.3.2 使用三重互证：
+    v0.3.3 使用多尺度三重互证：
     1. PCHIP tachogram → Welch；
     2. 线性插值 tachogram → Welch；
     3. 原始不规则 NN 时间戳 → Lomb–Scargle。
 
     少量孤立异常不再仅凭“1% 未解决”直接否决整段 5 分钟。
-    只有采样时基、异常拓扑或三条谱路径不一致时才判 INVALID。
+    逐频点相关仅作 Debug；正式门使用平滑谱形 + 频带分布 + 插值互证。
     """
     cfg = config or AnalysisConfig()
 
@@ -389,8 +771,15 @@ def compute_frequency_domain(
 
     # -------------------------------------------------------------------
     # Lomb–Scargle：直接使用不规则 NN 时间戳，不经过 4 Hz 插值。
+    #
+    # v0.3.3 不再用“原始逐频点 Pearson”直接做硬门。
+    # 两种谱估计器的有限窗泄漏不同，波形变缓或几毫秒事件抖动会让
+    # 窄峰错开 1~2 个 bin，原始相关会被不成比例地拉低。
     # -------------------------------------------------------------------
     spectral_agreement = 0.0
+    spectral_agreement_raw = 0.0
+    spectral_shape_agreement = 0.0
+    band_power_agreement = 0.0
 
     if (
         irregular_t.size >= 30
@@ -412,50 +801,20 @@ def compute_frequency_domain(
             lomb_y,
             angular,
             normalize=True,
+            floating_mean=True,
         )
 
-        welch_shape = (
-            psd_use
-            / max(
-                float(
-                    np.sum(
-                        psd_use
-                    )
-                ),
-                1e-12,
-            )
+        (
+            spectral_agreement,
+            spectral_agreement_raw,
+            spectral_shape_agreement,
+            band_power_agreement,
+        ) = _spectral_agreement_metrics(
+            freqs_use,
+            psd_use,
+            lomb,
+            cfg,
         )
-
-        lomb_shape = (
-            lomb
-            / max(
-                float(
-                    np.sum(
-                        lomb
-                    )
-                ),
-                1e-12,
-            )
-        )
-
-        if (
-            np.std(welch_shape) > 0
-            and np.std(lomb_shape) > 0
-        ):
-            corr = float(
-                np.corrcoef(
-                    welch_shape,
-                    lomb_shape,
-                )[0, 1]
-            )
-
-            spectral_agreement = float(
-                np.clip(
-                    corr,
-                    0.0,
-                    1.0,
-                )
-            )
 
     # -------------------------------------------------------------------
     # 频带积分仍以 Welch 的绝对功率为主。
@@ -596,9 +955,19 @@ def compute_frequency_domain(
         < cfg.frequency_min_spectral_agreement
     ):
         hard_reasons.append(
-            "Welch/Lomb 谱形一致性 "
+            "Welch/Lomb 稳健一致性 "
             f"{spectral_agreement * 100:.0f}% < "
             f"{cfg.frequency_min_spectral_agreement * 100:.0f}%"
+        )
+
+    if (
+        band_power_agreement
+        < cfg.frequency_min_band_power_agreement
+    ):
+        hard_reasons.append(
+            "VLF/LF/HF 频带一致性 "
+            f"{band_power_agreement * 100:.0f}% < "
+            f"{cfg.frequency_min_band_power_agreement * 100:.0f}%"
         )
 
     if (
@@ -631,6 +1000,15 @@ def compute_frequency_domain(
             ),
             spectral_agreement=(
                 spectral_agreement
+            ),
+            spectral_agreement_raw=(
+                spectral_agreement_raw
+            ),
+            spectral_shape_agreement=(
+                spectral_shape_agreement
+            ),
+            band_power_agreement=(
+                band_power_agreement
             ),
             interpolation_agreement=(
                 interpolation_agreement
@@ -677,8 +1055,17 @@ def compute_frequency_domain(
         < cfg.frequency_strict_min_spectral_agreement
     ):
         strict_reasons.append(
-            "Welch/Lomb 一致性 "
+            "Welch/Lomb 稳健一致性 "
             f"{spectral_agreement * 100:.0f}%"
+        )
+
+    if (
+        band_power_agreement
+        < cfg.frequency_strict_min_band_power_agreement
+    ):
+        strict_reasons.append(
+            "频带一致性 "
+            f"{band_power_agreement * 100:.0f}%"
         )
 
     if (
@@ -732,6 +1119,15 @@ def compute_frequency_domain(
         ),
         spectral_agreement=(
             spectral_agreement
+        ),
+        spectral_agreement_raw=(
+            spectral_agreement_raw
+        ),
+        spectral_shape_agreement=(
+            spectral_shape_agreement
+        ),
+        band_power_agreement=(
+            band_power_agreement
         ),
         interpolation_agreement=(
             interpolation_agreement

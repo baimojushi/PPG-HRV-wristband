@@ -80,8 +80,19 @@ class AnalysisConfig:
     frequency_limited_max_consecutive_artifacts: int = 2
 
     # 两条独立计算路径必须有足够形状一致性。
-    frequency_min_spectral_agreement: float = 0.70
-    frequency_strict_min_spectral_agreement: float = 0.80
+    # v0.3.3：正式门使用多尺度稳健一致性。
+    # 旧版逐频点 Pearson 会被 1~2 个频率 bin 的小偏移显著拉低。
+    frequency_agreement_smoothing_hz: float = 0.020
+    frequency_shape_agreement_weight: float = 0.70
+    frequency_band_agreement_weight: float = 0.30
+
+    frequency_min_spectral_agreement: float = 0.80
+    frequency_strict_min_spectral_agreement: float = 0.90
+
+    # 频带分布仍设置独立硬门，防止平滑掩盖 LF↔HF 的大尺度错位。
+    frequency_min_band_power_agreement: float = 0.82
+    frequency_strict_min_band_power_agreement: float = 0.90
+
     frequency_min_interpolation_agreement: float = 0.95
     frequency_strict_min_interpolation_agreement: float = 0.98
 

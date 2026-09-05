@@ -13,6 +13,11 @@ FREQUENCY_FIELDS = (
     "hf_nu",
     "lf_hf",
     "hf_lf",
+    "spectral_agreement",
+    "spectral_agreement_raw",
+    "spectral_shape_agreement",
+    "band_power_agreement",
+    "interpolation_agreement",
 )
 
 

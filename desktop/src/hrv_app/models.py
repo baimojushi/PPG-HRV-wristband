@@ -214,8 +214,20 @@ class FrequencyDomainMetrics:
     unresolved_suspect_ratio: float = 1.0
     max_consecutive_artifacts: int = 0
 
-    # Welch vs Lomb–Scargle 的归一化谱形相关。
+    # v0.3.3：
+    # spectral_agreement 是“稳健 Welch/Lomb 一致性”，
+    # 由约 0.02 Hz 频率尺度的谱形一致性 + VLF/LF/HF 频带分布一致性组成。
     spectral_agreement: float = 0.0
+
+    # 原始逐频点 Pearson 相关，仅作 Debug。
+    # 它对有限窗泄漏和轻微频率偏移很敏感，不再作为正式硬门。
+    spectral_agreement_raw: float = 0.0
+
+    # 频率轴平滑后的 Welch/Lomb 谱形相关。
+    spectral_shape_agreement: float = 0.0
+
+    # VLF/LF/HF 三频带归一化功率分布的一致性。
+    band_power_agreement: float = 0.0
 
     # PCHIP vs 线性插值 Welch 谱形相关。
     # 用于判断频谱是否被某一种插值方式主导。
