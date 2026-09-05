@@ -111,7 +111,7 @@ class AnalysisEngine:
             self._samples.append(frame)
 
             # SampleFrame.hr_bpm 是 zeezPPG 基于 Accepted RR 中位数得到的实时 HR。
-            # 该值已经被实测证明会受双上升沿污染，因此只留作 Debug。
+            # v0.3.1 已加入同极性锁；这里仍保留采样帧 HR 作为实时 Debug 对照。
             if (
                 np.isfinite(frame.hr_bpm)
                 and frame.hr_bpm > 0
@@ -487,7 +487,7 @@ class AnalysisEngine:
         dict,
     ]:
         """
-        返回 v0.3.0 动态检测器调试序列。
+        返回 v0.3.1 动态检测器调试序列。
 
         右侧 0~1 轴：
         - detector_score：连续形态活跃度；
@@ -858,6 +858,15 @@ class AnalysisEngine:
 
             return {
                 "snapshot": snapshot,
+
+                # v0.3.1：分析导出同时冻结最近约 5 分钟原始 Sample / Beat。
+                "samples": copy.deepcopy(
+                    list(self._samples)
+                ),
+                "raw_beats": copy.deepcopy(
+                    list(self._raw_beats)
+                ),
+
                 "beats": copy.deepcopy(
                     self._cleaned_records
                 ),

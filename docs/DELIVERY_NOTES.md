@@ -124,3 +124,13 @@
 - 协议升级 v4，桌面端兼容 v2/v3；
 - CNN 保留数据和评分接口，当前未启用；
 - HRV 清洗与 SQI 质量门继续作为第二层保护。
+
+
+## v0.3.1 同极性锁
+
+- 根据实测 `Accepted 33 / 12 s` 与 `RR median 364 ms` 定位峰/谷交替计数；
+- 第一个稳定 Winner 锁定局部极值极性；
+- 常规 Candidate 竞争与 Rescue 全部过滤反极性极值；
+- 两个稳定同极性 RR 后，RR 中位数成为主节律锚点；
+- 分析导出新增 `samples_debug.csv` / `beats_raw.csv`；
+- 协议保持 v4。

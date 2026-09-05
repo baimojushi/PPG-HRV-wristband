@@ -1,0 +1,14 @@
+v0.3.1 real-measurement polarity-lock patch
+
+Root cause:
+- v0.3.0 accepted both local maxima and local minima.
+- Uploaded export: RR median 364 ms, adjacent-pair median 721 ms.
+- Every-other Accepted sequence: about 725 / 720 ms (~82.7 / 83.3 bpm).
+
+Fix:
+- lock Accepted Beat to one extremum polarity per wear segment;
+- apply polarity to candidate selection and waveform rescue;
+- stable same-polarity RR overrides mismatched autocorrelation anchor;
+- export samples_debug.csv and beats_raw.csv.
+
+Protocol remains v4.

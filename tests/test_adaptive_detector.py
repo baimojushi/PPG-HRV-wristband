@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-from hrv_app.adaptive_detector import AdaptivePPGDetector
+from hrv_app.adaptive_detector import AdaptiveCandidate, AdaptivePPGDetector
 
 
 def pulse_wave(
@@ -224,3 +224,75 @@ def test_weak_cycles_do_not_create_multi_cycle_gaps():
     assert values.size >= 20
     assert np.max(values) < 1.5 * np.median(values)
     assert 825 <= float(np.median(values)) <= 875
+
+
+def test_polarity_lock_blocks_opposite_extremum_alias():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+
+    detector.last_accepted_t_us = 1_000_000
+    detector.last_accepted_seq = 100
+    detector.locked_polarity = 1
+    detector.expected_rr_ms = 464.0
+    detector.autocorr_rr_ms = 464.0
+    detector.autocorr_confidence = 1.0
+
+    opposite = AdaptiveCandidate(
+        seq=145,
+        t_us=1_360_000,
+        value=-50.0,
+        morphology_score=0.92,
+        timing_score=0.0,
+        combined_score=0.0,
+        amplitude_z=2.0,
+        prominence_z=2.0,
+        slope_z=2.0,
+        curvature_z=1.0,
+        polarity=-1,
+    )
+    true_peak = AdaptiveCandidate(
+        seq=190,
+        t_us=1_720_000,
+        value=75.0,
+        morphology_score=0.78,
+        timing_score=0.0,
+        combined_score=0.0,
+        amplitude_z=1.8,
+        prominence_z=1.8,
+        slope_z=1.7,
+        curvature_z=0.9,
+        polarity=1,
+    )
+
+    detector.candidate_pool = [
+        opposite,
+        true_peak,
+    ]
+
+    selected = detector._select_best_candidate(
+        0.72,
+        2.20,
+        0.24,
+    )
+
+    assert selected is not None
+    assert selected.polarity == 1
+    assert selected.t_us == true_peak.t_us
+
+
+def test_stable_same_polarity_rr_overrides_bad_autocorrelation_anchor():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+
+    detector.locked_polarity = 1
+    detector.autocorr_rr_ms = 464.0
+    detector.autocorr_confidence = 1.0
+
+    detector.rr_history.extend(
+        [720.0, 728.0]
+    )
+    detector._update_expected_rr()
+
+    assert 715.0 <= detector.expected_rr_ms <= 735.0

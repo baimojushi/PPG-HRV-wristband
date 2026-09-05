@@ -308,6 +308,7 @@ void ZeezAdaptiveDetector::reset() {
 
     last_accepted_t_us_ = 0;
     last_accepted_seq_ = 0;
+    locked_polarity_ = 0;
 
     expected_rr_ms_ = 0.0f;
     autocorr_rr_ms_ = 0.0f;
@@ -875,66 +876,48 @@ void ZeezAdaptiveDetector::updateExpectedRR() {
         rr_ring_.median();
 
     if (
-        rr_ring_.count >= 3
+        rr_ring_.count >= 2
         && rr_median > 0.0f
     ) {
-        expected_rr_ms_ =
-            rr_median;
+        const float rr_mad =
+            rr_ring_.mad();
 
-        if (
-            autocorr_confidence_ >= 0.35f
-            && autocorr_rr_ms_ > 0.0f
-        ) {
-            const float ratio =
-                rr_median
-                / autocorr_rr_ms_;
+        const float robust_variability =
+            rr_median > 0.0f
+            ? (
+                1.4826f
+                * rr_mad
+                / rr_median
+            )
+            : 1.0f;
 
-            const float rr_mad =
-                rr_ring_.mad();
+        // v0.3.1：
+        // Accepted Beat 已被同极性锁约束后，稳定 RR 比单独的波形自相关
+        // 更适合作为主节律锚点。
+        if (robust_variability <= 0.20f) {
+            expected_rr_ms_ =
+                rr_median;
 
-            const float robust_variability =
-                rr_median > 0.0f
-                ? (
-                    1.4826f
-                    * rr_mad
-                    / rr_median
-                )
-                : 0.0f;
-
-            // ---------------------------------------------------------------
-            // 高置信度波形周期是“节律锚点”。
-            //
-            // 连续错误 winner 可能把 Accepted RR 压到真实周期的 0.7~0.8 倍；
-            // 如果直接让 RR median 主导，预测器会越错越稳。
-            //
-            // 当自相关形状非常清楚、且 RR 与其差异 >20%左右时，
-            // 优先波形的重复周期，直到 Accepted RR 重新与它汇合。
-            // ---------------------------------------------------------------
             if (
-                autocorr_confidence_ >= 0.50f
-                && (
-                    ratio < 0.82f
-                    || ratio > 1.22f
-                    || robust_variability > 0.14f
-                )
+                autocorr_confidence_ >= 0.35f
+                && autocorr_rr_ms_ > 0.0f
             ) {
-                expected_rr_ms_ =
-                    autocorr_rr_ms_;
-            } else if (
-                ratio > 1.55f
-                || ratio < 0.65f
-            ) {
-                expected_rr_ms_ =
-                    autocorr_rr_ms_;
-            } else {
-                // 两个独立来源一致时再融合。
-                expected_rr_ms_ =
-                    0.55f * rr_median
-                    + 0.45f * autocorr_rr_ms_;
-            }
-        }
+                const float ratio =
+                    autocorr_rr_ms_
+                    / rr_median;
 
-        return;
+                if (
+                    ratio >= 0.82f
+                    && ratio <= 1.22f
+                ) {
+                    expected_rr_ms_ =
+                        0.80f * rr_median
+                        + 0.20f * autocorr_rr_ms_;
+                }
+            }
+
+            return;
+        }
     }
 
     if (
@@ -943,6 +926,9 @@ void ZeezAdaptiveDetector::updateExpectedRR() {
     ) {
         expected_rr_ms_ =
             autocorr_rr_ms_;
+    } else if (rr_median > 0.0f) {
+        expected_rr_ms_ =
+            rr_median;
     }
 }
 
@@ -965,6 +951,14 @@ bool ZeezAdaptiveDetector::selectBestCandidate(
     for (size_t i = 0; i < candidate_pool_count_; ++i) {
         const ZeezCandidateFeatures &candidate =
             candidate_pool_[i];
+
+        if (
+            locked_polarity_ != 0
+            && candidate.polarity
+            != locked_polarity_
+        ) {
+            continue;
+        }
 
         const float delta_ms =
             static_cast<float>(
@@ -1022,13 +1016,13 @@ bool ZeezAdaptiveDetector::waveformRescue(
     const int64_t search_start_us =
         last_accepted_t_us_
         + static_cast<int64_t>(
-            expected_rr_ms_ * 0.58f * 1000.0f
+            expected_rr_ms_ * 0.68f * 1000.0f
         );
 
     const int64_t search_end_us =
         last_accepted_t_us_
         + static_cast<int64_t>(
-            expected_rr_ms_ * 1.48f * 1000.0f
+            expected_rr_ms_ * 2.20f * 1000.0f
         );
 
     const int64_t actual_end_us =
@@ -1063,8 +1057,22 @@ bool ZeezAdaptiveDetector::waveformRescue(
             break;
         }
 
-        const float z =
-            fabsf(point.value - mean) / std;
+        float z = 0.0f;
+
+        if (locked_polarity_ > 0) {
+            z =
+                (point.value - mean)
+                / std;
+        } else if (locked_polarity_ < 0) {
+            z =
+                (mean - point.value)
+                / std;
+        } else {
+            z =
+                fabsf(
+                    point.value - mean
+                ) / std;
+        }
 
         if (z > best_z) {
             best_z = z;
@@ -1073,7 +1081,7 @@ bool ZeezAdaptiveDetector::waveformRescue(
         }
     }
 
-    // rescue 门仍保留一个很宽的形态要求。
+    // Rescue 同样服从极性锁。
     // 低于局部 0.45σ 时更像平坦噪声，不强造心搏。
     if (!found || best_z < 0.45f) {
         return false;
@@ -1098,9 +1106,13 @@ bool ZeezAdaptiveDetector::waveformRescue(
         );
 
     selected.polarity =
-        best_point.value >= mean
-        ? 1
-        : -1;
+        locked_polarity_ != 0
+        ? locked_polarity_
+        : (
+            best_point.value >= mean
+            ? 1
+            : -1
+        );
 
     return true;
 }
@@ -1161,6 +1173,24 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
 ) {
     ZeezDetectorEvent output;
 
+    if (locked_polarity_ == 0) {
+        locked_polarity_ =
+            selected.polarity;
+    }
+
+    if (
+        selected.polarity
+        != locked_polarity_
+    ) {
+        output.signal_score =
+            signal_score;
+        output.expected_rr_ms =
+            expected_rr_ms_;
+        output.locked_polarity =
+            locked_polarity_;
+        return output;
+    }
+
     output.candidate = false;
     output.accepted = true;
     output.rescued = rescued;
@@ -1169,6 +1199,10 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
     output.accepted_t_us = selected.t_us;
     output.accepted_score = selected.combined_score;
     output.signal_score = signal_score;
+    output.accepted_polarity =
+        selected.polarity;
+    output.locked_polarity =
+        locked_polarity_;
 
     output.expected_rr_ms =
         expected_rr_ms_;
@@ -1297,6 +1331,8 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
     output.signal_score = signal_score;
     output.expected_rr_ms =
         expected_rr_ms_;
+    output.locked_polarity =
+        locked_polarity_;
 
     // ------------------------------------------------------------------------
     // 没有相位锚点：先用自相关确定基本周期，再选择一个形态最强的真实极值。
@@ -1354,9 +1390,9 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         if (
             phase >= 1.06f
             && selectBestCandidate(
-                0.55f,
-                1.38f,
-                0.38f * score_threshold_scale_,
+                0.72f,
+                1.55f,
+                0.40f * score_threshold_scale_,
                 selected
             )
         ) {
@@ -1387,9 +1423,9 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         if (
             phase >= 1.35f
             && selectBestCandidate(
-                0.50f,
-                1.50f,
-                0.20f * score_threshold_scale_,
+                0.72f,
+                2.20f,
+                0.24f * score_threshold_scale_,
                 selected
             )
         ) {
@@ -1417,7 +1453,7 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         }
 
         // Rescue 2：候选池也没有合适结果，直接在该周期波形中寻找最显著极值。
-        if (phase >= 1.58f) {
+        if (phase >= 1.70f) {
             ZeezCandidateFeatures rescue;
 
             if (

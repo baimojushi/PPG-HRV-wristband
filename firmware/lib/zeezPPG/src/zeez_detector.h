@@ -40,6 +40,11 @@ struct ZeezDetectorEvent {
     // 被选中候选的最终综合分数，0~1。
     float accepted_score = 0.0f;
 
+    // v0.3.1：Accepted Beat 的极性与当前锁定极性。
+    // +1=局部最大值，-1=局部最小值，0=尚未锁定。
+    int8_t accepted_polarity = 0;
+    int8_t locked_polarity = 0;
+
     // 当前周期预测值，0 表示尚未建立稳定周期。
     float expected_rr_ms = 0.0f;
 };
@@ -89,6 +94,10 @@ public:
 
     float currentHrBpm() const {
         return current_hr_bpm_;
+    }
+
+    int8_t lockedPolarity() const {
+        return locked_polarity_;
     }
 
     uint32_t candidateCount() const {
@@ -175,6 +184,10 @@ private:
 
     int64_t last_accepted_t_us_ = 0;
     uint32_t last_accepted_seq_ = 0;
+
+    // 一个佩戴区间只接受同一极性的心搏极值。
+    // 0=未锁定，+1=局部最大值，-1=局部最小值。
+    int8_t locked_polarity_ = 0;
 
     float expected_rr_ms_ = 0.0f;
     float autocorr_rr_ms_ = 0.0f;

@@ -17,7 +17,7 @@ class SampleFrame:
     avg: float
     filtered: float
 
-    # v0.3.0：peak 表示动态形态候选脉冲，不等于最终心搏。
+    # v0.3.1：peak 表示动态形态候选脉冲，不等于最终心搏。
     peak: int
     hr_bpm: float
 

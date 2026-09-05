@@ -181,7 +181,7 @@ void zeezPPG::updateFilter(int raw) {
         );
 
     // 新 filtered 是去基线后的有符号 PPG。
-    // 动态检测器同时接受正峰和负峰，不要求固定极性。
+    // Candidate 层同时识别正峰和负峰；第一个稳定 Winner 后，Accepted 层锁定同一极性。
     filtered_ppg_ =
         static_cast<int>(
             lroundf(pulse_ema_)

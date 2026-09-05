@@ -23,8 +23,9 @@ Core 1 / Acquisition
    │   └─ curvature_z
    │
    ├─ Autocorrelation Rhythm Anchor
-   ├─ Cycle-level Candidate Competition
-   └─ Rescue Search
+   ├─ Polarity Lock (+1 / -1)
+   ├─ Same-polarity Candidate Competition
+   └─ Same-polarity Rescue Search
           ↓
        Accepted Beat
           ↓

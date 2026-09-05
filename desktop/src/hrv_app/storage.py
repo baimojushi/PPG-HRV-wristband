@@ -203,12 +203,79 @@ def export_engine_results(
 
     bundle = engine.export_bundle()
     snapshot = bundle["snapshot"]
+    samples = bundle["samples"]
+    raw_beats = bundle["raw_beats"]
     beats = bundle["beats"]
     nn_intervals = bundle["nn_intervals"]
     history = bundle["history"]
     frequency_statistics = bundle[
         "frequency_statistics"
     ]
+
+    # v0.3.1：把用于算法复盘的原始证据一起导出。
+    with (
+        destination
+        / "samples_debug.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "seq",
+            "t_us",
+            "raw",
+            "avg",
+            "filtered",
+            "candidate",
+            "detector_score",
+            "expected_rr_ms",
+            "hr_bpm",
+            "flags",
+        ])
+
+        for sample in samples:
+            writer.writerow([
+                sample.seq,
+                sample.t_us,
+                sample.raw,
+                sample.avg,
+                sample.filtered,
+                sample.peak,
+                sample.detector_score,
+                sample.expected_rr_ms,
+                sample.hr_bpm,
+                sample.flags,
+            ])
+
+    with (
+        destination
+        / "beats_raw.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "seq",
+            "t_us",
+            "rr_ms",
+            "hr_bpm",
+            "score",
+            "flags",
+        ])
+
+        for beat in raw_beats:
+            writer.writerow([
+                beat.seq,
+                beat.t_us,
+                beat.rr_ms,
+                beat.hr_bpm,
+                beat.score,
+                beat.flags,
+            ])
 
     with (
         destination

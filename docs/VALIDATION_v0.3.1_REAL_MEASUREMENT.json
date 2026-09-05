@@ -1,0 +1,24 @@
+{
+  "source": "uploaded hrv_export.zip + screenshot",
+  "reported_hr_bpm": 164.8,
+  "reported_sqi": 0.8491,
+  "raw_rr_count": 177,
+  "raw_rr_median_ms": 364.0,
+  "adjacent_rr_pair_sum_median_ms": 721.0,
+  "every_other_accepted": {
+    "sequence_a": {
+      "offset": 0,
+      "rr_median_ms": 725.076,
+      "hr_bpm": 82.74994621253497,
+      "score_mean": 0.7238426966292134
+    },
+    "sequence_b": {
+      "offset": 1,
+      "rr_median_ms": 719.988,
+      "hr_bpm": 83.33472224537076,
+      "score_mean": 0.6508181818181817
+    }
+  },
+  "even_score_stronger_pair_fraction": 0.7954545454545454,
+  "diagnosis": "accepted events form an approximately alternating peak/trough sequence; one physical PPG cycle is being split into two accepted extrema"
+}

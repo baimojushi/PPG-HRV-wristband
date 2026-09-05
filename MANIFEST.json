@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.0",
-  "base_version": "0.2.3",
-  "release_type": "zeezPPG-full-rewrite",
+  "version": "0.3.1",
+  "base_version": "0.3.0",
+  "release_type": "real-measurement-polarity-lock",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -28,7 +28,11 @@
     "autocorrelation harmonic guard",
     "high-confidence rhythm anchor",
     "cycle-level candidate competition",
-    "waveform rescue search"
+    "waveform rescue search",
+    "accepted extremum polarity lock",
+    "same-polarity candidate competition",
+    "same-polarity waveform rescue",
+    "stable same-polarity RR rhythm anchor"
   ],
   "protocol": {
     "version": 4,
@@ -56,7 +60,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "29 passed",
+    "tests": "32 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -113,16 +117,42 @@
         "frequency_status": "INVALID"
       }
     ],
-    "platformio_full_compile": "not executed in artifact runtime because PlatformIO CLI is not installed"
+    "platformio_full_compile": "not executed: PlatformIO CLI not installed",
+    "real_measurement_v0_3_1": {
+      "source": "uploaded hrv_export.zip + screenshot",
+      "reported_hr_bpm": 164.8,
+      "reported_sqi": 0.8491,
+      "raw_rr_count": 177,
+      "raw_rr_median_ms": 364.0,
+      "adjacent_rr_pair_sum_median_ms": 721.0,
+      "every_other_accepted": {
+        "sequence_a": {
+          "offset": 0,
+          "rr_median_ms": 725.076,
+          "hr_bpm": 82.74994621253497,
+          "score_mean": 0.7238426966292134
+        },
+        "sequence_b": {
+          "offset": 1,
+          "rr_median_ms": 719.988,
+          "hr_bpm": 83.33472224537076,
+          "score_mean": 0.6508181818181817
+        }
+      },
+      "even_score_stronger_pair_fraction": 0.7954545454545454,
+      "diagnosis": "accepted events form an approximately alternating peak/trough sequence; one physical PPG cycle is being split into two accepted extrema"
+    }
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 78,
+  "file_count": 85,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
     ".vscode/settings.json",
     "MANIFEST.json",
     "README.md",
+    "commit_v030.txt",
+    "commit_v031.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
@@ -145,6 +175,7 @@
     "desktop/src/hrv_app/storage.py",
     "desktop/src/hrv_app/ui_app.py",
     "docs/ALGORITHM_v0.3.0.md",
+    "docs/ALGORITHM_v0.3.1.md",
     "docs/ARCHITECTURE.md",
     "docs/CHEEZPPG_SOURCE_REVIEW.md",
     "docs/CODE_AUDIT.md",
@@ -153,6 +184,7 @@
     "docs/PATCH_v0.2.1.md",
     "docs/PATCH_v0.2.2_PEAK_DEBUG.md",
     "docs/PATCH_v0.2.3_PEAK_EVENT_GATE.md",
+    "docs/PATCH_v0.3.1_POLARITY_LOCK.md",
     "docs/PROTOCOL.md",
     "docs/QUALITY_CONFIDENCE.md",
     "docs/THIRD_PARTY.md",
@@ -162,6 +194,8 @@
     "docs/VALIDATION_v0.2.3_HISTORY_REPLAY.md",
     "docs/VALIDATION_v0.3.0_HISTORY_REPLAY.json",
     "docs/VALIDATION_v0.3.0_HISTORY_REPLAY.md",
+    "docs/VALIDATION_v0.3.1_REAL_MEASUREMENT.json",
+    "docs/VALIDATION_v0.3.1_REAL_MEASUREMENT.md",
     "firmware/include/acquisition.h",
     "firmware/include/config.h",
     "firmware/include/data_types.h",
@@ -184,6 +218,7 @@
     "legacy_reference/ShouHuan_Hr-Hrv0_BLE.ino",
     "tests/conftest.py",
     "tests/test_adaptive_detector.py",
+    "tests/test_debug_export.py",
     "tests/test_frequency.py",
     "tests/test_frequency_stats.py",
     "tests/test_hrv_time.py",
@@ -196,5 +231,9 @@
     "tests/test_spwvd.py",
     "tests/test_zeez_detector_cpp.py",
     "tests/test_zeez_wrapper_cpp.py"
+  ],
+  "debug_export": [
+    "samples_debug.csv",
+    "beats_raw.csv"
   ]
 }

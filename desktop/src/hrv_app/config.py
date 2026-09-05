@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """统一保存分析常量；v0.3.0 的 PPG 检测算法完整位于项目内 zeezPPG。"""
+    """统一保存分析常量；v0.3.1 的 PPG 检测算法完整位于项目内 zeezPPG。"""
 
     sample_rate_hz: float = 125.0
 
@@ -28,7 +28,7 @@ class AnalysisConfig:
     rr_hard_max_ms: float = 2000.0
 
 
-    # v0.3.0 zeezPPG 动态检测器兼容灵敏度中性点。
+    # v0.3.1 zeezPPG 动态检测器兼容灵敏度中性点。
     # 11.0 只小范围缩放综合评分门，不再直接定义心搏阈值。
     detector_legacy_peak_factor: float = 11.0
 

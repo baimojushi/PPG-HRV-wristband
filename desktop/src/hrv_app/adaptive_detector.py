@@ -45,6 +45,11 @@ class AdaptiveEvent:
     accepted_score: float = 0.0
     expected_rr_ms: float = 0.0
 
+    # v0.3.1：Accepted Beat 锁定到同一极性，防止一个 PPG 周期
+    # 的局部最大值和局部最小值被交替计成两个心搏。
+    accepted_polarity: int = 0
+    locked_polarity: int = 0
+
 
 class RunningRing:
     """
@@ -238,6 +243,10 @@ class AdaptivePPGDetector:
 
         self.last_accepted_t_us = 0
         self.last_accepted_seq = 0
+
+        # 0=尚未锁定，+1=局部最大值，-1=局部最小值。
+        # 第一个稳定 Winner 决定本段佩戴区间的心搏极性。
+        self.locked_polarity = 0
 
         self.expected_rr_ms = 0.0
         self.autocorr_rr_ms = 0.0
@@ -766,92 +775,74 @@ class AdaptivePPGDetector:
     def _update_expected_rr(
         self,
     ) -> None:
+        rr_values = np.asarray(
+            self.rr_history,
+            dtype=float,
+        )
+
         rr_median = (
-            float(
-                np.median(
-                    np.asarray(
-                        self.rr_history,
-                        dtype=float,
-                    )
-                )
-            )
-            if self.rr_history
+            float(np.median(rr_values))
+            if rr_values.size
             else 0.0
         )
 
+        # v0.3.1：
+        # Accepted Beat 已被“同极性锁”约束后，连续 RR 的可信度明显高于
+        # 单纯波形自相关。实测 v0.3.0 的自相关曾锁到约 464 ms，
+        # 同时局部最大值/最小值交替生成约 350 ms RR，形成 2:1 误计数。
+        #
+        # 一旦得到至少两个同极性 RR，并且它们本身足够稳定，
+        # 直接让 RR 中位数成为主节律锚点；自相关只在两者接近时参与平滑。
         if (
-            len(self.rr_history) >= 3
+            rr_values.size >= 2
             and rr_median > 0
         ):
-            expected = rr_median
-
-            if (
-                self.autocorr_confidence
-                >= 0.35
-                and self.autocorr_rr_ms
-                > 0
-            ):
-                rr_values = np.asarray(
-                    self.rr_history,
-                    dtype=float,
-                )
-
-                rr_mad = float(
-                    np.median(
-                        np.abs(
-                            rr_values
-                            - rr_median
-                        )
+            rr_mad = float(
+                np.median(
+                    np.abs(
+                        rr_values
+                        - rr_median
                     )
                 )
+            )
 
-                robust_variability = (
-                    1.4826
-                    * rr_mad
-                    / rr_median
-                    if rr_median > 0
-                    else 0.0
-                )
+            robust_variability = (
+                1.4826
+                * rr_mad
+                / rr_median
+                if rr_median > 0
+                else 1.0
+            )
 
-                ratio = (
-                    rr_median
-                    / self.autocorr_rr_ms
-                )
+            if robust_variability <= 0.20:
+                expected = rr_median
 
                 if (
                     self.autocorr_confidence
-                    >= 0.50
-                    and (
-                        ratio < 0.82
-                        or ratio > 1.22
-                        or robust_variability
-                        > 0.14
-                    )
+                    >= 0.35
+                    and self.autocorr_rr_ms
+                    > 0
                 ):
-                    expected = (
+                    ratio = (
                         self.autocorr_rr_ms
+                        / rr_median
                     )
 
-                elif (
-                    ratio > 1.55
-                    or ratio < 0.65
-                ):
-                    expected = (
-                        self.autocorr_rr_ms
-                    )
+                    # 两个来源一致时轻度融合；差异明显时避免错误自相关
+                    # 把已经稳定的同极性 RR 拉回伪周期。
+                    if 0.82 <= ratio <= 1.22:
+                        expected = (
+                            0.80 * rr_median
+                            + 0.20
+                            * self.autocorr_rr_ms
+                        )
 
-                else:
-                    expected = (
-                        0.55 * rr_median
-                        + 0.45
-                        * self.autocorr_rr_ms
-                    )
+                self.expected_rr_ms = float(
+                    expected
+                )
+                return
 
-            self.expected_rr_ms = float(
-                expected
-            )
-            return
-
+        # 启动阶段或 RR 尚不稳定时，自相关仍负责给出初始时间尺度。
         if (
             self.autocorr_confidence
             >= 0.20
@@ -860,6 +851,10 @@ class AdaptivePPGDetector:
         ):
             self.expected_rr_ms = float(
                 self.autocorr_rr_ms
+            )
+        elif rr_median > 0:
+            self.expected_rr_ms = float(
+                rr_median
             )
 
     def _maybe_update_autocorr(
@@ -903,6 +898,13 @@ class AdaptivePPGDetector:
         best_score = -1.0
 
         for candidate in self.candidate_pool:
+            if (
+                self.locked_polarity != 0
+                and candidate.polarity
+                != self.locked_polarity
+            ):
+                continue
+
             delta_ms = (
                 candidate.t_us
                 - self.last_accepted_t_us
@@ -1023,7 +1025,7 @@ class AdaptivePPGDetector:
             self.last_accepted_t_us
             + int(
                 self.expected_rr_ms
-                * 0.58
+                * 0.68
                 * 1000
             )
         )
@@ -1032,7 +1034,7 @@ class AdaptivePPGDetector:
             self.last_accepted_t_us
             + int(
                 self.expected_rr_ms
-                * 1.48
+                * 2.20
                 * 1000
             ),
         )
@@ -1057,22 +1059,44 @@ class AdaptivePPGDetector:
         if not eligible:
             return None
 
-        best = max(
-            eligible,
-            key=lambda point:
-                abs(
-                    point[2]
-                    - signal_mean
-                ),
-        )
-
-        best_z = (
-            abs(
-                best[2]
-                - signal_mean
+        # v0.3.1：Rescue 也必须服从已锁定极性。
+        # 否则常规 Candidate 虽然过滤了谷值，Rescue 仍可能把谷值重新捞回来。
+        if self.locked_polarity > 0:
+            best = max(
+                eligible,
+                key=lambda point:
+                    point[2] - signal_mean,
             )
-            / signal_std
-        )
+            best_z = (
+                best[2] - signal_mean
+            ) / signal_std
+
+        elif self.locked_polarity < 0:
+            best = min(
+                eligible,
+                key=lambda point:
+                    point[2] - signal_mean,
+            )
+            best_z = (
+                signal_mean - best[2]
+            ) / signal_std
+
+        else:
+            best = max(
+                eligible,
+                key=lambda point:
+                    abs(
+                        point[2]
+                        - signal_mean
+                    ),
+            )
+            best_z = (
+                abs(
+                    best[2]
+                    - signal_mean
+                )
+                / signal_std
+            )
 
         if best_z < 0.45:
             return None
@@ -1101,9 +1125,13 @@ class AdaptivePPGDetector:
             slope_z=0.0,
             curvature_z=0.0,
             polarity=(
-                1
-                if best[2] >= signal_mean
-                else -1
+                self.locked_polarity
+                if self.locked_polarity != 0
+                else (
+                    1
+                    if best[2] >= signal_mean
+                    else -1
+                )
             ),
         )
 
@@ -1116,6 +1144,28 @@ class AdaptivePPGDetector:
         first = (
             self.last_accepted_t_us == 0
         )
+
+        if self.locked_polarity == 0:
+            self.locked_polarity = int(
+                selected.polarity
+            )
+
+        # 安全保护：常规路径不会把异极性 Candidate 送到这里。
+        if (
+            selected.polarity
+            != self.locked_polarity
+        ):
+            return AdaptiveEvent(
+                signal_score=float(
+                    signal_score
+                ),
+                expected_rr_ms=float(
+                    self.expected_rr_ms
+                ),
+                locked_polarity=int(
+                    self.locked_polarity
+                ),
+            )
 
         if first:
             rr_ms = 0.0
@@ -1185,6 +1235,12 @@ class AdaptivePPGDetector:
             expected_rr_ms=float(
                 self.expected_rr_ms
             ),
+            accepted_polarity=int(
+                selected.polarity
+            ),
+            locked_polarity=int(
+                self.locked_polarity
+            ),
         )
 
     def update(
@@ -1240,6 +1296,9 @@ class AdaptivePPGDetector:
             signal_score=signal_score,
             expected_rr_ms=(
                 self.expected_rr_ms
+            ),
+            locked_polarity=int(
+                self.locked_polarity
             ),
         )
 
@@ -1299,9 +1358,9 @@ class AdaptivePPGDetector:
             if phase >= 1.06:
                 selected = (
                     self._select_best_candidate(
-                        0.55,
-                        1.38,
-                        0.38
+                        0.72,
+                        1.55,
+                        0.40
                         * self.score_threshold_scale,
                     )
                 )
@@ -1319,9 +1378,9 @@ class AdaptivePPGDetector:
             ):
                 selected = (
                     self._select_best_candidate(
-                        0.50,
-                        1.50,
-                        0.20
+                        0.72,
+                        2.20,
+                        0.24
                         * self.score_threshold_scale,
                     )
                 )
@@ -1335,7 +1394,7 @@ class AdaptivePPGDetector:
 
             if (
                 accepted is None
-                and phase >= 1.58
+                and phase >= 1.70
             ):
                 rescue = (
                     self._waveform_rescue(

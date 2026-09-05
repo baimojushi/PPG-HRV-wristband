@@ -344,7 +344,7 @@ class MainWindow(QMainWindow):
         self._sync_signal_debug_view()
 
         self.signal_debug_label = QLabel(
-            "调试：紫=动态形态分数0~1 · 黄=Candidate · 绿=Accepted Beat"
+            "调试：紫=动态形态分数0~1 · 黄=Candidate（含峰/谷） · 绿=同极性 Accepted Beat"
         )
         self.signal_debug_label.setObjectName("heroSub")
         self.signal_debug_label.setWordWrap(True)
@@ -698,7 +698,7 @@ class MainWindow(QMainWindow):
         )
 
         self.signal_debug_label.setText(
-            "调试：紫=形态分数 · 黄=Candidate · 绿=Accepted  |  "
+            "调试：紫=形态分数 · 黄=Candidate（含峰/谷） · 绿=同极性Accepted  |  "
             f"窗口 {duration:.1f}s · "
             f"Candidate {candidate_count}（≈{candidate_bpm:.0f} bpm） · "
             f"Accepted {accepted_count}（≈{accepted_bpm:.0f} bpm） · "

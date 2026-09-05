@@ -100,6 +100,7 @@ static bool runCase(
     std::vector<float> rr_values;
     int candidate_count = 0;
     int accepted_count = 0;
+    int accepted_polarity = 0;
 
     const int total_samples =
         static_cast<int>(
@@ -172,6 +173,20 @@ static bool runCase(
 
         if (event.accepted) {
             ++accepted_count;
+
+            if (accepted_polarity == 0) {
+                accepted_polarity =
+                    event.accepted_polarity;
+            } else if (
+                event.accepted_polarity
+                != accepted_polarity
+                || event.locked_polarity
+                != accepted_polarity
+            ) {
+                std::cerr
+                    << "accepted polarity changed\\n";
+                return false;
+            }
 
             if (event.rr_ms > 0) {
                 rr_values.push_back(
