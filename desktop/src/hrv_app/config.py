@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """统一保存分析常量；v0.3.2 的 PPG 检测算法完整位于项目内 zeezPPG。"""
+    """统一保存分析常量；v0.3.4 的 PPG 检测算法完整位于项目内 zeezPPG。"""
 
     sample_rate_hz: float = 125.0
 
@@ -28,7 +28,7 @@ class AnalysisConfig:
     rr_hard_max_ms: float = 2000.0
 
 
-    # v0.3.2 zeezPPG 动态检测器兼容灵敏度中性点。
+    # v0.3.4 zeezPPG 动态检测器兼容灵敏度中性点。
     # 11.0 只小范围缩放综合评分门，不再直接定义心搏阈值。
     detector_legacy_peak_factor: float = 11.0
 
@@ -55,7 +55,7 @@ class AnalysisConfig:
     time_max_consecutive_artifacts: int = 1
     time_min_sqi: float = 0.70
 
-    # v0.3.2 受限时域：
+    # v0.3.4 受限时域：
     # 只使用原始 accepted 且时间上真正相邻的 NN 对，不把修复值塞进 RMSSD。
     # 中等伪迹时可以输出 LIMITED，超过这些硬门仍然 INVALID。
     time_limited_max_artifact_ratio: float = 0.10
@@ -73,7 +73,7 @@ class AnalysisConfig:
     frequency_max_unresolved_ratio: float = 0.01
     frequency_min_sqi: float = 0.75
 
-    # v0.3.2 受限频域：
+    # v0.3.4 受限频域：
     # 小比例孤立异常可以通过不规则时间 Lomb–Scargle 与 Welch 互证后输出 LIMITED。
     frequency_limited_max_corrected_ratio: float = 0.08
     frequency_limited_max_unresolved_ratio: float = 0.05
@@ -116,6 +116,41 @@ class AnalysisConfig:
     sqi_effective_rate_fail_ratio: float = 0.05
     sqi_timing_overrun_warn_ratio: float = 0.01
     sqi_timing_overrun_fail_ratio: float = 0.02
+
+    # ------------------------------------------------------------------
+    # v0.3.4 PPG fiducial 模板对齐
+    # ------------------------------------------------------------------
+    # 固件负责判定“这一周期存在心搏”，桌面端再统一每搏的 PPG 时间相位。
+    # 这套细化只平移 fiducial，不使用 RR 预测强行正则化时间轴。
+    fiducial_future_context_ms: float = 120.0
+    fiducial_bootstrap_search_ms: float = 120.0
+    fiducial_search_ms: float = 120.0
+    fiducial_search_step_ms: float = 4.0
+
+    fiducial_template_pre_ms: float = 280.0
+    fiducial_template_post_ms: float = 280.0
+    fiducial_template_step_ms: float = 8.0
+    fiducial_template_alpha: float = 0.10
+
+    fiducial_correlation_plateau_drop: float = 0.015
+    fiducial_uncertainty_fail_ms: float = 80.0
+    fiducial_template_update_min_correlation: float = 0.82
+    fiducial_template_update_max_uncertainty_ms: float = 36.0
+    fiducial_template_update_max_shift_ms: float = 96.0
+
+    # 单搏模板对齐只有在质量足够且偏移未触及搜索边界时才真正改写 HRV 时间戳。
+    # 低质量对齐保留固件时间，同时把低质量证据送入 Beat Timing Quality 门。
+    fiducial_max_applied_shift_ms: float = 96.0
+
+    # Beat Timing Quality 质量门。
+    # 受限门保证宽峰时间不确定度不会被 SQI=100% 掩盖。
+    fiducial_strict_min_mean_quality: float = 0.82
+    fiducial_limited_min_mean_quality: float = 0.68
+    fiducial_strict_max_uncertainty_p95_ms: float = 28.0
+    fiducial_limited_max_uncertainty_p95_ms: float = 50.0
+    fiducial_strict_max_unstable_ratio: float = 0.05
+    fiducial_limited_max_unstable_ratio: float = 0.15
+    fiducial_unstable_quality_threshold: float = 0.62
 
     # SPWVD 只在频域质量门通过后运行。
     spwvd_hop_seconds: float = 5.0

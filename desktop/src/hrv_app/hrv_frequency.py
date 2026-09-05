@@ -621,6 +621,67 @@ def compute_frequency_domain(
         )
     )
 
+    # source_t_us>0 表示该 Beat 已经进入 v0.3.4 fiducial 评估。
+    # 即使低质量对齐被拒绝、refined=False，质量证据也必须保留。
+    refined_records = [
+        record
+        for record in record_window
+        if (
+            record.source_t_us > 0
+            or record.refined
+        )
+    ]
+
+    if refined_records:
+        fiducial_quality = np.asarray(
+            [
+                record.timing_quality
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+        fiducial_uncertainty = np.asarray(
+            [
+                record.timing_uncertainty_ms
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+        fiducial_shift = np.asarray(
+            [
+                abs(record.timing_shift_ms)
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+
+        fiducial_quality_mean = float(
+            np.mean(fiducial_quality)
+        )
+        fiducial_uncertainty_p95_ms = float(
+            np.percentile(
+                fiducial_uncertainty,
+                95,
+            )
+        )
+        fiducial_shift_p95_ms = float(
+            np.percentile(
+                fiducial_shift,
+                95,
+            )
+        )
+        fiducial_unstable_ratio = float(
+            np.mean(
+                fiducial_quality
+                < cfg.fiducial_unstable_quality_threshold
+            )
+        )
+    else:
+        fiducial_quality_mean = 1.0
+        fiducial_uncertainty_p95_ms = 0.0
+        fiducial_shift_p95_ms = 0.0
+        fiducial_unstable_ratio = 0.0
+
     # -------------------------------------------------------------------
     # Welch 主频谱：PCHIP tachogram
     # -------------------------------------------------------------------
@@ -896,6 +957,36 @@ def compute_frequency_domain(
     hard_reasons: list[str] = []
 
     if (
+        fiducial_quality_mean
+        < cfg.fiducial_limited_min_mean_quality
+    ):
+        hard_reasons.append(
+            "心搏标志点质量 "
+            f"{fiducial_quality_mean * 100:.0f}% < "
+            f"{cfg.fiducial_limited_min_mean_quality * 100:.0f}%"
+        )
+
+    if (
+        fiducial_uncertainty_p95_ms
+        > cfg.fiducial_limited_max_uncertainty_p95_ms
+    ):
+        hard_reasons.append(
+            "标志点不确定度 p95 "
+            f"{fiducial_uncertainty_p95_ms:.1f} ms > "
+            f"{cfg.fiducial_limited_max_uncertainty_p95_ms:.1f} ms"
+        )
+
+    if (
+        fiducial_unstable_ratio
+        > cfg.fiducial_limited_max_unstable_ratio
+    ):
+        hard_reasons.append(
+            "不稳定标志点 "
+            f"{fiducial_unstable_ratio * 100:.1f}% > "
+            f"{cfg.fiducial_limited_max_unstable_ratio * 100:.1f}%"
+        )
+
+    if (
         signal_quality.sqi
         < cfg.frequency_min_sqi
     ):
@@ -989,6 +1080,12 @@ def compute_frequency_domain(
             ),
             progress=1.0,
             duration_seconds=duration,
+            fiducial_quality_mean=fiducial_quality_mean,
+            fiducial_uncertainty_p95_ms=(
+                fiducial_uncertainty_p95_ms
+            ),
+            fiducial_shift_p95_ms=fiducial_shift_p95_ms,
+            fiducial_unstable_ratio=fiducial_unstable_ratio,
             corrected_ratio=(
                 corrected_ratio
             ),
@@ -1019,6 +1116,33 @@ def compute_frequency_domain(
     # 严格门：未达到时允许 LIMITED，并明确标记原因。
     # -------------------------------------------------------------------
     strict_reasons: list[str] = []
+
+    if (
+        fiducial_quality_mean
+        < cfg.fiducial_strict_min_mean_quality
+    ):
+        strict_reasons.append(
+            "心搏标志点质量 "
+            f"{fiducial_quality_mean * 100:.0f}%"
+        )
+
+    if (
+        fiducial_uncertainty_p95_ms
+        > cfg.fiducial_strict_max_uncertainty_p95_ms
+    ):
+        strict_reasons.append(
+            "标志点不确定度 p95 "
+            f"{fiducial_uncertainty_p95_ms:.1f} ms"
+        )
+
+    if (
+        fiducial_unstable_ratio
+        > cfg.fiducial_strict_max_unstable_ratio
+    ):
+        strict_reasons.append(
+            "不稳定标志点 "
+            f"{fiducial_unstable_ratio * 100:.1f}%"
+        )
 
     if (
         signal_quality.timing_jitter_p95_ms
@@ -1108,6 +1232,12 @@ def compute_frequency_domain(
         hf_nu=hf_nu,
         lf_hf=lf_hf,
         hf_lf=hf_lf,
+        fiducial_quality_mean=fiducial_quality_mean,
+        fiducial_uncertainty_p95_ms=(
+            fiducial_uncertainty_p95_ms
+        ),
+        fiducial_shift_p95_ms=fiducial_shift_p95_ms,
+        fiducial_unstable_ratio=fiducial_unstable_ratio,
         corrected_ratio=(
             corrected_ratio
         ),

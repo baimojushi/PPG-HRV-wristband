@@ -1,163 +1,147 @@
-# PPG / HRV 实时分析系统 v0.3.3
+# PPG / HRV 实时分析系统 v0.3.4
 
-v0.3.3 基于 v0.3.2 的稳定 125 Hz 采集链，优化缓峰、波形变缓和轻微事件时间抖动下的频谱互证。
+v0.3.4 基于 v0.3.3，针对最新实机波形中 **Accepted Beat 在宽峰内漂移** 与 **周期窗口相位漂移导致漏检** 两个问题升级。
 
-**本版没有修改 ESP32 固件。已烧录 v0.3.2 固件可以继续使用，无需重新烧录。**
+本版同时修改 ESP32 固件和桌面端，需要重新编译并烧录固件。
 
-## 本次实测
-
-```text
-实际采样率            125.00 Hz
-采样 p95 抖动        0.0040 ms
-SQI                   99.83%
-未解决 RR             0.402%
-有效 NN               99.598%
-```
-
-采样和心搏时间线已经稳定。
-
-v0.3.2 的滚动 5 分钟窗口仍出现：
+## 当前链路
 
 ```text
-Welch/Lomb 原始逐频点相关
-52.0% – 83.7%
+125 Hz PPG
+   ↓
+动态 Candidate
+   ↓
+同极性 Peak Complex 合并
+   ↓
+独立节律相位跟踪
+   ↓
+Firmware Winner
+   ↓
+协议 v4
+   ↓
+桌面端 PPG 模板互相关
+   ↓
+HRV 统一 fiducial
+   ↓
+Beat Timing Quality
+   ↓
+RR / NN / HRV
 ```
 
-同时 VLF/LF/HF 频带分布一致性保持：
+## 1. Peak Complex
+
+宽峰、平顶峰上的多个同极性局部极值不会直接分别参加 Winner 竞争。
 
 ```text
-86.9% – 98.8%
+cluster_window = clamp(0.28 × expected_RR, 80, 180 ms)
 ```
 
-说明主要问题是两种谱估计器的窄峰存在轻微频率偏移，逐频点 Pearson 对这类变化过于敏感。
+Candidate 原始脉冲仍全部保留在 UI 黄线，便于 Debug；候选池只保留每个 Peak Complex 的代表点。
 
-## v0.3.3 稳健频谱互证
+## 2. 独立节律相位
 
-正式 Welch/Lomb 门改为：
+上一搏 Accepted 时间不再直接作为下一周期窗口原点。
 
 ```text
-稳健一致性 =
-0.70 × 约 0.02 Hz 平滑谱形相关
-+ 0.30 × VLF/LF/HF 频带分布一致性
+predicted_next += expected_RR
 ```
 
-同时保留独立硬门：
+单搏相位误差只做小增益校正：
 
 ```text
-频带一致性 ≥82%
-插值一致性 ≥95%
+0.22 × clip(error, ±40 ms)
 ```
 
-严格 VALID：
+这样某一搏落在峰侧，不会把下一搏窗口整体拖走。
+
+## 3. HRV 模板时间标志点
+
+固件负责“该周期存在心搏”。
+
+桌面端等待约 400 ms PPG 上下文后，在固件 Winner 附近 ±120 ms 做整段模板互相关，统一 HRV 时间相位。
+
+模板细化不使用 RR 预测强制拉齐，因此不会人为压低真实 HRV。
+
+低质量对齐：
 
 ```text
-稳健一致性 ≥90%
-频带一致性 ≥90%
-插值一致性 ≥98%
+quality < 0.62
+uncertainty > 80 ms
+|shift| > 96 ms
 ```
 
-原始逐频点相关仍然：
+会回退到固件时间，并把低质量证据交给 HRV 质量门。
+
+## 4. Beat Timing Quality
+
+PPG SQI 继续描述采样/传输质量。
+
+v0.3.4 额外评价：
 
 ```text
-显示
-导出
-保存到 hrv_windows.csv
+fiducial_quality_mean
+fiducial_uncertainty_p95_ms
+fiducial_shift_p95_ms
+fiducial_unstable_ratio
 ```
 
-只用于 Debug。
+所以即使 SQI=100%，宽峰时间位置不稳定时，HRV 仍会下降为 LIMITED / INVALID。
 
-## 实测回放结果
-
-旧 v0.3.2 完整频域窗口：
+## 5. UI
 
 ```text
-VALID      3
-LIMITED    5
-INVALID    4
+紫       动态形态分数
+黄       原始 Candidate
+灰虚线   固件 Winner 原始时间
+绿       HRV 统一 fiducial
 ```
 
-相同 RR 数据用 v0.3.3 互证：
+Debug 行同时显示 fiducial 平均质量、不确定度 p95、平移 p95。
+
+## 6. 导出
 
 ```text
-VALID      7
-LIMITED    5
-INVALID    0
+samples_debug.csv
+beats_raw.csv       固件 Accepted 原始证据
+beats_refined.csv   HRV 模板时间标志点
+beats_cleaned.csv   RR/NN 清洗结果
 ```
 
-稳健一致性范围：
+## 7. 协议
 
-```text
-81.5% – 97.2%
+协议保持 v4，串口/蓝牙帧格式没有变化。
+
+## 8. CNN
+
+当前继续不加入实时 CNN。
+
+本次错误属于 **周期相位耦合 + fiducial 不统一**。确定性相位跟踪和模板对齐可以直接解决，并且可逐搏审计。
+
+后续 CNN 仍保留为 Candidate 形态评分器候选方案；若要用 CNN 回归 fiducial，需要同步 ECG 或等价的高精度独立时间标签。
+
+## 构建
+
+```bash
+cd firmware
+pio run
+pio run --target upload
+pio device monitor
 ```
 
-这里没有修改 Welch 的绝对功率，也没有修改 RR。
+桌面端：
 
-## 缓峰时间戳
-
-已对以下方案做离线 A/B：
-
-```text
-原始峰值
-二次插值峰值
-最大上升斜率
-半幅上升沿
-切线足点
+```bash
+cd desktop
+python -m pytest -q ../tests
+python run_ui.py
 ```
-
-它们没有稳定提高频谱一致性，并且部分方案明显改变 LF/HF。
-
-所以 v0.3.3 保留当前 Accepted Beat 时间戳，不为了提高一致性而重写 RR 时间轴。
-
-## CNN
-
-当前不加入一维卷积神经网络。
-
-原因：
-
-- 当前未解决 RR 仅约 0.40%；
-- 当前问题位于频域估计器互证，不在 Candidate 分类；
-- 小 CNN 在 ESP32 上计算量可接受，真正成本是独立标注和跨会话验证。
-
-详细见：
-
-```text
-docs/CNN_ENGINEERING_ROI_v0.3.3.md
-```
-
-未来若引入 CNN，建议只作为：
-
-```text
-Candidate morphology scorer
-```
-
-不替代极性锁、周期预测、Candidate 竞争和 RR/HRV 质量门。
-
-## UI
-
-频域行现在显示：
-
-```text
-稳健Welch/Lomb
-原始逐点
-频带一致
-插值一致
-```
-
-## 协议
-
-仍为 v4。
 
 ## 关键文档
 
 ```text
-docs/VALIDATION_v0.3.3_ROBUST_SPECTRUM.md
-docs/CNN_ENGINEERING_ROI_v0.3.3.md
+docs/ALGORITHM_v0.3.4_FIDUCIAL_PHASE.md
+docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.md
+docs/PATCH_v0.3.4_FIDUCIAL_PHASE.md
 docs/QUALITY_CONFIDENCE.md
-docs/TINY_CNN_PLAN.md
-```
-
-## 测试
-
-```bash
-python -m pytest -q tests
+docs/CNN_ENGINEERING_ROI_v0.3.3.md
 ```

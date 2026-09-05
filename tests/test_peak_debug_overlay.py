@@ -43,6 +43,7 @@ def test_recent_signal_debug_exposes_score_candidate_and_accepted():
         y,
         detector_score,
         candidate,
+        firmware_accepted,
         accepted,
         stats,
     ) = engine.recent_signal_debug(2.0)
@@ -50,6 +51,7 @@ def test_recent_signal_debug_exposes_score_candidate_and_accepted():
     assert len(x) == len(y)
     assert len(x) == len(detector_score)
     assert len(x) == len(candidate)
+    assert len(x) == len(firmware_accepted)
     assert len(x) == len(accepted)
 
     assert detector_score.max() <= 1.0

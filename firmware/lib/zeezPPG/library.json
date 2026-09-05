@@ -1,7 +1,7 @@
 {
   "name": "zeezPPG",
-  "version": "0.3.2",
-  "description": "Adaptive ring-buffer PPG beat detector with polarity lock and incremental autocorrelation for the PPG/HRV wristband project",
+  "version": "0.3.4",
+  "description": "Adaptive ring-buffer PPG detector with polarity lock, Peak Complex clustering, independent rhythm phase tracking, and incremental autocorrelation",
   "frameworks": "arduino",
   "platforms": "espressif32"
 }

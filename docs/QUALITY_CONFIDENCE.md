@@ -130,3 +130,40 @@ band_power_agreement
 
 这样可以容忍有限窗泄漏和缓峰噪声造成的轻微谱峰错位，
 同时保留对 LF↔HF 大尺度错误的独立约束。
+
+
+## v0.3.4 Beat Timing Quality
+
+PPG SQI 与 HRV 时间标志点质量分开。
+
+单搏保存：
+
+```text
+source_t_us
+t_us
+timing_shift_ms
+timing_quality
+timing_uncertainty_ms
+refined
+```
+
+低质量模板对齐不会改写 RR 时间轴，固件时间作为回退。
+低质量证据仍参与聚合质量门。
+
+严格 VALID：
+
+```text
+平均 timing quality >=82%
+uncertainty p95 <=28 ms
+低质量比例 <=5%
+```
+
+LIMITED 硬门：
+
+```text
+平均 timing quality >=68%
+uncertainty p95 <=50 ms
+低质量比例 <=15%
+```
+
+超过 LIMITED 门时，HRV 为 INVALID，即使采样 SQI=100%。

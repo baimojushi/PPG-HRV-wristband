@@ -50,6 +50,10 @@ class AdaptiveEvent:
     accepted_polarity: int = 0
     locked_polarity: int = 0
 
+    # v0.3.4 独立节律相位 Debug。
+    predicted_beat_t_us: int = 0
+    phase_error_ms: float = 0.0
+
 
 class RunningRing:
     """
@@ -202,6 +206,10 @@ class AdaptivePPGDetector:
     RR_CAPACITY = 9
     CANDIDATE_CAPACITY = 16
 
+    CANDIDATE_CLUSTER_MIN_MS = 80.0
+    CANDIDATE_CLUSTER_MAX_MS = 180.0
+    CANDIDATE_CLUSTER_RR_RATIO = 0.28
+
     def __init__(
         self,
         sample_rate_hz: float = 125.0,
@@ -243,6 +251,10 @@ class AdaptivePPGDetector:
 
         self.last_accepted_t_us = 0
         self.last_accepted_seq = 0
+
+        # v0.3.4：周期相位与 Accepted fiducial 解耦。
+        self.predicted_beat_t_us = 0
+        self.last_phase_error_ms = 0.0
 
         # 0=尚未锁定，+1=局部最大值，-1=局部最小值。
         # 第一个稳定 Winner 决定本段佩戴区间的心搏极性。
@@ -501,24 +513,49 @@ class AdaptivePPGDetector:
             polarity=int(polarity),
         )
 
+    def _phase_for_time(
+        self,
+        t_us: int,
+    ) -> float:
+        if self.expected_rr_ms <= 0:
+            return 0.0
+
+        if self.predicted_beat_t_us != 0:
+            error_ms = (
+                int(t_us)
+                - self.predicted_beat_t_us
+            ) / 1000.0
+
+            return (
+                1.0
+                + error_ms
+                / self.expected_rr_ms
+            )
+
+        if self.last_accepted_t_us != 0:
+            return (
+                (int(t_us) - self.last_accepted_t_us)
+                / 1000.0
+                / self.expected_rr_ms
+            )
+
+        return 0.0
+
     def _timing_score(
         self,
         candidate_t_us: int,
     ) -> float:
         if (
             self.expected_rr_ms <= 0
-            or self.last_accepted_t_us == 0
+            or (
+                self.predicted_beat_t_us == 0
+                and self.last_accepted_t_us == 0
+            )
         ):
             return 0.50
 
-        delta_ms = (
+        phase = self._phase_for_time(
             candidate_t_us
-            - self.last_accepted_t_us
-        ) / 1000.0
-
-        phase = (
-            delta_ms
-            / self.expected_rr_ms
         )
 
         sigma = 0.24
@@ -529,6 +566,45 @@ class AdaptivePPGDetector:
         return math.exp(
             -0.5 * z * z
         )
+
+    def _candidate_cluster_window_ms(
+        self,
+    ) -> float:
+        if self.expected_rr_ms <= 0:
+            return 120.0
+
+        return float(
+            np.clip(
+                self.expected_rr_ms
+                * self.CANDIDATE_CLUSTER_RR_RATIO,
+                self.CANDIDATE_CLUSTER_MIN_MS,
+                self.CANDIDATE_CLUSTER_MAX_MS,
+            )
+        )
+
+    @staticmethod
+    def _prefer_cluster_representative(
+        current: AdaptiveCandidate,
+        incoming: AdaptiveCandidate,
+    ) -> bool:
+        value_margin = 0.5
+
+        if incoming.polarity > 0:
+            if incoming.value > current.value + value_margin:
+                return True
+        else:
+            if incoming.value < current.value - value_margin:
+                return True
+
+        if (
+            abs(incoming.value - current.value)
+            <= value_margin
+            and incoming.morphology_score
+            > current.morphology_score
+        ):
+            return True
+
+        return False
 
     def _detect_candidate(
         self,
@@ -582,6 +658,36 @@ class AdaptivePPGDetector:
         self,
         candidate: AdaptiveCandidate,
     ) -> None:
+        # 同一宽峰内的同极性微小局部极值先合并成一个 Peak Complex。
+        cluster_window_ms = (
+            self._candidate_cluster_window_ms()
+        )
+
+        for index, current in enumerate(
+            self.candidate_pool
+        ):
+            if (
+                current.polarity
+                != candidate.polarity
+            ):
+                continue
+
+            distance_ms = abs(
+                candidate.t_us
+                - current.t_us
+            ) / 1000.0
+
+            if distance_ms > cluster_window_ms:
+                continue
+
+            if self._prefer_cluster_representative(
+                current,
+                candidate,
+            ):
+                self.candidate_pool[index] = candidate
+
+            return
+
         self.candidate_pool.append(
             candidate
         )
@@ -957,7 +1063,10 @@ class AdaptivePPGDetector:
         min_score: float,
     ) -> AdaptiveCandidate | None:
         if (
-            self.last_accepted_t_us == 0
+            (
+                self.predicted_beat_t_us == 0
+                and self.last_accepted_t_us == 0
+            )
             or self.expected_rr_ms <= 0
         ):
             return None
@@ -973,14 +1082,8 @@ class AdaptivePPGDetector:
             ):
                 continue
 
-            delta_ms = (
+            phase = self._phase_for_time(
                 candidate.t_us
-                - self.last_accepted_t_us
-            ) / 1000.0
-
-            phase = (
-                delta_ms
-                / self.expected_rr_ms
             )
 
             if not (
@@ -1083,26 +1186,26 @@ class AdaptivePPGDetector:
         now_us: int,
     ) -> AdaptiveCandidate | None:
         if (
-            self.last_accepted_t_us == 0
+            self.predicted_beat_t_us == 0
             or self.expected_rr_ms <= 0
             or len(self.signal_points) < 32
         ):
             return None
 
         start_us = (
-            self.last_accepted_t_us
-            + int(
+            self.predicted_beat_t_us
+            - int(
                 self.expected_rr_ms
-                * 0.68
+                * 0.32
                 * 1000
             )
         )
         end_us = min(
             int(now_us),
-            self.last_accepted_t_us
+            self.predicted_beat_t_us
             + int(
                 self.expected_rr_ms
-                * 2.20
+                * 1.20
                 * 1000
             ),
         )
@@ -1203,6 +1306,94 @@ class AdaptivePPGDetector:
             ),
         )
 
+    def _update_phase_tracker_after_accept(
+        self,
+        accepted_t_us: int,
+        first: bool,
+    ) -> None:
+        if self.expected_rr_ms <= 0:
+            self.predicted_beat_t_us = 0
+            self.last_phase_error_ms = 0.0
+            return
+
+        rr_us = int(
+            round(
+                self.expected_rr_ms
+                * 1000.0
+            )
+        )
+
+        if (
+            first
+            or self.predicted_beat_t_us == 0
+        ):
+            self.predicted_beat_t_us = (
+                int(accepted_t_us)
+                + rr_us
+            )
+            self.last_phase_error_ms = 0.0
+            return
+
+        target_t_us = int(
+            self.predicted_beat_t_us
+        )
+        phase_error_ms = (
+            int(accepted_t_us)
+            - target_t_us
+        ) / 1000.0
+
+        self.last_phase_error_ms = float(
+            phase_error_ms
+        )
+
+        correction_us = 0
+
+        if (
+            abs(phase_error_ms)
+            <= self.expected_rr_ms * 0.45
+        ):
+            bounded = float(
+                np.clip(
+                    phase_error_ms,
+                    -40.0,
+                    40.0,
+                )
+            )
+            correction_us = int(
+                round(
+                    bounded
+                    * 0.22
+                    * 1000.0
+                )
+            )
+
+        next_target = (
+            target_t_us
+            + rr_us
+        )
+        guard_us = int(
+            round(
+                self.expected_rr_ms
+                * 0.35
+                * 1000.0
+            )
+        )
+
+        skipped_cycles = 0
+
+        while (
+            next_target
+            <= int(accepted_t_us) + guard_us
+            and skipped_cycles < 3
+        ):
+            next_target += rr_us
+            skipped_cycles += 1
+
+        self.predicted_beat_t_us = (
+            next_target
+            + correction_us
+        )
+
     def _accept(
         self,
         selected: AdaptiveCandidate,
@@ -1265,6 +1456,10 @@ class AdaptivePPGDetector:
             self.rescue_count += 1
 
         self._update_expected_rr()
+        self._update_phase_tracker_after_accept(
+            selected.t_us,
+            first,
+        )
 
         if self.rr_history:
             median_rr = float(
@@ -1308,6 +1503,12 @@ class AdaptivePPGDetector:
             ),
             locked_polarity=int(
                 self.locked_polarity
+            ),
+            predicted_beat_t_us=int(
+                self.predicted_beat_t_us
+            ),
+            phase_error_ms=float(
+                self.last_phase_error_ms
             ),
         )
 
@@ -1368,6 +1569,12 @@ class AdaptivePPGDetector:
             locked_polarity=int(
                 self.locked_polarity
             ),
+            predicted_beat_t_us=int(
+                self.predicted_beat_t_us
+            ),
+            phase_error_ms=float(
+                self.last_phase_error_ms
+            ),
         )
 
         candidate = (
@@ -1408,17 +1615,11 @@ class AdaptivePPGDetector:
                 )
 
         elif (
-            self.last_accepted_t_us != 0
+            self.predicted_beat_t_us != 0
             and self.expected_rr_ms > 0
         ):
-            elapsed_ms = (
+            phase = self._phase_for_time(
                 t_us
-                - self.last_accepted_t_us
-            ) / 1000.0
-
-            phase = (
-                elapsed_ms
-                / self.expected_rr_ms
             )
 
             selected = None

@@ -17,7 +17,7 @@ class SampleFrame:
     avg: float
     filtered: float
 
-    # v0.3.2：peak 表示动态形态候选脉冲，不等于最终心搏。
+    # v0.3.4：peak 表示动态形态候选脉冲，不等于最终心搏。
     peak: int
     hr_bpm: float
 
@@ -39,6 +39,14 @@ class BeatFrame:
     score: float = 0.0
 
     flags: int = 0
+
+    # v0.3.4 桌面端 PPG fiducial 细化证据。
+    # source_t_us=固件原始 Accepted 时间；t_us=HRV 使用的统一相位时间。
+    source_t_us: int = 0
+    timing_shift_ms: float = 0.0
+    timing_quality: float = 1.0
+    timing_uncertainty_ms: float = 0.0
+    refined: bool = False
 
 
 @dataclass(slots=True)
@@ -116,6 +124,13 @@ class BeatRecord:
     score: float = 0.0
     rescued: bool = False
 
+    # v0.3.4 心搏时间标志点质量。
+    source_t_us: int = 0
+    timing_shift_ms: float = 0.0
+    timing_quality: float = 1.0
+    timing_uncertainty_ms: float = 0.0
+    refined: bool = False
+
     status: str = "accepted"
     metric_eligible: bool = True
 
@@ -144,6 +159,13 @@ class TimelineQuality:
     unresolved_suspect_ratio: float = 1.0
     valid_nn_ratio: float = 0.0
     max_consecutive_artifacts: int = 0
+
+    # PPG fiducial timing quality。
+    fiducial_quality_mean: float = 1.0
+    fiducial_uncertainty_p95_ms: float = 0.0
+    fiducial_shift_p95_ms: float = 0.0
+    fiducial_unstable_ratio: float = 0.0
+
     reasons: list[str] = field(default_factory=list)
 
 
@@ -185,6 +207,12 @@ class TimeDomainMetrics:
     sdnn_ms: float = 0.0
     pnn50_percent: float = 0.0
 
+    # v0.3.4 心搏时间标志点稳定度。
+    fiducial_quality_mean: float = 1.0
+    fiducial_uncertainty_p95_ms: float = 0.0
+    fiducial_shift_p95_ms: float = 0.0
+    fiducial_unstable_ratio: float = 0.0
+
     # 保留 artifact_ratio 兼容旧导出字段，同时增加更明确的质量字段。
     artifact_ratio: float = 1.0
     detected_artifact_ratio: float = 1.0
@@ -209,6 +237,12 @@ class FrequencyDomainMetrics:
     hf_nu: float = 0.0
     lf_hf: float = 0.0
     hf_lf: float = 0.0
+
+    # v0.3.4 频域窗口内的心搏时间标志点稳定度。
+    fiducial_quality_mean: float = 1.0
+    fiducial_uncertainty_p95_ms: float = 0.0
+    fiducial_shift_p95_ms: float = 0.0
+    fiducial_unstable_ratio: float = 0.0
 
     corrected_ratio: float = 0.0
     unresolved_suspect_ratio: float = 1.0

@@ -204,6 +204,7 @@ def export_engine_results(
     bundle = engine.export_bundle()
     snapshot = bundle["snapshot"]
     samples = bundle["samples"]
+    firmware_beats = bundle["firmware_beats"]
     raw_beats = bundle["raw_beats"]
     beats = bundle["beats"]
     nn_intervals = bundle["nn_intervals"]
@@ -267,13 +268,51 @@ def export_engine_results(
             "flags",
         ])
 
-        for beat in raw_beats:
+        for beat in firmware_beats:
             writer.writerow([
                 beat.seq,
                 beat.t_us,
                 beat.rr_ms,
                 beat.hr_bpm,
                 beat.score,
+                beat.flags,
+            ])
+
+    with (
+        destination
+        / "beats_refined.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "seq",
+            "source_t_us",
+            "t_us",
+            "rr_ms",
+            "hr_bpm",
+            "score",
+            "timing_shift_ms",
+            "timing_quality",
+            "timing_uncertainty_ms",
+            "refined",
+            "flags",
+        ])
+
+        for beat in raw_beats:
+            writer.writerow([
+                beat.seq,
+                beat.source_t_us,
+                beat.t_us,
+                beat.rr_ms,
+                beat.hr_bpm,
+                beat.score,
+                beat.timing_shift_ms,
+                beat.timing_quality,
+                beat.timing_uncertainty_ms,
+                int(beat.refined),
                 beat.flags,
             ])
 
@@ -299,6 +338,11 @@ def export_engine_results(
             "hr_bpm",
             "score",
             "rescued",
+            "source_t_us",
+            "timing_shift_ms",
+            "timing_quality",
+            "timing_uncertainty_ms",
+            "refined",
             "flags",
         ])
 
@@ -316,6 +360,11 @@ def export_engine_results(
                 beat.hr_bpm,
                 beat.score,
                 int(beat.rescued),
+                beat.source_t_us,
+                beat.timing_shift_ms,
+                beat.timing_quality,
+                beat.timing_uncertainty_ms,
+                int(beat.refined),
                 beat.flags,
             ])
 

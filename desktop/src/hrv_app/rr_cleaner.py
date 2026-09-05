@@ -60,6 +60,22 @@ class BeatTimelineCleaner:
                 flags=b.flags,
                 score=float(getattr(b, "score", 0.0)),
                 rescued=bool(b.flags & 0x10),
+                source_t_us=int(
+                    getattr(b, "source_t_us", 0)
+                    or b.t_us
+                ),
+                timing_shift_ms=float(
+                    getattr(b, "timing_shift_ms", 0.0)
+                ),
+                timing_quality=float(
+                    getattr(b, "timing_quality", 1.0)
+                ),
+                timing_uncertainty_ms=float(
+                    getattr(b, "timing_uncertainty_ms", 0.0)
+                ),
+                refined=bool(
+                    getattr(b, "refined", False)
+                ),
                 status="unresolved",
                 metric_eligible=False,
             )
@@ -410,6 +426,60 @@ class BeatTimelineCleaner:
         corrected_intervals = sum(i.corrected for i in nn_intervals)
         interval_total = max(len(nn_intervals), 1)
 
+        timing_quality = np.asarray(
+            [
+                float(record.timing_quality)
+                for record in records
+                if (record.source_t_us > 0 or record.refined)
+                and np.isfinite(record.timing_quality)
+            ],
+            dtype=float,
+        )
+        timing_uncertainty = np.asarray(
+            [
+                float(record.timing_uncertainty_ms)
+                for record in records
+                if (record.source_t_us > 0 or record.refined)
+                and np.isfinite(record.timing_uncertainty_ms)
+            ],
+            dtype=float,
+        )
+        timing_shift = np.asarray(
+            [
+                abs(float(record.timing_shift_ms))
+                for record in records
+                if (record.source_t_us > 0 or record.refined)
+                and np.isfinite(record.timing_shift_ms)
+            ],
+            dtype=float,
+        )
+
+        fiducial_quality_mean = (
+            float(np.mean(timing_quality))
+            if timing_quality.size
+            else 1.0
+        )
+        fiducial_uncertainty_p95_ms = (
+            float(np.percentile(timing_uncertainty, 95))
+            if timing_uncertainty.size
+            else 0.0
+        )
+        fiducial_shift_p95_ms = (
+            float(np.percentile(timing_shift, 95))
+            if timing_shift.size
+            else 0.0
+        )
+        fiducial_unstable_ratio = (
+            float(
+                np.mean(
+                    timing_quality
+                    < 0.62
+                )
+            )
+            if timing_quality.size
+            else 0.0
+        )
+
         reasons: list[str] = []
         if detected / total > 0.05:
             reasons.append("异常搏比例偏高")
@@ -417,6 +487,8 @@ class BeatTimelineCleaner:
             reasons.append("存在未解决 RR 异常")
         if max_run > 1:
             reasons.append("存在连续异常搏")
+        if fiducial_unstable_ratio > 0.05:
+            reasons.append("心搏时间标志点稳定性偏低")
 
         return TimelineQuality(
             raw_rr_count=len(records),
@@ -426,6 +498,10 @@ class BeatTimelineCleaner:
             unresolved_suspect_ratio=unresolved / total,
             valid_nn_ratio=accepted / total,
             max_consecutive_artifacts=max_run,
+            fiducial_quality_mean=fiducial_quality_mean,
+            fiducial_uncertainty_p95_ms=fiducial_uncertainty_p95_ms,
+            fiducial_shift_p95_ms=fiducial_shift_p95_ms,
+            fiducial_unstable_ratio=fiducial_unstable_ratio,
             reasons=reasons,
         )
 

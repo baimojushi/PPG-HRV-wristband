@@ -9,6 +9,7 @@ import numpy as np
 from .config import AnalysisConfig
 from .confidence import compute_quality_assessment
 from .frequency_stats import compute_frequency_statistics
+from .fiducial_refiner import TemplateFiducialRefiner
 from .hrv_frequency import compute_frequency_domain
 from .hrv_time import compute_time_domain
 from .models import (
@@ -61,9 +62,28 @@ class AnalysisEngine:
         self._samples: deque[SampleFrame] = deque(
             maxlen=sample_capacity
         )
+
+        # 固件 Beat 原样保存，便于确认“存在性判断”是否正确。
+        self._firmware_beats: deque[BeatFrame] = deque(
+            maxlen=5000
+        )
+
+        # `_raw_beats` 从 v0.3.4 起表示：
+        # 固件 Accepted Beat 经 PPG 模板对齐后的 HRV 输入时间线。
         self._raw_beats: deque[BeatFrame] = deque(
             maxlen=5000
         )
+
+        # Beat 到达时可能还没有足够的后向波形。
+        # 延迟约 120 ms 后再做 fiducial refinement，不阻塞串口线程。
+        self._pending_firmware_beats: deque[BeatFrame] = deque()
+        self._fiducial_refiner = TemplateFiducialRefiner(
+            self.config
+        )
+        self._refined_rr_history: deque[float] = deque(
+            maxlen=9
+        )
+        self._last_refined_t_us = 0
 
         self._cleaned_records: list[BeatRecord] = []
         self._nn_intervals: list[NNInterval] = []
@@ -88,7 +108,12 @@ class AnalysisEngine:
     def reset(self) -> None:
         with self._lock:
             self._samples.clear()
+            self._firmware_beats.clear()
             self._raw_beats.clear()
+            self._pending_firmware_beats.clear()
+            self._fiducial_refiner.reset()
+            self._refined_rr_history.clear()
+            self._last_refined_t_us = 0
             self._cleaned_records.clear()
             self._nn_intervals.clear()
             self._metric_history.clear()
@@ -111,7 +136,7 @@ class AnalysisEngine:
             self._samples.append(frame)
 
             # SampleFrame.hr_bpm 是 zeezPPG 基于 Accepted RR 中位数得到的实时 HR。
-            # v0.3.2 保留同极性锁并修复采样时基；这里仍保留采样帧 HR 作为实时 Debug 对照。
+            # v0.3.4 保留同极性锁、增量自相关，并加入独立相位跟踪；这里仍保留采样帧 HR 作为实时 Debug 对照。
             if (
                 np.isfinite(frame.hr_bpm)
                 and frame.hr_bpm > 0
@@ -120,35 +145,229 @@ class AnalysisEngine:
                     frame.hr_bpm
                 )
 
+            self._finalize_pending_beats_locked(
+                force=False
+            )
+
     def ingest_beat(
         self,
         frame: BeatFrame,
     ) -> None:
-        # 调试要求保留“第一搏 rr=0”事件。
-        # BeatTimelineCleaner 自己会过滤 rr<=0，因此保留第一搏不会污染 HRV；
-        # 同时 UI 可以准确显示固件实际生成了多少个 BeatFrame。
+        """
+        保存固件 Accepted Beat，并延迟约 120 ms 做 PPG 模板对齐。
+
+        固件 RR / HR 继续作为诊断证据；正式 HRV 使用 refined Beat 时间线。
+        """
         with self._lock:
-            self._raw_beats.append(frame)
+            firmware_frame = copy.deepcopy(
+                frame
+            )
+            firmware_frame.source_t_us = int(
+                frame.t_us
+            )
 
-            if frame.hr_bpm > 0:
-                self._latest_hr_bpm = frame.hr_bpm
+            self._firmware_beats.append(
+                firmware_frame
+            )
+            self._pending_firmware_beats.append(
+                firmware_frame
+            )
 
-            # 第一搏没有 RR，不触发 HRV 指标刷新。
-            if frame.rr_ms <= 0:
-                return
+            self._finalize_pending_beats_locked(
+                force=False
+            )
 
-            if self._last_metric_us is None:
-                self._last_metric_us = frame.t_us
+    def _finalize_pending_beats_locked(
+        self,
+        force: bool,
+    ) -> None:
+        if not self._pending_firmware_beats:
+            return
+
+        latest_sample_t_us = (
+            self._samples[-1].t_us
+            if self._samples
+            else 0
+        )
+
+        required_future_us = (
+            self._fiducial_refiner.required_future_us()
+        )
+
+        while self._pending_firmware_beats:
+            source = (
+                self._pending_firmware_beats[0]
+            )
 
             if (
-                frame.t_us - self._last_metric_us
+                not force
+                and latest_sample_t_us
+                < source.t_us + required_future_us
+            ):
+                break
+
+            self._pending_firmware_beats.popleft()
+
+            result = self._fiducial_refiner.refine(
+                source,
+                list(self._samples),
+            )
+
+            # 会话结束时最后约 0.4 秒可能没有足够未来波形。
+            # 这类尾部 Beat 保留在 beats_raw.csv 作证据，但不强塞进 HRV 时间轴。
+            if (
+                force
+                and not result.refined
+                and latest_sample_t_us
+                < source.t_us + required_future_us
+            ):
+                continue
+
+            refined_t_us = int(
+                result.t_us
+            )
+
+            # 模板对齐绝不允许改变事件顺序。
+            # 若困难波形导致相关峰跳到前一搏附近，保留固件时间并降低质量。
+            timing_quality = float(
+                result.quality
+            )
+            uncertainty_ms = float(
+                result.uncertainty_ms
+            )
+            timing_shift_ms = float(
+                result.shift_ms
+            )
+            refined_ok = bool(
+                result.refined
+            )
+
+            # --------------------------------------------------------------
+            # v0.3.4 低质量模板对齐不允许改写 RR 时间轴。
+            # --------------------------------------------------------------
+            # 平顶峰、运动噪声或模板失配时，互相关仍然会给出一个数学最大值。
+            # 如果质量低、相关峰过宽、或最佳平移已经靠近搜索边界，
+            # 直接回退到固件 Accepted 时间；低质量证据继续进入 HRV 质量门。
+            if (
+                refined_ok
+                and (
+                    timing_quality
+                    < self.config.fiducial_unstable_quality_threshold
+                    or uncertainty_ms
+                    > self.config.fiducial_uncertainty_fail_ms
+                    or abs(timing_shift_ms)
+                    > self.config.fiducial_max_applied_shift_ms
+                )
+            ):
+                refined_t_us = int(
+                    source.t_us
+                )
+                timing_shift_ms = 0.0
+                refined_ok = False
+
+            if (
+                self._last_refined_t_us > 0
+                and refined_t_us
+                <= self._last_refined_t_us
+                + 180_000
+            ):
+                refined_t_us = int(
+                    source.t_us
+                )
+                timing_shift_ms = 0.0
+                timing_quality = min(
+                    timing_quality,
+                    0.35,
+                )
+                uncertainty_ms = max(
+                    uncertainty_ms,
+                    80.0,
+                )
+                refined_ok = False
+
+            if self._last_refined_t_us == 0:
+                rr_ms = 0.0
+            else:
+                rr_ms = (
+                    refined_t_us
+                    - self._last_refined_t_us
+                ) / 1000.0
+
+                if (
+                    220.0
+                    <= rr_ms
+                    <= 2000.0
+                ):
+                    self._refined_rr_history.append(
+                        float(rr_ms)
+                    )
+
+            self._last_refined_t_us = (
+                refined_t_us
+            )
+
+            if self._refined_rr_history:
+                median_rr = float(
+                    np.median(
+                        np.asarray(
+                            self._refined_rr_history,
+                            dtype=float,
+                        )
+                    )
+                )
+                refined_hr = (
+                    60000.0 / median_rr
+                    if median_rr > 0
+                    else 0.0
+                )
+            else:
+                refined_hr = float(
+                    source.hr_bpm
+                )
+
+            refined = BeatFrame(
+                seq=int(source.seq),
+                t_us=refined_t_us,
+                rr_ms=float(rr_ms),
+                hr_bpm=float(refined_hr),
+                score=float(source.score),
+                flags=int(source.flags),
+                source_t_us=int(source.t_us),
+                timing_shift_ms=timing_shift_ms,
+                timing_quality=timing_quality,
+                timing_uncertainty_ms=uncertainty_ms,
+                refined=refined_ok,
+            )
+
+            self._raw_beats.append(
+                refined
+            )
+
+            if refined_hr > 0:
+                self._latest_hr_bpm = (
+                    refined_hr
+                )
+
+            # 第一搏没有 RR，不触发 HRV 指标刷新。
+            if rr_ms <= 0:
+                continue
+
+            if self._last_metric_us is None:
+                self._last_metric_us = (
+                    refined_t_us
+                )
+
+            if (
+                refined_t_us - self._last_metric_us
                 >= self.config.metric_update_seconds * 1e6
             ):
                 self._update_metrics_locked(
-                    frame.t_us,
+                    refined_t_us,
                     record_history=True,
                 )
-                self._last_metric_us = frame.t_us
+                self._last_metric_us = (
+                    refined_t_us
+                )
 
     def ingest_firmware_metric(
         self,
@@ -179,6 +398,9 @@ class AnalysisEngine:
         record_history: bool = False,
     ) -> AnalysisSnapshot:
         with self._lock:
+            self._finalize_pending_beats_locked(
+                force=True
+            )
             self._update_metrics_locked(
                 self._current_time_us_locked(),
                 record_history=record_history,
@@ -337,6 +559,18 @@ class AnalysisEngine:
                 time_metrics.pnn50_percent
                 if time_metrics.valid
                 else np.nan
+            ),
+            "fiducial_quality_mean": (
+                time_metrics.fiducial_quality_mean
+            ),
+            "fiducial_uncertainty_p95_ms": (
+                time_metrics.fiducial_uncertainty_p95_ms
+            ),
+            "fiducial_shift_p95_ms": (
+                time_metrics.fiducial_shift_p95_ms
+            ),
+            "fiducial_unstable_ratio": (
+                time_metrics.fiducial_unstable_ratio
             ),
 
             "frequency_status": frequency.status,
@@ -499,15 +733,17 @@ class AnalysisEngine:
         np.ndarray,
         np.ndarray,
         np.ndarray,
+        np.ndarray,
         dict,
     ]:
         """
-        返回 v0.3.2 动态检测器调试序列。
+        返回 v0.3.4 动态检测 + fiducial 调试序列。
 
         右侧 0~1 轴：
         - detector_score：连续形态活跃度；
         - candidate：局部极值候选脉冲；
-        - accepted：周期内 winner / rescue 的最终心搏脉冲。
+        - firmware_accepted：固件 Winner 原始时间；
+        - accepted：模板统一相位后的 HRV fiducial。
 
         Candidate 可以多于 Accepted。
         最终 RR / HR / HRV 只使用 Accepted Beat。
@@ -522,10 +758,12 @@ class AnalysisEngine:
                     empty,
                     empty,
                     empty,
+                    empty,
                     {
                         "duration_s": 0.0,
                         "candidate_count": 0,
                         "accepted_beat_count": 0,
+                        "firmware_beat_count": 0,
                         "rescue_count": 0,
                         "candidate_bpm_estimate": 0.0,
                         "accepted_bpm_estimate": 0.0,
@@ -534,6 +772,9 @@ class AnalysisEngine:
                         "sample_hr_bpm": self._latest_sample_hr_bpm,
                         "accepted_hr_bpm": self._latest_hr_bpm,
                         "accepted_score_mean": 0.0,
+                        "fiducial_quality_mean": 0.0,
+                        "fiducial_uncertainty_p95_ms": 0.0,
+                        "fiducial_shift_p95_ms": 0.0,
                         "effective_sample_rate_hz": 0.0,
                         "timing_jitter_p95_ms": 0.0,
                         "timing_overrun_ratio": 0.0,
@@ -557,6 +798,12 @@ class AnalysisEngine:
                 if start_us <= beat.t_us <= end_us
             ]
 
+            firmware_beats = [
+                beat
+                for beat in self._firmware_beats
+                if start_us <= beat.t_us <= end_us
+            ]
+
             sample_hr_bpm = (
                 self._latest_sample_hr_bpm
             )
@@ -573,10 +820,12 @@ class AnalysisEngine:
                 empty,
                 empty,
                 empty,
+                empty,
                 {
                     "duration_s": 0.0,
                     "candidate_count": 0,
                     "accepted_beat_count": 0,
+                    "firmware_beat_count": 0,
                     "rescue_count": 0,
                     "candidate_bpm_estimate": 0.0,
                     "accepted_bpm_estimate": 0.0,
@@ -585,6 +834,9 @@ class AnalysisEngine:
                     "sample_hr_bpm": sample_hr_bpm,
                     "accepted_hr_bpm": accepted_hr_bpm,
                     "accepted_score_mean": 0.0,
+                    "fiducial_quality_mean": 0.0,
+                    "fiducial_uncertainty_p95_ms": 0.0,
+                    "fiducial_shift_p95_ms": 0.0,
                     "effective_sample_rate_hz": 0.0,
                     "timing_jitter_p95_ms": 0.0,
                     "timing_overrun_ratio": 0.0,
@@ -640,52 +892,52 @@ class AnalysisEngine:
         accepted = np.zeros_like(
             candidate
         )
+        firmware_accepted = np.zeros_like(
+            candidate
+        )
 
-        for beat in accepted_beats:
+        def mark_event(
+            target: np.ndarray,
+            event_t_us: int,
+        ) -> None:
             index = int(
                 np.searchsorted(
                     sample_times_us,
-                    beat.t_us,
+                    event_t_us,
                 )
             )
 
-            candidates: list[int] = []
+            nearby: list[int] = []
 
-            if (
-                0
-                <= index
-                < len(sample_times_us)
-            ):
-                candidates.append(
-                    index
-                )
+            if 0 <= index < len(sample_times_us):
+                nearby.append(index)
+            if 0 <= index - 1 < len(sample_times_us):
+                nearby.append(index - 1)
 
-            if (
-                0
-                <= index - 1
-                < len(sample_times_us)
-            ):
-                candidates.append(
-                    index - 1
-                )
-
-            if not candidates:
-                continue
+            if not nearby:
+                return
 
             nearest = min(
-                candidates,
+                nearby,
                 key=lambda candidate_index:
                     abs(
-                        int(
-                            sample_times_us[
-                                candidate_index
-                            ]
-                        )
-                        - int(beat.t_us)
+                        int(sample_times_us[candidate_index])
+                        - int(event_t_us)
                     ),
             )
+            target[nearest] = 1.0
 
-            accepted[nearest] = 1.0
+        for beat in accepted_beats:
+            mark_event(
+                accepted,
+                beat.t_us,
+            )
+
+        for beat in firmware_beats:
+            mark_event(
+                firmware_accepted,
+                beat.t_us,
+            )
 
         duration_s = (
             float(
@@ -747,6 +999,9 @@ class AnalysisEngine:
         accepted_count = len(
             accepted_beats
         )
+        firmware_count = len(
+            firmware_beats
+        )
 
         rescue_count = sum(
             bool(beat.flags & 0x10)
@@ -801,16 +1056,59 @@ class AnalysisEngine:
             else 0.0
         )
 
+        fiducial_quality = np.asarray(
+            [
+                beat.timing_quality
+                for beat in accepted_beats
+                if beat.source_t_us > 0
+            ],
+            dtype=float,
+        )
+        fiducial_uncertainty = np.asarray(
+            [
+                beat.timing_uncertainty_ms
+                for beat in accepted_beats
+                if beat.source_t_us > 0
+            ],
+            dtype=float,
+        )
+        fiducial_shift = np.asarray(
+            [
+                abs(beat.timing_shift_ms)
+                for beat in accepted_beats
+                if beat.source_t_us > 0
+            ],
+            dtype=float,
+        )
+
+        fiducial_quality_mean = (
+            float(np.mean(fiducial_quality))
+            if fiducial_quality.size
+            else 0.0
+        )
+        fiducial_uncertainty_p95_ms = (
+            float(np.percentile(fiducial_uncertainty, 95))
+            if fiducial_uncertainty.size
+            else 0.0
+        )
+        fiducial_shift_p95_ms = (
+            float(np.percentile(fiducial_shift, 95))
+            if fiducial_shift.size
+            else 0.0
+        )
+
         return (
             t,
             filtered,
             detector_score,
             candidate,
+            firmware_accepted,
             accepted,
             {
                 "duration_s": duration_s,
                 "candidate_count": candidate_count,
                 "accepted_beat_count": accepted_count,
+                "firmware_beat_count": firmware_count,
                 "rescue_count": rescue_count,
                 "candidate_bpm_estimate": candidate_bpm,
                 "accepted_bpm_estimate": accepted_bpm,
@@ -823,6 +1121,11 @@ class AnalysisEngine:
                 "sample_hr_bpm": sample_hr_bpm,
                 "accepted_hr_bpm": accepted_hr_bpm,
                 "accepted_score_mean": accepted_score_mean,
+                "fiducial_quality_mean": fiducial_quality_mean,
+                "fiducial_uncertainty_p95_ms": (
+                    fiducial_uncertainty_p95_ms
+                ),
+                "fiducial_shift_p95_ms": fiducial_shift_p95_ms,
                 "effective_sample_rate_hz": float(
                     effective_sample_rate_hz
                 ),
@@ -930,9 +1233,12 @@ class AnalysisEngine:
             return {
                 "snapshot": snapshot,
 
-                # v0.3.1：分析导出同时冻结最近约 5 分钟原始 Sample / Beat。
+                # v0.3.4：分析导出同时冻结最近约 5 分钟原始 Sample / 固件 Beat / HRV 细化 Beat。
                 "samples": copy.deepcopy(
                     list(self._samples)
+                ),
+                "firmware_beats": copy.deepcopy(
+                    list(self._firmware_beats)
                 ),
                 "raw_beats": copy.deepcopy(
                     list(self._raw_beats)
@@ -1049,6 +1355,22 @@ class AnalysisEngine:
                 "max_consecutive_artifacts": (
                     time_metrics.max_consecutive_artifacts
                 ),
+                "fiducial_quality_mean": round(
+                    time_metrics.fiducial_quality_mean,
+                    4,
+                ),
+                "fiducial_uncertainty_p95_ms": round(
+                    time_metrics.fiducial_uncertainty_p95_ms,
+                    3,
+                ),
+                "fiducial_shift_p95_ms": round(
+                    time_metrics.fiducial_shift_p95_ms,
+                    3,
+                ),
+                "fiducial_unstable_ratio": round(
+                    time_metrics.fiducial_unstable_ratio,
+                    5,
+                ),
             },
 
             "frequency_domain": {
@@ -1151,6 +1473,22 @@ class AnalysisEngine:
                 "max_consecutive_artifacts": (
                     frequency.max_consecutive_artifacts
                 ),
+                "fiducial_quality_mean": round(
+                    frequency.fiducial_quality_mean,
+                    4,
+                ),
+                "fiducial_uncertainty_p95_ms": round(
+                    frequency.fiducial_uncertainty_p95_ms,
+                    3,
+                ),
+                "fiducial_shift_p95_ms": round(
+                    frequency.fiducial_shift_p95_ms,
+                    3,
+                ),
+                "fiducial_unstable_ratio": round(
+                    frequency.fiducial_unstable_ratio,
+                    5,
+                ),
             },
 
             "signal_quality": {
@@ -1223,6 +1561,22 @@ class AnalysisEngine:
                 ),
                 "max_consecutive_artifacts": (
                     snapshot.timeline_quality.max_consecutive_artifacts
+                ),
+                "fiducial_quality_mean": round(
+                    snapshot.timeline_quality.fiducial_quality_mean,
+                    4,
+                ),
+                "fiducial_uncertainty_p95_ms": round(
+                    snapshot.timeline_quality.fiducial_uncertainty_p95_ms,
+                    3,
+                ),
+                "fiducial_shift_p95_ms": round(
+                    snapshot.timeline_quality.fiducial_shift_p95_ms,
+                    3,
+                ),
+                "fiducial_unstable_ratio": round(
+                    snapshot.timeline_quality.fiducial_unstable_ratio,
+                    5,
                 ),
             },
 

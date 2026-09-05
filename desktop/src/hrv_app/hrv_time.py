@@ -73,7 +73,7 @@ def compute_time_domain(
     """
     最近 60 个 RR 的时域 HRV。
 
-    v0.3.2 将“能否计算”和“是否达到严格 VALID”分开：
+    v0.3.4 将“能否计算”和“是否达到严格 VALID”分开：
     - VALID：原有严格质量门全部通过；
     - LIMITED：仍有少量孤立异常，但严格 NN 对数量、采样时基和 SQI 足够；
     - INVALID：采样时基、异常比例或连续异常已经影响可靠性。
@@ -161,6 +161,72 @@ def compute_time_domain(
             record_window
         )
     )
+
+    # ---------------------------------------------------------------
+    # v0.3.4：心搏存在性正确，不代表 fiducial 时间位置足够稳定。
+    # 宽峰 / 平顶峰的模板相关峰会变宽，直接进入 HRV 会人为抬高 RMSSD。
+    # ---------------------------------------------------------------
+    # source_t_us>0 表示该 Beat 已经进入 v0.3.4 fiducial 评估。
+    # 即使低质量对齐被拒绝、refined=False，质量证据也必须保留。
+    refined_records = [
+        record
+        for record in record_window
+        if (
+            record.source_t_us > 0
+            or record.refined
+        )
+    ]
+
+    if refined_records:
+        fiducial_quality = np.asarray(
+            [
+                record.timing_quality
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+        fiducial_uncertainty = np.asarray(
+            [
+                record.timing_uncertainty_ms
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+        fiducial_shift = np.asarray(
+            [
+                abs(record.timing_shift_ms)
+                for record in refined_records
+            ],
+            dtype=float,
+        )
+
+        fiducial_quality_mean = float(
+            np.mean(fiducial_quality)
+        )
+        fiducial_uncertainty_p95_ms = float(
+            np.percentile(
+                fiducial_uncertainty,
+                95,
+            )
+        )
+        fiducial_shift_p95_ms = float(
+            np.percentile(
+                fiducial_shift,
+                95,
+            )
+        )
+        fiducial_unstable_ratio = float(
+            np.mean(
+                fiducial_quality
+                < cfg.fiducial_unstable_quality_threshold
+            )
+        )
+    else:
+        # 历史 v2/v3/v0.3.3 数据没有模板细化字段，保持向后兼容。
+        fiducial_quality_mean = 1.0
+        fiducial_uncertainty_p95_ms = 0.0
+        fiducial_shift_p95_ms = 0.0
+        fiducial_unstable_ratio = 0.0
 
     values = np.asarray(
         [
@@ -340,6 +406,36 @@ def compute_time_domain(
         )
 
     if (
+        fiducial_quality_mean
+        < cfg.fiducial_limited_min_mean_quality
+    ):
+        hard_reasons.append(
+            "心搏标志点质量 "
+            f"{fiducial_quality_mean * 100:.0f}% < "
+            f"{cfg.fiducial_limited_min_mean_quality * 100:.0f}%"
+        )
+
+    if (
+        fiducial_uncertainty_p95_ms
+        > cfg.fiducial_limited_max_uncertainty_p95_ms
+    ):
+        hard_reasons.append(
+            "标志点不确定度 p95 "
+            f"{fiducial_uncertainty_p95_ms:.1f} ms > "
+            f"{cfg.fiducial_limited_max_uncertainty_p95_ms:.1f} ms"
+        )
+
+    if (
+        fiducial_unstable_ratio
+        > cfg.fiducial_limited_max_unstable_ratio
+    ):
+        hard_reasons.append(
+            "不稳定标志点 "
+            f"{fiducial_unstable_ratio * 100:.1f}% > "
+            f"{cfg.fiducial_limited_max_unstable_ratio * 100:.1f}%"
+        )
+
+    if (
         signal_quality.sqi
         < cfg.time_min_sqi
     ):
@@ -389,6 +485,12 @@ def compute_time_domain(
             rmssd_ms=rmssd,
             sdnn_ms=sdnn,
             pnn50_percent=pnn50,
+            fiducial_quality_mean=fiducial_quality_mean,
+            fiducial_uncertainty_p95_ms=(
+                fiducial_uncertainty_p95_ms
+            ),
+            fiducial_shift_p95_ms=fiducial_shift_p95_ms,
+            fiducial_unstable_ratio=fiducial_unstable_ratio,
             artifact_ratio=float(
                 artifact_ratio
             ),
@@ -436,6 +538,33 @@ def compute_time_domain(
         strict_reasons.append(
             f"连续异常搏 {max_consecutive} > "
             f"{cfg.time_max_consecutive_artifacts}"
+        )
+
+    if (
+        fiducial_quality_mean
+        < cfg.fiducial_strict_min_mean_quality
+    ):
+        strict_reasons.append(
+            "心搏标志点质量 "
+            f"{fiducial_quality_mean * 100:.0f}%"
+        )
+
+    if (
+        fiducial_uncertainty_p95_ms
+        > cfg.fiducial_strict_max_uncertainty_p95_ms
+    ):
+        strict_reasons.append(
+            "标志点不确定度 p95 "
+            f"{fiducial_uncertainty_p95_ms:.1f} ms"
+        )
+
+    if (
+        fiducial_unstable_ratio
+        > cfg.fiducial_strict_max_unstable_ratio
+    ):
+        strict_reasons.append(
+            "不稳定标志点 "
+            f"{fiducial_unstable_ratio * 100:.1f}%"
         )
 
     if (
@@ -487,6 +616,12 @@ def compute_time_domain(
         rmssd_ci_high_ms=ci_high,
         sdnn_ms=sdnn,
         pnn50_percent=pnn50,
+        fiducial_quality_mean=fiducial_quality_mean,
+        fiducial_uncertainty_p95_ms=(
+            fiducial_uncertainty_p95_ms
+        ),
+        fiducial_shift_p95_ms=fiducial_shift_p95_ms,
+        fiducial_unstable_ratio=fiducial_unstable_ratio,
         artifact_ratio=float(
             artifact_ratio
         ),

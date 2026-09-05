@@ -60,9 +60,32 @@ def test_analysis_export_contains_raw_debug_evidence(tmp_path: Path):
     ).read_text(
         encoding="utf-8-sig"
     )
+    refined = (
+        out / "beats_refined.csv"
+    ).read_text(
+        encoding="utf-8-sig"
+    )
+    cleaned = (
+        out / "beats_cleaned.csv"
+    ).read_text(
+        encoding="utf-8-sig"
+    )
 
     assert "detector_score" in samples
     assert "expected_rr_ms" in samples
     assert "300" in samples
+
+    # beats_raw.csv 保持固件 Accepted Beat 的原始证据，便于回放。
     assert "score" in beats
     assert "750.0" in beats
+
+    # v0.3.4 单独导出用于 HRV 的模板对齐时间线。
+    assert "source_t_us" in refined
+    assert "timing_shift_ms" in refined
+    assert "timing_quality" in refined
+    assert "timing_uncertainty_ms" in refined
+    assert "refined" in refined
+
+    # 清洗后的 Beat 继续保留时间标志点质量证据。
+    assert "timing_quality" in cleaned
+    assert "timing_uncertainty_ms" in cleaned

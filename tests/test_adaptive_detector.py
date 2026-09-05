@@ -296,3 +296,105 @@ def test_stable_same_polarity_rr_overrides_bad_autocorrelation_anchor():
     detector._update_expected_rr()
 
     assert 715.0 <= detector.expected_rr_ms <= 735.0
+
+
+def test_same_polarity_candidates_inside_wide_peak_are_clustered():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+    detector.expected_rr_ms = 700.0
+    detector.locked_polarity = 1
+
+    candidates = [
+        AdaptiveCandidate(
+            seq=100 + index,
+            t_us=1_000_000 + index * 30_000,
+            value=value,
+            morphology_score=score,
+            timing_score=0.5,
+            combined_score=score,
+            amplitude_z=1.0,
+            prominence_z=1.0,
+            slope_z=1.0,
+            curvature_z=1.0,
+            polarity=1,
+        )
+        for index, (value, score)
+        in enumerate(
+            [
+                (30.0, 0.70),
+                (44.0, 0.80),
+                (39.0, 0.90),
+            ]
+        )
+    ]
+
+    for candidate in candidates:
+        detector._push_candidate(
+            candidate
+        )
+
+    assert len(detector.candidate_pool) == 1
+    assert detector.candidate_pool[0].value == 44.0
+
+
+def test_phase_tracker_does_not_use_last_fiducial_as_next_window_origin():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+
+    detector.expected_rr_ms = 700.0
+    detector.locked_polarity = 1
+
+    # 上一搏的局部极值被选晚了 110 ms。
+    detector.last_accepted_t_us = 1_110_000
+
+    # 独立节律目标仍然在真实周期 1.700 s。
+    detector.predicted_beat_t_us = 1_700_000
+
+    true_candidate = AdaptiveCandidate(
+        seq=200,
+        t_us=1_700_000,
+        value=50.0,
+        morphology_score=0.80,
+        timing_score=0.0,
+        combined_score=0.0,
+        amplitude_z=2.0,
+        prominence_z=2.0,
+        slope_z=1.5,
+        curvature_z=1.0,
+        polarity=1,
+    )
+
+    detector.candidate_pool = [
+        true_candidate
+    ]
+
+    selected = detector._select_best_candidate(
+        0.72,
+        1.55,
+        0.40,
+    )
+
+    assert selected is not None
+    assert selected.t_us == 1_700_000
+    assert selected.timing_score > 0.99
+
+
+def test_single_late_fiducial_only_small_corrects_next_phase_target():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+
+    detector.expected_rr_ms = 700.0
+    detector.predicted_beat_t_us = 1_700_000
+
+    # 当前 fiducial 晚 80 ms。
+    detector._update_phase_tracker_after_accept(
+        1_780_000,
+        first=False,
+    )
+
+    # 下一目标应接近 2.400 s，仅允许小增益修正，不能被拖到 2.480 s。
+    assert 2_400_000 <= detector.predicted_beat_t_us <= 2_410_000
+    assert detector.last_phase_error_ms == 80.0

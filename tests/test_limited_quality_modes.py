@@ -277,3 +277,102 @@ def test_frequency_bad_sampling_clock_stays_invalid():
     assert not result.valid
     assert result.status == "INVALID"
     assert "采样时基" in result.validity_reason
+
+
+def test_time_domain_low_fiducial_quality_is_invalid_even_with_clean_rr():
+    records = []
+    intervals = []
+    t_us = 0
+
+    for i in range(60):
+        rr = 750.0
+        t_us += 750_000
+
+        records.append(
+            BeatRecord(
+                seq=i,
+                t_us=t_us,
+                rr_raw_ms=rr,
+                nn_ms=rr,
+                valid=True,
+                corrected=False,
+                reason="",
+                hr_bpm=80.0,
+                flags=1,
+                status="accepted",
+                metric_eligible=True,
+                timing_quality=0.50,
+                timing_uncertainty_ms=60.0,
+                refined=True,
+            )
+        )
+        intervals.append(
+            NNInterval(
+                t_us=t_us,
+                nn_ms=rr,
+            )
+        )
+
+    result = compute_time_domain(
+        records,
+        intervals,
+        make_signal_quality(),
+    )
+
+    assert not result.valid
+    assert result.status == "INVALID"
+    assert "标志点" in result.validity_reason
+
+
+def test_time_domain_moderate_fiducial_uncertainty_is_limited():
+    records = []
+    intervals = []
+    t_us = 0
+
+    for i in range(60):
+        rr = (
+            750.0
+            + 15.0
+            * math.sin(
+                2.0
+                * math.pi
+                * i
+                / 10.0
+            )
+        )
+        t_us += int(rr * 1000)
+
+        records.append(
+            BeatRecord(
+                seq=i,
+                t_us=t_us,
+                rr_raw_ms=rr,
+                nn_ms=rr,
+                valid=True,
+                corrected=False,
+                reason="",
+                hr_bpm=80.0,
+                flags=1,
+                status="accepted",
+                metric_eligible=True,
+                timing_quality=0.80,
+                timing_uncertainty_ms=36.0,
+                refined=True,
+            )
+        )
+        intervals.append(
+            NNInterval(
+                t_us=t_us,
+                nn_ms=rr,
+            )
+        )
+
+    result = compute_time_domain(
+        records,
+        intervals,
+        make_signal_quality(),
+    )
+
+    assert result.valid
+    assert result.status == "LIMITED"
+    assert result.fiducial_uncertainty_p95_ms == 36.0

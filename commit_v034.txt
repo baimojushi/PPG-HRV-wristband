@@ -1,0 +1,10 @@
+v0.3.4 fiducial and independent rhythm phase
+
+- same-polarity Peak Complex clustering in firmware;
+- predicted beat phase decoupled from last Accepted fiducial;
+- small-gain phase correction and predicted-phase Rescue;
+- desktop full-waveform template fiducial refinement;
+- ambiguous template shifts fall back to firmware timestamps;
+- Beat Timing Quality gates time/frequency HRV;
+- beats_refined.csv added;
+- protocol remains v4.

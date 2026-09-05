@@ -158,3 +158,17 @@
 - Welch 绝对功率与频带积分完全不变；
 - 对五种缓峰 fiducial 做离线 A/B，未发现足够净收益，因此不修改 RR 时间戳；
 - CNN 当前保持 NO-GO，原因见 `CNN_ENGINEERING_ROI_v0.3.3.md`。
+
+
+## v0.3.4 独立相位与 fiducial
+
+- Candidate Pool 增加同极性 Peak Complex 合并；
+- 新增独立 predicted beat phase，上一搏 fiducial 不再直接定义下一周期；
+- Rescue 围绕独立预测目标；
+- 桌面端新增整段 PPG 模板互相关 fiducial；
+- 低质量模板平移自动回退固件时间；
+- HRV 增加 Beat Timing Quality；
+- UI 灰虚线显示固件 Winner，绿色显示 HRV fiducial；
+- 导出新增 beats_refined.csv；
+- 协议保持 v4；
+- 需要重新编译并烧录固件。

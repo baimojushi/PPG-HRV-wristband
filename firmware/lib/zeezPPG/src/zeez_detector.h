@@ -47,6 +47,10 @@ struct ZeezDetectorEvent {
 
     // 当前周期预测值，0 表示尚未建立稳定周期。
     float expected_rr_ms = 0.0f;
+
+    // v0.3.4 独立节律相位跟踪 Debug。
+    int64_t predicted_beat_t_us = 0;
+    float phase_error_ms = 0.0f;
 };
 
 struct ZeezCandidateFeatures {
@@ -120,6 +124,12 @@ private:
     static constexpr size_t RR_RING_CAPACITY = 9;
     static constexpr size_t CANDIDATE_POOL_CAPACITY = 16;
 
+    // 同一宽峰内的微小局部极值先聚成一个 Peak Complex。
+    // 动态窗口约为 0.28×RR，并限制在 80–180 ms。
+    static constexpr float CANDIDATE_CLUSTER_MIN_MS = 80.0f;
+    static constexpr float CANDIDATE_CLUSTER_MAX_MS = 180.0f;
+    static constexpr float CANDIDATE_CLUSTER_RR_RATIO = 0.28f;
+
     struct SignalPoint {
         uint32_t seq = 0;
         int64_t t_us = 0;
@@ -185,6 +195,15 @@ private:
     int64_t last_accepted_t_us_ = 0;
     uint32_t last_accepted_seq_ = 0;
 
+    // --------------------------------------------------------------------
+    // v0.3.4 独立节律相位跟踪
+    // --------------------------------------------------------------------
+    // `last_accepted_t_us_` 只用于计算真实 PPG peak-to-peak RR。
+    // Candidate 时间门改用 `predicted_beat_t_us_`，避免某一搏的 fiducial
+    // 偏早/偏晚后把下一周期窗口整体拖着漂移。
+    int64_t predicted_beat_t_us_ = 0;
+    float last_phase_error_ms_ = 0.0f;
+
     // 一个佩戴区间只接受同一极性的心搏极值。
     // 0=未锁定，+1=局部最大值，-1=局部最小值。
     int8_t locked_polarity_ = 0;
@@ -243,6 +262,15 @@ private:
 
     float timingScore(int64_t candidate_t_us) const;
 
+    float phaseForTime(int64_t t_us) const;
+
+    float candidateClusterWindowMs() const;
+
+    bool shouldReplaceClusterRepresentative(
+        const ZeezCandidateFeatures &current,
+        const ZeezCandidateFeatures &incoming
+    ) const;
+
     void pushCandidate(
         const ZeezCandidateFeatures &candidate
     );
@@ -267,6 +295,11 @@ private:
     ) const;
 
     void updateExpectedRR();
+
+    void updatePhaseTrackerAfterAccept(
+        int64_t accepted_t_us,
+        bool first
+    );
 
     // ------------------------------------------------------------------------
     // 周期内“一个 winner”

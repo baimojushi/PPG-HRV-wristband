@@ -308,6 +308,8 @@ void ZeezAdaptiveDetector::reset() {
 
     last_accepted_t_us_ = 0;
     last_accepted_seq_ = 0;
+    predicted_beat_t_us_ = 0;
+    last_phase_error_ms_ = 0.0f;
     locked_polarity_ = 0;
 
     expected_rr_ms_ = 0.0f;
@@ -543,28 +545,120 @@ float ZeezAdaptiveDetector::morphologyScore(
     return clamp01(score);
 }
 
+float ZeezAdaptiveDetector::phaseForTime(
+    int64_t t_us
+) const {
+    if (
+        expected_rr_ms_ <= 0.0f
+    ) {
+        return 0.0f;
+    }
+
+    if (predicted_beat_t_us_ != 0) {
+        // 1.0 表示独立节律预测的当前目标心搏。
+        const float error_ms =
+            static_cast<float>(
+                t_us - predicted_beat_t_us_
+            ) / 1000.0f;
+
+        return
+            1.0f
+            + error_ms / expected_rr_ms_;
+    }
+
+    if (last_accepted_t_us_ != 0) {
+        const float delta_ms =
+            static_cast<float>(
+                t_us - last_accepted_t_us_
+            ) / 1000.0f;
+
+        return delta_ms / expected_rr_ms_;
+    }
+
+    return 0.0f;
+}
+
 float ZeezAdaptiveDetector::timingScore(
     int64_t candidate_t_us
 ) const {
     if (
         expected_rr_ms_ <= 0.0f
-        || last_accepted_t_us_ == 0
+        || (
+            predicted_beat_t_us_ == 0
+            && last_accepted_t_us_ == 0
+        )
     ) {
         return 0.50f;
     }
 
-    const float delta_ms =
-        static_cast<float>(
-            candidate_t_us - last_accepted_t_us_
-        ) / 1000.0f;
-
     const float phase =
-        delta_ms / expected_rr_ms_;
+        phaseForTime(
+            candidate_t_us
+        );
 
     const float sigma = 0.24f;
     const float z = (phase - 1.0f) / sigma;
 
     return expf(-0.5f * z * z);
+}
+
+float ZeezAdaptiveDetector::candidateClusterWindowMs() const {
+    if (expected_rr_ms_ <= 0.0f) {
+        return 120.0f;
+    }
+
+    float window =
+        expected_rr_ms_
+        * CANDIDATE_CLUSTER_RR_RATIO;
+
+    if (window < CANDIDATE_CLUSTER_MIN_MS) {
+        window = CANDIDATE_CLUSTER_MIN_MS;
+    }
+
+    if (window > CANDIDATE_CLUSTER_MAX_MS) {
+        window = CANDIDATE_CLUSTER_MAX_MS;
+    }
+
+    return window;
+}
+
+bool ZeezAdaptiveDetector::shouldReplaceClusterRepresentative(
+    const ZeezCandidateFeatures &current,
+    const ZeezCandidateFeatures &incoming
+) const {
+    // 同极性宽峰内部优先保留真正的幅值极值。
+    // morphology 只在幅值非常接近时作第二裁判。
+    const float value_margin = 0.5f;
+
+    if (incoming.polarity > 0) {
+        if (incoming.value > current.value + value_margin) {
+            return true;
+        }
+
+        if (
+            fabsf(incoming.value - current.value)
+            <= value_margin
+            && incoming.morphology_score
+            > current.morphology_score
+        ) {
+            return true;
+        }
+    } else {
+        if (incoming.value < current.value - value_margin) {
+            return true;
+        }
+
+        if (
+            fabsf(incoming.value - current.value)
+            <= value_margin
+            && incoming.morphology_score
+            > current.morphology_score
+        ) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void ZeezAdaptiveDetector::pushCandidate(
@@ -580,6 +674,49 @@ void ZeezAdaptiveDetector::pushCandidate(
             0.68f * candidate.morphology_score
             + 0.32f * candidate.timing_score
         );
+
+    // -----------------------------------------------------------------------
+    // v0.3.4 Peak Complex 合并
+    // -----------------------------------------------------------------------
+    // 平顶峰 / 宽峰上的 ADC 微抖动会产生多个同极性局部极值。
+    // 它们属于同一个生理波峰，不应该各自进入周期 Winner 竞争。
+    const float cluster_window_ms =
+        candidateClusterWindowMs();
+
+    for (size_t i = 0; i < candidate_pool_count_; ++i) {
+        ZeezCandidateFeatures &current =
+            candidate_pool_[i];
+
+        if (
+            current.polarity
+            != candidate.polarity
+        ) {
+            continue;
+        }
+
+        const float distance_ms =
+            fabsf(
+                static_cast<float>(
+                    candidate.t_us
+                    - current.t_us
+                ) / 1000.0f
+            );
+
+        if (distance_ms > cluster_window_ms) {
+            continue;
+        }
+
+        if (
+            shouldReplaceClusterRepresentative(
+                current,
+                candidate
+            )
+        ) {
+            current = candidate;
+        }
+
+        return;
+    }
 
     if (candidate_pool_count_ < CANDIDATE_POOL_CAPACITY) {
         candidate_pool_[candidate_pool_count_++] =
@@ -1029,6 +1166,97 @@ void ZeezAdaptiveDetector::updateExpectedRR() {
     }
 }
 
+void ZeezAdaptiveDetector::updatePhaseTrackerAfterAccept(
+    int64_t accepted_t_us,
+    bool first
+) {
+    if (expected_rr_ms_ <= 0.0f) {
+        predicted_beat_t_us_ = 0;
+        last_phase_error_ms_ = 0.0f;
+        return;
+    }
+
+    const int64_t rr_us =
+        static_cast<int64_t>(
+            expected_rr_ms_ * 1000.0f
+        );
+
+    if (
+        first
+        || predicted_beat_t_us_ == 0
+    ) {
+        predicted_beat_t_us_ =
+            accepted_t_us + rr_us;
+        last_phase_error_ms_ = 0.0f;
+        return;
+    }
+
+    const int64_t target_t_us =
+        predicted_beat_t_us_;
+
+    const float phase_error_ms =
+        static_cast<float>(
+            accepted_t_us - target_t_us
+        ) / 1000.0f;
+
+    last_phase_error_ms_ =
+        phase_error_ms;
+
+    // 只有当前 Winner 确实属于当前目标周期时才做小相位校正。
+    // 大于 0.45×RR 通常表示漏掉了一整搏，不允许把 PLL 拉到错误相位。
+    int64_t correction_us = 0;
+
+    if (
+        fabsf(phase_error_ms)
+        <= expected_rr_ms_ * 0.45f
+    ) {
+        float bounded_error_ms =
+            phase_error_ms;
+
+        if (bounded_error_ms > 40.0f) {
+            bounded_error_ms = 40.0f;
+        }
+
+        if (bounded_error_ms < -40.0f) {
+            bounded_error_ms = -40.0f;
+        }
+
+        // 0.22 的小增益只修慢漂移，不跟随单搏 fiducial 抖动。
+        correction_us =
+            static_cast<int64_t>(
+                bounded_error_ms
+                * 0.22f
+                * 1000.0f
+            );
+    }
+
+    // 目标相位沿独立节律前进。
+    // 若 accepted 已经落到下一周期，则跨过缺失目标，不用 Accepted 时间重新起算。
+    int64_t next_target =
+        target_t_us + rr_us;
+
+    const int64_t acceptance_guard =
+        static_cast<int64_t>(
+            expected_rr_ms_
+            * 0.35f
+            * 1000.0f
+        );
+
+    uint8_t skipped_cycles = 0;
+
+    while (
+        next_target
+        <= accepted_t_us + acceptance_guard
+        && skipped_cycles < 3
+    ) {
+        next_target += rr_us;
+        ++skipped_cycles;
+    }
+
+    predicted_beat_t_us_ =
+        next_target + correction_us;
+}
+
 bool ZeezAdaptiveDetector::selectBestCandidate(
     float min_phase,
     float max_phase,
@@ -1036,7 +1264,10 @@ bool ZeezAdaptiveDetector::selectBestCandidate(
     ZeezCandidateFeatures &selected
 ) const {
     if (
-        last_accepted_t_us_ == 0
+        (
+            predicted_beat_t_us_ == 0
+            && last_accepted_t_us_ == 0
+        )
         || expected_rr_ms_ <= 0.0f
     ) {
         return false;
@@ -1057,14 +1288,10 @@ bool ZeezAdaptiveDetector::selectBestCandidate(
             continue;
         }
 
-        const float delta_ms =
-            static_cast<float>(
-                candidate.t_us
-                - last_accepted_t_us_
-            ) / 1000.0f;
-
         const float phase =
-            delta_ms / expected_rr_ms_;
+            phaseForTime(
+                candidate.t_us
+            );
 
         if (
             phase < min_phase
@@ -1103,7 +1330,7 @@ bool ZeezAdaptiveDetector::waveformRescue(
     ZeezCandidateFeatures &selected
 ) const {
     if (
-        last_accepted_t_us_ == 0
+        predicted_beat_t_us_ == 0
         || expected_rr_ms_ <= 0.0f
         || signal_ring_.count < 32
     ) {
@@ -1111,15 +1338,15 @@ bool ZeezAdaptiveDetector::waveformRescue(
     }
 
     const int64_t search_start_us =
-        last_accepted_t_us_
-        + static_cast<int64_t>(
-            expected_rr_ms_ * 0.68f * 1000.0f
+        predicted_beat_t_us_
+        - static_cast<int64_t>(
+            expected_rr_ms_ * 0.32f * 1000.0f
         );
 
     const int64_t search_end_us =
-        last_accepted_t_us_
+        predicted_beat_t_us_
         + static_cast<int64_t>(
-            expected_rr_ms_ * 2.20f * 1000.0f
+            expected_rr_ms_ * 1.20f * 1000.0f
         );
 
     const int64_t actual_end_us =
@@ -1270,6 +1497,10 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
 ) {
     ZeezDetectorEvent output;
 
+    const bool first = (
+        last_accepted_t_us_ == 0
+    );
+
     if (locked_polarity_ == 0) {
         locked_polarity_ =
             selected.polarity;
@@ -1304,7 +1535,7 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
     output.expected_rr_ms =
         expected_rr_ms_;
 
-    if (last_accepted_t_us_ == 0) {
+    if (first) {
         output.first = true;
         output.rr_ms = 0;
     } else {
@@ -1348,6 +1579,10 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
     }
 
     updateExpectedRR();
+    updatePhaseTrackerAfterAccept(
+        selected.t_us,
+        first
+    );
 
     const float median_rr =
         rr_ring_.median();
@@ -1361,6 +1596,10 @@ ZeezDetectorEvent ZeezAdaptiveDetector::acceptCandidate(
         current_hr_bpm_;
     output.expected_rr_ms =
         expected_rr_ms_;
+    output.predicted_beat_t_us =
+        predicted_beat_t_us_;
+    output.phase_error_ms =
+        last_phase_error_ms_;
 
     // 一个周期只允许一个 winner。
     // 下一周期重新积累候选。
@@ -1430,6 +1669,10 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         expected_rr_ms_;
     output.locked_polarity =
         locked_polarity_;
+    output.predicted_beat_t_us =
+        predicted_beat_t_us_;
+    output.phase_error_ms =
+        last_phase_error_ms_;
 
     // ------------------------------------------------------------------------
     // 没有相位锚点：先用自相关确定基本周期，再选择一个形态最强的真实极值。
@@ -1469,16 +1712,13 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
     // 已建立相位：一个预测周期内允许多个候选竞争。
     // ------------------------------------------------------------------------
     if (
-        last_accepted_t_us_ != 0
+        predicted_beat_t_us_ != 0
         && expected_rr_ms_ > 0.0f
     ) {
-        const float elapsed_ms =
-            static_cast<float>(
-                t_us - last_accepted_t_us_
-            ) / 1000.0f;
-
         const float phase =
-            elapsed_ms / expected_rr_ms_;
+            phaseForTime(
+                t_us
+            );
 
         ZeezCandidateFeatures selected;
 

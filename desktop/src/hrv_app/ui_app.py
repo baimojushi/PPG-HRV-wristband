@@ -323,7 +323,17 @@ class MainWindow(QMainWindow):
             pen=pg.mkPen("#C79A3B", width=2)
         )
 
-        # 绿线：周期内竞争 / Rescue 后的最终 Accepted Beat。
+        # 灰虚线：固件 Winner 原始时间。
+        # 用于观察“心搏存在性判断”与桌面端统一 fiducial 的偏移。
+        self.firmware_accepted_curve = pg.PlotCurveItem(
+            pen=pg.mkPen(
+                "#9A938C",
+                width=1,
+                style=Qt.PenStyle.DashLine,
+            )
+        )
+
+        # 绿线：模板相关统一相位后的 HRV fiducial。
         self.accepted_beat_curve = pg.PlotCurveItem(
             pen=pg.mkPen("#4F8A6B", width=3)
         )
@@ -335,6 +345,9 @@ class MainWindow(QMainWindow):
             self.candidate_curve
         )
         self.signal_debug_view.addItem(
+            self.firmware_accepted_curve
+        )
+        self.signal_debug_view.addItem(
             self.accepted_beat_curve
         )
 
@@ -344,7 +357,7 @@ class MainWindow(QMainWindow):
         self._sync_signal_debug_view()
 
         self.signal_debug_label = QLabel(
-            "调试：紫=动态形态分数0~1 · 黄=Candidate（含峰/谷） · 绿=同极性 Accepted Beat"
+            "调试：紫=形态分数 · 黄=Candidate · 灰虚线=固件Winner · 绿=HRV统一fiducial"
         )
         self.signal_debug_label.setObjectName("heroSub")
         self.signal_debug_label.setWordWrap(True)
@@ -636,6 +649,18 @@ class MainWindow(QMainWindow):
                 + snapshot.time.validity_reason
             )
 
+        if (
+            snapshot.timeline_quality.raw_rr_count > 0
+            and snapshot.timeline_quality.fiducial_quality_mean < 0.999
+        ):
+            reasons.insert(
+                1 if reasons else 0,
+                "心搏标志点质量 "
+                f"{snapshot.timeline_quality.fiducial_quality_mean * 100:.0f}% · "
+                "不确定度p95 "
+                f"{snapshot.timeline_quality.fiducial_uncertainty_p95_ms:.0f} ms"
+            )
+
         self.quality_reason.setText(
             " · ".join(reasons[:4])
             if reasons
@@ -650,6 +675,7 @@ class MainWindow(QMainWindow):
             y,
             detector_score,
             candidate,
+            firmware_accepted,
             accepted_beat,
             debug_stats,
         ) = self.engine.recent_signal_debug(
@@ -668,6 +694,10 @@ class MainWindow(QMainWindow):
             x,
             candidate,
         )
+        self.firmware_accepted_curve.setData(
+            x,
+            firmware_accepted,
+        )
         self.accepted_beat_curve.setData(
             x,
             accepted_beat,
@@ -679,6 +709,9 @@ class MainWindow(QMainWindow):
         ]
         accepted_count = debug_stats[
             "accepted_beat_count"
+        ]
+        firmware_count = debug_stats[
+            "firmware_beat_count"
         ]
         rescue_count = debug_stats[
             "rescue_count"
@@ -701,6 +734,15 @@ class MainWindow(QMainWindow):
         score_mean = debug_stats[
             "accepted_score_mean"
         ]
+        fiducial_quality = debug_stats[
+            "fiducial_quality_mean"
+        ]
+        fiducial_uncertainty = debug_stats[
+            "fiducial_uncertainty_p95_ms"
+        ]
+        fiducial_shift = debug_stats[
+            "fiducial_shift_p95_ms"
+        ]
         effective_hz = debug_stats[
             "effective_sample_rate_hz"
         ]
@@ -718,15 +760,19 @@ class MainWindow(QMainWindow):
         )
 
         self.signal_debug_label.setText(
-            "调试：紫=形态分数 · 黄=Candidate（含峰/谷） · 绿=同极性Accepted  |  "
+            "调试：紫=形态 · 黄=Candidate · 灰=固件Winner · 绿=统一fiducial  |  "
             f"窗口 {duration:.1f}s · "
             f"Candidate {candidate_count}（≈{candidate_bpm:.0f} bpm） · "
-            f"Accepted {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
+            f"固件 {firmware_count} · "
+            f"HRV Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
             f"Rescue {rescue_count} · "
             f"未选 {difference} · "
             f"预测RR {expected_text} · "
-            f"接受HR {accepted_hr:.0f} bpm · "
-            f"平均Winner分 {score_mean:.2f} · "
+            f"HR {accepted_hr:.0f} bpm · "
+            f"Winner {score_mean:.2f} · "
+            f"Fiducial质量 {fiducial_quality * 100:.0f}% · "
+            f"不确定度p95 {fiducial_uncertainty:.0f} ms · "
+            f"修正p95 {fiducial_shift:.0f} ms · "
             f"采样 {effective_hz:.1f} Hz · "
             f"p95抖动 {timing_p95:.1f} ms · "
             f"超时 {timing_overrun * 100:.1f}%"

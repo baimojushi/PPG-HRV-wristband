@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.3",
-  "base_version": "0.3.2",
-  "release_type": "robust-frequency-cross-validation",
+  "version": "0.3.4",
+  "base_version": "0.3.3",
+  "release_type": "independent-rhythm-phase-and-template-fiducial",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -32,7 +32,14 @@
     "accepted extremum polarity lock",
     "same-polarity candidate competition",
     "same-polarity waveform rescue",
-    "stable same-polarity RR rhythm anchor"
+    "stable same-polarity RR rhythm anchor",
+    "same-polarity Peak Complex clustering",
+    "independent predicted beat phase tracker",
+    "small-gain phase correction decoupled from Accepted fiducial",
+    "predicted-phase waveform rescue",
+    "desktop full-waveform template fiducial refinement",
+    "Beat Timing Quality HRV gate",
+    "low-quality fiducial fallback to firmware timestamp"
   ],
   "protocol": {
     "version": 4,
@@ -50,7 +57,8 @@
     "beat_debug_fields": [
       "score",
       "rescued flag"
-    ]
+    ],
+    "unchanged_from_v0_3_3": true
   },
   "tiny_cnn": {
     "enabled": false,
@@ -60,7 +68,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "41 passed",
+    "tests": "50 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -392,10 +400,49 @@
         }
       ]
     },
-    "firmware_byte_identical_to_v0_3_2": true
+    "firmware_byte_identical_to_v0_3_2": true,
+    "real_measurement_v0_3_4": {
+      "source": "hrv_export.zip; replay limited to beats fully covered by samples_debug.csv",
+      "sample_rate_hz": 125.0,
+      "firmware_beats_in_ppg_window": 455,
+      "desktop_refined_beats": 455,
+      "applied_template_refinements": 438,
+      "rejected_ambiguous_refinements": 17,
+      "old_rmssd_ms": 20.736,
+      "refined_rmssd_ms": 19.642,
+      "refined_hr_bpm": 89.163,
+      "time_status": "VALID",
+      "fiducial_quality_mean": 0.9369000354,
+      "fiducial_uncertainty_p95_ms": 12.0,
+      "fiducial_applied_shift_p95_ms": 8.60623,
+      "fiducial_unstable_ratio": 0.0373626,
+      "timeline_detected_artifact_ratio": 0.00661,
+      "timeline_unresolved_ratio": 0.00661,
+      "timeline_valid_nn_ratio": 0.99339,
+      "max_consecutive_artifacts": 1,
+      "frequency_status": "VALID",
+      "frequency_robust_agreement": 0.9499,
+      "automated_synthetic_checks": {
+        "injected_firmware_fiducial_jitter_ms": [
+          -64,
+          48,
+          72,
+          -40,
+          0
+        ],
+        "template_refined_abs_error_p95_ms": "<8",
+        "wide_peak_same_polarity_candidates": "3 -> 1 Peak Complex representative",
+        "phase_tracker_previous_fiducial_late_ms": 110,
+        "phase_tracker_true_candidate_timing_score": ">0.99",
+        "single_late_fiducial_ms": 80,
+        "next_phase_target_extra_correction_ms": "<=10",
+        "low_quality_boundary_shift_ms": 120,
+        "low_quality_boundary_shift_action": "rejected; firmware timestamp retained"
+      }
+    }
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 106,
+  "file_count": 113,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
@@ -406,6 +453,7 @@
     "commit_v031.txt",
     "commit_v032.txt",
     "commit_v033.txt",
+    "commit_v034.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
@@ -415,6 +463,7 @@
     "desktop/src/hrv_app/confidence.py",
     "desktop/src/hrv_app/config.py",
     "desktop/src/hrv_app/engine.py",
+    "desktop/src/hrv_app/fiducial_refiner.py",
     "desktop/src/hrv_app/frequency_stats.py",
     "desktop/src/hrv_app/hrv_frequency.py",
     "desktop/src/hrv_app/hrv_time.py",
@@ -439,6 +488,7 @@
     "docs/ALGORITHM_v0.3.0.md",
     "docs/ALGORITHM_v0.3.1.md",
     "docs/ALGORITHM_v0.3.2.md",
+    "docs/ALGORITHM_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/ARCHITECTURE.md",
     "docs/CHEEZPPG_SOURCE_REVIEW.md",
     "docs/CNN_ENGINEERING_ROI_v0.3.3.md",
@@ -450,6 +500,7 @@
     "docs/PATCH_v0.2.3_PEAK_EVENT_GATE.md",
     "docs/PATCH_v0.3.1_POLARITY_LOCK.md",
     "docs/PATCH_v0.3.2_SAMPLING_AND_HRV_QUALITY.md",
+    "docs/PATCH_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/PROTOCOL.md",
     "docs/QUALITY_CONFIDENCE.md",
     "docs/THIRD_PARTY.md",
@@ -465,6 +516,8 @@
     "docs/VALIDATION_v0.3.2_REAL_MEASUREMENT.md",
     "docs/VALIDATION_v0.3.3_ROBUST_SPECTRUM.json",
     "docs/VALIDATION_v0.3.3_ROBUST_SPECTRUM.md",
+    "docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.json",
+    "docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.md",
     "firmware/include/acquisition.h",
     "firmware/include/config.h",
     "firmware/include/data_types.h",
@@ -488,6 +541,7 @@
     "tests/conftest.py",
     "tests/test_adaptive_detector.py",
     "tests/test_debug_export.py",
+    "tests/test_fiducial_refiner.py",
     "tests/test_frequency.py",
     "tests/test_frequency_stats.py",
     "tests/test_hrv_time.py",
@@ -508,7 +562,7 @@
     "samples_debug.csv",
     "beats_raw.csv"
   ],
-  "firmware_changed": false,
+  "firmware_changed": true,
   "protocol_version": 4,
   "frequency_validation": {
     "official_power_estimator": "Welch",
@@ -526,14 +580,37 @@
   },
   "cnn_decision": {
     "enabled": false,
-    "decision": "NO-GO for runtime v0.3.3",
-    "compute_feasibility": "high",
-    "current_problem_fit": "low",
-    "planned_role_if_adopted": "candidate morphology scorer only",
-    "estimated_reference_model": {
-      "parameters": 693,
-      "int8_weight_bytes": 693,
-      "macs_per_candidate": 41064
-    }
+    "decision": "NO-GO for runtime v0.3.4",
+    "reason": "current failure mode is cycle-phase coupling and fiducial timing instability; deterministic phase tracking and template alignment are directly auditable",
+    "future_candidate_role": "candidate morphology scorer; fiducial regression only with independent high-precision timing labels such as synchronized ECG"
+  },
+  "fiducial_refinement": {
+    "location": "desktop",
+    "template_window_ms": [
+      -280,
+      280
+    ],
+    "search_ms": 120,
+    "search_step_ms": 4,
+    "future_context_ms": 400,
+    "template_alpha": 0.1,
+    "max_applied_shift_ms": 96,
+    "unstable_quality_threshold": 0.62,
+    "uncertainty_fail_ms": 80,
+    "uses_rr_regularization": false,
+    "exports": [
+      "beats_raw.csv",
+      "beats_refined.csv",
+      "beats_cleaned.csv"
+    ]
+  },
+  "rhythm_phase_tracker": {
+    "location": "firmware",
+    "phase_error_clip_ms": 40,
+    "phase_correction_gain": 0.22,
+    "candidate_cluster_rr_ratio": 0.28,
+    "candidate_cluster_min_ms": 80,
+    "candidate_cluster_max_ms": 180,
+    "protocol_fields_changed": false
   }
 }
