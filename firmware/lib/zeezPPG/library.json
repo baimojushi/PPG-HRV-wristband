@@ -1,0 +1,7 @@
+{
+  "name": "zeezPPG",
+  "version": "0.3.0",
+  "description": "Adaptive ring-buffer PPG beat detector for the PPG/HRV wristband project",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

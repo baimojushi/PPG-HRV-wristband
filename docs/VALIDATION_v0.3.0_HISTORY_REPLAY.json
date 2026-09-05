@@ -1,0 +1,47 @@
+[
+  {
+    "file": "record.csv",
+    "accepted_hr_bpm": 80.645,
+    "rr_count": 1949,
+    "rr_median_ms": 872.0,
+    "rr_p95_ms": 1032.0,
+    "rr_max_ms": 1216.0,
+    "multi_cycle_gap_count": 0,
+    "time_status": "INVALID",
+    "formal_rmssd_ms": null,
+    "candidate_rmssd_ms": 74.777,
+    "artifact_ratio": 0.11667,
+    "sqi": 0.55,
+    "frequency_status": "INVALID"
+  },
+  {
+    "file": "娟第一次冥想.csv",
+    "accepted_hr_bpm": 69.444,
+    "rr_count": 1923,
+    "rr_median_ms": 832.0,
+    "rr_p95_ms": 896.0,
+    "rr_max_ms": 968.0,
+    "multi_cycle_gap_count": 0,
+    "time_status": "INVALID",
+    "formal_rmssd_ms": null,
+    "candidate_rmssd_ms": 25.427,
+    "artifact_ratio": 0.0,
+    "sqi": 0.55,
+    "frequency_status": "INVALID"
+  },
+  {
+    "file": "状态不佳时读教科书.csv",
+    "accepted_hr_bpm": 68.182,
+    "rr_count": 793,
+    "rr_median_ms": 792.0,
+    "rr_p95_ms": 912.0,
+    "rr_max_ms": 1400.0,
+    "multi_cycle_gap_count": 0,
+    "time_status": "INVALID",
+    "formal_rmssd_ms": null,
+    "candidate_rmssd_ms": 87.897,
+    "artifact_ratio": 0.06667,
+    "sqi": 0.9232,
+    "frequency_status": "INVALID"
+  }
+]

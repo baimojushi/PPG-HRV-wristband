@@ -1,0 +1,19 @@
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/.browse.c_cpp.db*
+
+# Python
+desktop/.venv/
+desktop/__pycache__/
+desktop/**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime data
+sessions/
+exports/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
