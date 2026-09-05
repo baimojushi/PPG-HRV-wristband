@@ -18,19 +18,42 @@ FREQUENCY_FIELDS = (
 
 def compute_frequency_statistics(history: Sequence[dict]) -> dict:
     """
-    对所有通过质量门的 20 秒频域窗口做会话级统计。
+    对所有允许正式输出的 20 秒频域窗口做会话级统计。
 
-    输出 mean / median / std / p25 / p75 / min / max，
-    并记录有效窗口数和有效覆盖率。
+    VALID 与 LIMITED 都属于“可计算窗口”，
+    但单独记录严格 VALID / LIMITED 数量，避免把两种质量等级混为一谈。
     """
     rows = [
         row
         for row in history
-        if row.get("frequency_status") == "VALID"
+        if row.get("frequency_status")
+        in {"VALID", "LIMITED"}
+        and np.isfinite(
+            row.get(
+                "total_power_ms2",
+                np.nan,
+            )
+        )
     ]
 
+    strict_valid_count = sum(
+        row.get("frequency_status")
+        == "VALID"
+        for row in rows
+    )
+
+    limited_count = sum(
+        row.get("frequency_status")
+        == "LIMITED"
+        for row in rows
+    )
+
     result: dict = {
+        # 兼容旧 UI 字段：valid_window_count 现在表示“可计算窗口”。
         "valid_window_count": len(rows),
+        "usable_window_count": len(rows),
+        "strict_valid_window_count": strict_valid_count,
+        "limited_window_count": limited_count,
         "total_window_count": len(history),
         "valid_window_ratio": (
             len(rows) / len(history)

@@ -192,7 +192,26 @@ private:
     float expected_rr_ms_ = 0.0f;
     float autocorr_rr_ms_ = 0.0f;
     float autocorr_confidence_ = 0.0f;
-    uint32_t samples_since_autocorr_ = 0;
+
+    // --------------------------------------------------------------------
+    // v0.3.2 增量自相关
+    // --------------------------------------------------------------------
+    // v0.3.1 每 16 个采样一次性扫描全部 lag。
+    // 实测经典 ESP32 上该扫描造成约 58 ms 阻塞，使平均采样率降到约 86 Hz。
+    //
+    // 新实现每个采样最多只计算 4 个 lag，每个 lag 最多 96 对样本。
+    // 总运算量相近，但被均匀摊到 125 Hz 主循环，不再形成周期性长停顿。
+    static constexpr size_t AUTOCORR_CORR_CAPACITY = 192;
+    static constexpr uint8_t AUTOCORR_LAGS_PER_UPDATE = 4;
+    static constexpr size_t AUTOCORR_MAX_PAIRS_PER_LAG = 96;
+
+    float autocorr_scan_values_[AUTOCORR_CORR_CAPACITY] = {};
+    bool autocorr_scan_valid_[AUTOCORR_CORR_CAPACITY] = {};
+
+    size_t autocorr_scan_min_lag_ = 0;
+    size_t autocorr_scan_max_lag_ = 0;
+    size_t autocorr_scan_lag_ = 0;
+    bool autocorr_scan_active_ = false;
 
     float current_hr_bpm_ = 0.0f;
 
@@ -234,7 +253,15 @@ private:
     // 周期预测
     // ------------------------------------------------------------------------
     void maybeUpdateAutocorrelation();
-    bool estimateAutocorrelationPeriod(
+
+    bool startAutocorrelationScan();
+
+    bool computeAutocorrelationLag(
+        size_t lag,
+        float &correlation
+    ) const;
+
+    bool finalizeAutocorrelationScan(
         float &period_ms,
         float &confidence
     ) const;

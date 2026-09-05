@@ -104,7 +104,7 @@ def load_csv_into_engine(
     total_bytes = max(path.stat().st_size, 1)
     processed_rows = 0
 
-    # v0.3.1：历史 CSV 直接用 filtered PPG 重跑动态检测器。
+    # v0.3.2：历史 CSV 直接用 filtered PPG 重跑动态检测器。
     # 旧 peak/HR 只作为历史原始列保留，不参与新的 Accepted Beat 判定。
     detector = AdaptivePPGDetector(
         sample_rate_hz=cfg.sample_rate_hz,

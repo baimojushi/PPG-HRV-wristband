@@ -17,7 +17,7 @@ class SampleFrame:
     avg: float
     filtered: float
 
-    # v0.3.1：peak 表示动态形态候选脉冲，不等于最终心搏。
+    # v0.3.2：peak 表示动态形态候选脉冲，不等于最终心搏。
     peak: int
     hr_bpm: float
 
@@ -160,7 +160,12 @@ class SignalQuality:
     clip_low_ratio: float = 0.0
     clip_high_ratio: float = 0.0
     sequence_drop_ratio: float = 0.0
+
+    # t_us 直接反推的真实采样时基。
+    effective_sample_rate_hz: float = 0.0
     timing_jitter_p95_ms: float = 0.0
+    timing_overrun_ratio: float = 0.0
+
     protocol_error_ratio: float = 0.0
     protocol_seq_gaps: int = 0
     reasons: list[str] = field(default_factory=list)
@@ -207,7 +212,15 @@ class FrequencyDomainMetrics:
 
     corrected_ratio: float = 0.0
     unresolved_suspect_ratio: float = 1.0
+    max_consecutive_artifacts: int = 0
+
+    # Welch vs Lomb–Scargle 的归一化谱形相关。
     spectral_agreement: float = 0.0
+
+    # PCHIP vs 线性插值 Welch 谱形相关。
+    # 用于判断频谱是否被某一种插值方式主导。
+    interpolation_agreement: float = 0.0
+
     freqs_hz: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
     psd_ms2_hz: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
 

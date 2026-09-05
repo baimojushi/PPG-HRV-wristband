@@ -212,7 +212,7 @@ def export_engine_results(
         "frequency_statistics"
     ]
 
-    # v0.3.1：把用于算法复盘的原始证据一起导出。
+    # v0.3.2：把用于算法复盘的原始证据一起导出。
     with (
         destination
         / "samples_debug.csv"

@@ -49,8 +49,8 @@ def test_legacy_peak_plateau_is_confirmed_at_local_peak(tmp_path: Path):
 
     beats = engine.beat_records()
 
-    # 动态检测器约需 1.7 秒建立自相关周期，因此启动阶段允许少一搏。
-    assert len(beats) >= 4
+    # v0.3.2 增量自相关用固定 CPU 预算，约 2 秒建立第一轮周期；启动阶段允许少两搏。
+    assert len(beats) >= 3
     assert all(
         790 <= beat.rr_raw_ms <= 810
         for beat in beats

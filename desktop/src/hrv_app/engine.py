@@ -111,7 +111,7 @@ class AnalysisEngine:
             self._samples.append(frame)
 
             # SampleFrame.hr_bpm 是 zeezPPG 基于 Accepted RR 中位数得到的实时 HR。
-            # v0.3.1 已加入同极性锁；这里仍保留采样帧 HR 作为实时 Debug 对照。
+            # v0.3.2 保留同极性锁并修复采样时基；这里仍保留采样帧 HR 作为实时 Debug 对照。
             if (
                 np.isfinite(frame.hr_bpm)
                 and frame.hr_bpm > 0
@@ -383,6 +383,12 @@ class AnalysisEngine:
                 if frequency.valid
                 else np.nan
             ),
+            "spectral_agreement": (
+                frequency.spectral_agreement
+            ),
+            "interpolation_agreement": (
+                frequency.interpolation_agreement
+            ),
 
             "sqi": snapshot.signal_quality.sqi,
             "overall_status": snapshot.quality.status,
@@ -487,7 +493,7 @@ class AnalysisEngine:
         dict,
     ]:
         """
-        返回 v0.3.1 动态检测器调试序列。
+        返回 v0.3.2 动态检测器调试序列。
 
         右侧 0~1 轴：
         - detector_score：连续形态活跃度；
@@ -519,6 +525,9 @@ class AnalysisEngine:
                         "sample_hr_bpm": self._latest_sample_hr_bpm,
                         "accepted_hr_bpm": self._latest_hr_bpm,
                         "accepted_score_mean": 0.0,
+                        "effective_sample_rate_hz": 0.0,
+                        "timing_jitter_p95_ms": 0.0,
+                        "timing_overrun_ratio": 0.0,
                     },
                 )
 
@@ -567,6 +576,9 @@ class AnalysisEngine:
                     "sample_hr_bpm": sample_hr_bpm,
                     "accepted_hr_bpm": accepted_hr_bpm,
                     "accepted_score_mean": 0.0,
+                    "effective_sample_rate_hz": 0.0,
+                    "timing_jitter_p95_ms": 0.0,
+                    "timing_overrun_ratio": 0.0,
                 },
             )
 
@@ -676,6 +688,47 @@ class AnalysisEngine:
             else 0.0
         )
 
+        if (
+            len(sample_times_us) >= 2
+            and duration_s > 0
+        ):
+            effective_sample_rate_hz = (
+                (len(sample_times_us) - 1)
+                / duration_s
+            )
+
+            dt_ms = (
+                np.diff(
+                    sample_times_us.astype(float)
+                )
+                / 1000.0
+            )
+
+            expected_ms = (
+                1000.0
+                / self.config.sample_rate_hz
+            )
+
+            timing_jitter_p95_ms = float(
+                np.percentile(
+                    np.abs(
+                        dt_ms - expected_ms
+                    ),
+                    95,
+                )
+            )
+
+            timing_overrun_ratio = float(
+                np.mean(
+                    dt_ms
+                    > expected_ms * 1.5
+                )
+            )
+        else:
+            effective_sample_rate_hz = 0.0
+            timing_jitter_p95_ms = 0.0
+            timing_overrun_ratio = 0.0
+
         candidate_count = int(
             np.count_nonzero(
                 candidate > 0.5
@@ -761,6 +814,15 @@ class AnalysisEngine:
                 "sample_hr_bpm": sample_hr_bpm,
                 "accepted_hr_bpm": accepted_hr_bpm,
                 "accepted_score_mean": accepted_score_mean,
+                "effective_sample_rate_hz": float(
+                    effective_sample_rate_hz
+                ),
+                "timing_jitter_p95_ms": float(
+                    timing_jitter_p95_ms
+                ),
+                "timing_overrun_ratio": float(
+                    timing_overrun_ratio
+                ),
             },
         )
 
@@ -1042,8 +1104,19 @@ class AnalysisEngine:
                         frequency.spectral_agreement,
                         4,
                     )
-                    if frequency.valid
+                    if frequency.spectral_agreement > 0
                     else None
+                ),
+                "interpolation_agreement": (
+                    round(
+                        frequency.interpolation_agreement,
+                        4,
+                    )
+                    if frequency.interpolation_agreement > 0
+                    else None
+                ),
+                "max_consecutive_artifacts": (
+                    frequency.max_consecutive_artifacts
                 ),
             },
 
@@ -1071,9 +1144,17 @@ class AnalysisEngine:
                     snapshot.signal_quality.sequence_drop_ratio,
                     5,
                 ),
+                "effective_sample_rate_hz": round(
+                    snapshot.signal_quality.effective_sample_rate_hz,
+                    3,
+                ),
                 "timing_jitter_p95_ms": round(
                     snapshot.signal_quality.timing_jitter_p95_ms,
                     4,
+                ),
+                "timing_overrun_ratio": round(
+                    snapshot.signal_quality.timing_overrun_ratio,
+                    5,
                 ),
                 "protocol_error_ratio": round(
                     snapshot.signal_quality.protocol_error_ratio,

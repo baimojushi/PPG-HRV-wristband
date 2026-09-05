@@ -10,7 +10,7 @@
 
 namespace {
 
-// v0.3.0：完整算法源码位于 firmware/lib/zeezPPG。
+// v0.3.2：完整算法源码位于 firmware/lib/zeezPPG。
 // 采集任务独占算法对象，其他任务只消费 POD 队列。
 zeezPPG ppg(
     PPG_INPUT_PIN,

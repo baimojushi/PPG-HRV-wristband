@@ -113,8 +113,23 @@ def compute_frequency_domain(
     protocol_health: ProtocolHealth,
     config: AnalysisConfig | None = None,
 ) -> FrequencyDomainMetrics:
+    """
+    5 分钟 HRV 频域。
+
+    v0.3.2 使用三重互证：
+    1. PCHIP tachogram → Welch；
+    2. 线性插值 tachogram → Welch；
+    3. 原始不规则 NN 时间戳 → Lomb–Scargle。
+
+    少量孤立异常不再仅凭“1% 未解决”直接否决整段 5 分钟。
+    只有采样时基、异常拓扑或三条谱路径不一致时才判 INVALID。
+    """
     cfg = config or AnalysisConfig()
-    prepared = prepare_tachogram(nn_intervals, cfg)
+
+    prepared = prepare_tachogram(
+        nn_intervals,
+        cfg,
+    )
 
     if prepared is None:
         return FrequencyDomainMetrics(
@@ -123,19 +138,33 @@ def compute_frequency_domain(
             validity_reason="频域窗口积累中",
         )
 
-    uniform_t, tachogram, duration, usable = prepared
-    progress = float(np.clip(
-        duration / cfg.frequency_window_seconds,
-        0.0,
-        1.0,
-    ))
+    (
+        uniform_t,
+        tachogram,
+        duration,
+        usable,
+    ) = prepared
 
-    if duration < cfg.frequency_window_seconds * 0.995:
+    progress = float(
+        np.clip(
+            duration
+            / cfg.frequency_window_seconds,
+            0.0,
+            1.0,
+        )
+    )
+
+    if (
+        duration
+        < cfg.frequency_window_seconds
+        * 0.995
+    ):
         return FrequencyDomainMetrics(
             valid=False,
             status=LIMITED,
             validity_reason=(
-                f"频域窗口积累中：{duration:.0f}/"
+                f"频域窗口积累中："
+                f"{duration:.0f}/"
                 f"{cfg.frequency_window_seconds:.0f} 秒"
             ),
             progress=progress,
@@ -143,71 +172,88 @@ def compute_frequency_domain(
         )
 
     latest_us = usable[-1].t_us
-    start_us = latest_us - int(cfg.frequency_window_seconds * 1e6)
+    start_us = (
+        latest_us
+        - int(
+            cfg.frequency_window_seconds
+            * 1e6
+        )
+    )
 
     record_window = [
         record
         for record in records
-        if start_us <= record.t_us <= latest_us
+        if start_us
+        <= record.t_us
+        <= latest_us
     ]
 
-    total_records = max(len(record_window), 1)
+    total_records = max(
+        len(record_window),
+        1,
+    )
+
+    unresolved_statuses = {
+        "hard_outlier",
+        "local_outlier",
+        "no_wear",
+        "unresolved",
+    }
+
     unresolved_records = sum(
-        record.status in {
-            "hard_outlier",
-            "local_outlier",
-            "no_wear",
-            "unresolved",
-        }
+        record.status
+        in unresolved_statuses
         for record in record_window
     )
 
-    # 修复比例按“实际进入频谱的 NN 时间轴”计算。
-    # 漏搏会插入多个合成 NN，不能只按一个原始 BeatRecord 计数。
-    corrected_ratio = (
-        sum(interval.corrected for interval in usable)
-        / max(len(usable), 1)
+    unresolved_ratio = (
+        unresolved_records
+        / total_records
     )
-    unresolved_ratio = unresolved_records / total_records
 
-    gate_reasons: list[str] = []
-    if signal_quality.sqi < cfg.frequency_min_sqi:
-        gate_reasons.append(
-            f"SQI {signal_quality.sqi * 100:.0f}% < "
-            f"{cfg.frequency_min_sqi * 100:.0f}%"
-        )
-    if corrected_ratio > cfg.frequency_max_corrected_ratio:
-        gate_reasons.append(
-            f"频域修复比例 {corrected_ratio * 100:.1f}% > "
-            f"{cfg.frequency_max_corrected_ratio * 100:.1f}%"
-        )
-    if unresolved_ratio > cfg.frequency_max_unresolved_ratio:
-        gate_reasons.append(
-            f"未解决异常 {unresolved_ratio * 100:.1f}% > "
-            f"{cfg.frequency_max_unresolved_ratio * 100:.1f}%"
-        )
-    if protocol_health.error_ratio > cfg.protocol_max_error_ratio:
-        gate_reasons.append(
-            f"协议错误 {protocol_health.error_ratio * 100:.2f}% > "
-            f"{cfg.protocol_max_error_ratio * 100:.2f}%"
-        )
+    # 连续异常比“同样数量但彼此孤立”更危险。
+    max_consecutive = 0
+    current_run = 0
 
-    # 质量门失败后，不继续生成“看起来精确”的 LF/HF 数值。
-    if gate_reasons:
-        return FrequencyDomainMetrics(
-            valid=False,
-            status=INVALID,
-            validity_reason="；".join(gate_reasons),
-            progress=1.0,
-            duration_seconds=duration,
-            corrected_ratio=corrected_ratio,
-            unresolved_suspect_ratio=unresolved_ratio,
+    for record in record_window:
+        if (
+            record.status
+            in unresolved_statuses
+        ):
+            current_run += 1
+            max_consecutive = max(
+                max_consecutive,
+                current_run,
+            )
+        else:
+            current_run = 0
+
+    corrected_ratio = (
+        sum(
+            interval.corrected
+            for interval in usable
         )
+        / max(
+            len(usable),
+            1,
+        )
+    )
 
-    detrended = signal.detrend(tachogram, type="linear")
+    # -------------------------------------------------------------------
+    # Welch 主频谱：PCHIP tachogram
+    # -------------------------------------------------------------------
+    detrended = signal.detrend(
+        tachogram,
+        type="linear",
+    )
 
-    nperseg = min(1024, len(detrended))
-    noverlap = nperseg // 2
+    nperseg = min(
+        1024,
+        len(detrended),
+    )
+    noverlap = (
+        nperseg // 2
+    )
 
     freqs, psd = signal.welch(
         detrended,
@@ -223,27 +269,219 @@ def compute_frequency_domain(
         (freqs >= cfg.vlf_low_hz)
         & (freqs <= cfg.hf_high_hz)
     )
-    freqs_use = freqs[analysis_mask]
-    psd_use = psd[analysis_mask]
 
+    freqs_use = (
+        freqs[analysis_mask]
+    )
+    psd_use = (
+        psd[analysis_mask]
+    )
+
+    # -------------------------------------------------------------------
+    # 插值敏感性：同一 NN 时间轴改用线性插值，再做完全相同的 Welch。
+    # 两者高度一致时，说明结果不是 PCHIP 形状“造出来”的。
+    # -------------------------------------------------------------------
+    irregular_t = np.asarray(
+        [
+            interval.t_us / 1e6
+            for interval in usable
+        ],
+        dtype=float,
+    )
+
+    irregular_y = np.asarray(
+        [
+            interval.nn_ms
+            for interval in usable
+        ],
+        dtype=float,
+    )
+
+    irregular_t = (
+        irregular_t
+        - irregular_t[0]
+    )
+
+    linear_tachogram = np.interp(
+        uniform_t,
+        irregular_t,
+        irregular_y,
+    )
+
+    linear_detrended = (
+        signal.detrend(
+            linear_tachogram,
+            type="linear",
+        )
+    )
+
+    (
+        linear_freqs,
+        linear_psd,
+    ) = signal.welch(
+        linear_detrended,
+        fs=cfg.resample_hz,
+        window="hann",
+        nperseg=nperseg,
+        noverlap=noverlap,
+        detrend=False,
+        scaling="density",
+    )
+
+    linear_mask = (
+        (linear_freqs >= cfg.vlf_low_hz)
+        & (linear_freqs <= cfg.hf_high_hz)
+    )
+
+    linear_shape = (
+        linear_psd[linear_mask]
+    )
+
+    interpolation_agreement = 0.0
+
+    if (
+        psd_use.size >= 5
+        and linear_shape.size
+        == psd_use.size
+    ):
+        pchip_norm = (
+            psd_use
+            / max(
+                float(
+                    np.sum(
+                        psd_use
+                    )
+                ),
+                1e-12,
+            )
+        )
+
+        linear_norm = (
+            linear_shape
+            / max(
+                float(
+                    np.sum(
+                        linear_shape
+                    )
+                ),
+                1e-12,
+            )
+        )
+
+        if (
+            np.std(pchip_norm) > 0
+            and np.std(linear_norm) > 0
+        ):
+            corr = float(
+                np.corrcoef(
+                    pchip_norm,
+                    linear_norm,
+                )[0, 1]
+            )
+
+            interpolation_agreement = float(
+                np.clip(
+                    corr,
+                    0.0,
+                    1.0,
+                )
+            )
+
+    # -------------------------------------------------------------------
+    # Lomb–Scargle：直接使用不规则 NN 时间戳，不经过 4 Hz 插值。
+    # -------------------------------------------------------------------
+    spectral_agreement = 0.0
+
+    if (
+        irregular_t.size >= 30
+        and freqs_use.size >= 5
+    ):
+        lomb_y = signal.detrend(
+            irregular_y,
+            type="linear",
+        )
+
+        angular = (
+            2.0
+            * np.pi
+            * freqs_use
+        )
+
+        lomb = signal.lombscargle(
+            irregular_t,
+            lomb_y,
+            angular,
+            normalize=True,
+        )
+
+        welch_shape = (
+            psd_use
+            / max(
+                float(
+                    np.sum(
+                        psd_use
+                    )
+                ),
+                1e-12,
+            )
+        )
+
+        lomb_shape = (
+            lomb
+            / max(
+                float(
+                    np.sum(
+                        lomb
+                    )
+                ),
+                1e-12,
+            )
+        )
+
+        if (
+            np.std(welch_shape) > 0
+            and np.std(lomb_shape) > 0
+        ):
+            corr = float(
+                np.corrcoef(
+                    welch_shape,
+                    lomb_shape,
+                )[0, 1]
+            )
+
+            spectral_agreement = float(
+                np.clip(
+                    corr,
+                    0.0,
+                    1.0,
+                )
+            )
+
+    # -------------------------------------------------------------------
+    # 频带积分仍以 Welch 的绝对功率为主。
+    # Lomb 用于独立谱形互证。
+    # -------------------------------------------------------------------
     total_power = _band_power(
         freqs,
         psd,
         cfg.vlf_low_hz,
         cfg.hf_high_hz,
     )
+
     vlf = _band_power(
         freqs,
         psd,
         cfg.vlf_low_hz,
         cfg.vlf_high_hz,
     )
+
     lf = _band_power(
         freqs,
         psd,
         cfg.lf_low_hz,
         cfg.lf_high_hz,
     )
+
     hf = _band_power(
         freqs,
         psd,
@@ -251,71 +489,228 @@ def compute_frequency_domain(
         cfg.hf_high_hz,
     )
 
-    lf_hf = float(lf / hf) if hf > 1e-12 else 0.0
-    hf_lf = float(hf / lf) if lf > 1e-12 else 0.0
+    lf_hf = (
+        float(
+            lf / hf
+        )
+        if hf > 1e-12
+        else 0.0
+    )
 
-    normalized_denominator = lf + hf
+    hf_lf = (
+        float(
+            hf / lf
+        )
+        if lf > 1e-12
+        else 0.0
+    )
+
+    normalized_denominator = (
+        lf + hf
+    )
+
     lf_nu = (
-        float(lf / normalized_denominator * 100.0)
-        if normalized_denominator > 1e-12
+        float(
+            lf
+            / normalized_denominator
+            * 100.0
+        )
+        if normalized_denominator
+        > 1e-12
         else 0.0
     )
+
     hf_nu = (
-        float(hf / normalized_denominator * 100.0)
-        if normalized_denominator > 1e-12
+        float(
+            hf
+            / normalized_denominator
+            * 100.0
+        )
+        if normalized_denominator
+        > 1e-12
         else 0.0
     )
 
-    # Lomb–Scargle 只作为形状交叉验证；最终绝对功率仍来自 Welch。
-    irregular_t = np.asarray(
-        [interval.t_us / 1e6 for interval in usable],
-        dtype=float,
+    # -------------------------------------------------------------------
+    # 硬门：超过任一项都不正式输出。
+    # -------------------------------------------------------------------
+    hard_reasons: list[str] = []
+
+    if (
+        signal_quality.sqi
+        < cfg.frequency_min_sqi
+    ):
+        hard_reasons.append(
+            f"SQI {signal_quality.sqi * 100:.0f}% < "
+            f"{cfg.frequency_min_sqi * 100:.0f}%"
+        )
+
+    if (
+        signal_quality.timing_jitter_p95_ms
+        > cfg.analysis_limited_max_timing_jitter_p95_ms
+    ):
+        hard_reasons.append(
+            "采样时基 p95 "
+            f"{signal_quality.timing_jitter_p95_ms:.1f} ms > "
+            f"{cfg.analysis_limited_max_timing_jitter_p95_ms:.1f} ms"
+        )
+
+    if (
+        corrected_ratio
+        > cfg.frequency_limited_max_corrected_ratio
+    ):
+        hard_reasons.append(
+            f"频域修复比例 {corrected_ratio * 100:.1f}% > "
+            f"{cfg.frequency_limited_max_corrected_ratio * 100:.1f}%"
+        )
+
+    if (
+        unresolved_ratio
+        > cfg.frequency_limited_max_unresolved_ratio
+    ):
+        hard_reasons.append(
+            f"未解决异常 {unresolved_ratio * 100:.1f}% > "
+            f"{cfg.frequency_limited_max_unresolved_ratio * 100:.1f}%"
+        )
+
+    if (
+        max_consecutive
+        > cfg.frequency_limited_max_consecutive_artifacts
+    ):
+        hard_reasons.append(
+            f"连续未解决异常 {max_consecutive} > "
+            f"{cfg.frequency_limited_max_consecutive_artifacts}"
+        )
+
+    if (
+        protocol_health.error_ratio
+        > cfg.protocol_max_error_ratio
+    ):
+        hard_reasons.append(
+            f"协议错误 {protocol_health.error_ratio * 100:.2f}% > "
+            f"{cfg.protocol_max_error_ratio * 100:.2f}%"
+        )
+
+    if (
+        spectral_agreement
+        < cfg.frequency_min_spectral_agreement
+    ):
+        hard_reasons.append(
+            "Welch/Lomb 谱形一致性 "
+            f"{spectral_agreement * 100:.0f}% < "
+            f"{cfg.frequency_min_spectral_agreement * 100:.0f}%"
+        )
+
+    if (
+        interpolation_agreement
+        < cfg.frequency_min_interpolation_agreement
+    ):
+        hard_reasons.append(
+            "插值谱形一致性 "
+            f"{interpolation_agreement * 100:.0f}% < "
+            f"{cfg.frequency_min_interpolation_agreement * 100:.0f}%"
+        )
+
+    if hard_reasons:
+        return FrequencyDomainMetrics(
+            valid=False,
+            status=INVALID,
+            validity_reason="；".join(
+                hard_reasons
+            ),
+            progress=1.0,
+            duration_seconds=duration,
+            corrected_ratio=(
+                corrected_ratio
+            ),
+            unresolved_suspect_ratio=(
+                unresolved_ratio
+            ),
+            max_consecutive_artifacts=(
+                max_consecutive
+            ),
+            spectral_agreement=(
+                spectral_agreement
+            ),
+            interpolation_agreement=(
+                interpolation_agreement
+            ),
+        )
+
+    # -------------------------------------------------------------------
+    # 严格门：未达到时允许 LIMITED，并明确标记原因。
+    # -------------------------------------------------------------------
+    strict_reasons: list[str] = []
+
+    if (
+        signal_quality.timing_jitter_p95_ms
+        > cfg.analysis_strict_max_timing_jitter_p95_ms
+    ):
+        strict_reasons.append(
+            "采样时基 p95 "
+            f"{signal_quality.timing_jitter_p95_ms:.1f} ms"
+        )
+
+    if (
+        corrected_ratio
+        > cfg.frequency_max_corrected_ratio
+    ):
+        strict_reasons.append(
+            f"修复 {corrected_ratio * 100:.1f}%"
+        )
+
+    if (
+        unresolved_ratio
+        > cfg.frequency_max_unresolved_ratio
+    ):
+        strict_reasons.append(
+            f"未解决异常 {unresolved_ratio * 100:.1f}%"
+        )
+
+    if max_consecutive > 1:
+        strict_reasons.append(
+            f"连续异常 {max_consecutive}"
+        )
+
+    if (
+        spectral_agreement
+        < cfg.frequency_strict_min_spectral_agreement
+    ):
+        strict_reasons.append(
+            "Welch/Lomb 一致性 "
+            f"{spectral_agreement * 100:.0f}%"
+        )
+
+    if (
+        interpolation_agreement
+        < cfg.frequency_strict_min_interpolation_agreement
+    ):
+        strict_reasons.append(
+            "插值一致性 "
+            f"{interpolation_agreement * 100:.0f}%"
+        )
+
+    status = (
+        VALID
+        if not strict_reasons
+        else LIMITED
     )
-    irregular_y = np.asarray(
-        [interval.nn_ms for interval in usable],
-        dtype=float,
+
+    reason = (
+        ""
+        if status == VALID
+        else (
+            "受限输出："
+            + "；".join(
+                strict_reasons
+            )
+        )
     )
-
-    spectral_agreement = 0.0
-    if irregular_t.size >= 30 and freqs_use.size >= 5:
-        irregular_t = irregular_t - irregular_t[0]
-        irregular_y = signal.detrend(
-            irregular_y,
-            type="linear",
-        )
-
-        angular = 2.0 * np.pi * freqs_use
-        lomb = signal.lombscargle(
-            irregular_t,
-            irregular_y,
-            angular,
-            normalize=True,
-        )
-
-        welch_shape = psd_use / max(
-            float(np.sum(psd_use)),
-            1e-12,
-        )
-        lomb_shape = lomb / max(
-            float(np.sum(lomb)),
-            1e-12,
-        )
-
-        if np.std(welch_shape) > 0 and np.std(lomb_shape) > 0:
-            corr = float(np.corrcoef(
-                welch_shape,
-                lomb_shape,
-            )[0, 1])
-            spectral_agreement = float(np.clip(
-                corr,
-                0.0,
-                1.0,
-            ))
 
     return FrequencyDomainMetrics(
         valid=True,
-        status=VALID,
-        validity_reason="",
+        status=status,
+        validity_reason=reason,
         progress=1.0,
         duration_seconds=duration,
         total_power_ms2=total_power,
@@ -326,9 +721,22 @@ def compute_frequency_domain(
         hf_nu=hf_nu,
         lf_hf=lf_hf,
         hf_lf=hf_lf,
-        corrected_ratio=corrected_ratio,
-        unresolved_suspect_ratio=unresolved_ratio,
-        spectral_agreement=spectral_agreement,
+        corrected_ratio=(
+            corrected_ratio
+        ),
+        unresolved_suspect_ratio=(
+            unresolved_ratio
+        ),
+        max_consecutive_artifacts=(
+            max_consecutive
+        ),
+        spectral_agreement=(
+            spectral_agreement
+        ),
+        interpolation_agreement=(
+            interpolation_agreement
+        ),
         freqs_hz=freqs_use,
         psd_ms2_hz=psd_use,
     )
+

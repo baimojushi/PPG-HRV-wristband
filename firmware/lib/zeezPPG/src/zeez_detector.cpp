@@ -313,7 +313,20 @@ void ZeezAdaptiveDetector::reset() {
     expected_rr_ms_ = 0.0f;
     autocorr_rr_ms_ = 0.0f;
     autocorr_confidence_ = 0.0f;
-    samples_since_autocorr_ = 0;
+
+    autocorr_scan_min_lag_ = 0;
+    autocorr_scan_max_lag_ = 0;
+    autocorr_scan_lag_ = 0;
+    autocorr_scan_active_ = false;
+
+    for (
+        size_t i = 0;
+        i < AUTOCORR_CORR_CAPACITY;
+        ++i
+    ) {
+        autocorr_scan_values_[i] = 0.0f;
+        autocorr_scan_valid_[i] = false;
+    }
 
     current_hr_bpm_ = 0.0f;
 
@@ -618,48 +631,84 @@ void ZeezAdaptiveDetector::pruneCandidatePool(
 }
 
 void ZeezAdaptiveDetector::maybeUpdateAutocorrelation() {
-    ++samples_since_autocorr_;
-
-    // 每 16 个采样更新一次，约 7.8 Hz。
-    // 避免 125 Hz 每点都跑相关扫描。
-    if (samples_since_autocorr_ < 16) {
-        return;
+    // -----------------------------------------------------------------------
+    // 固定预算增量扫描
+    // -----------------------------------------------------------------------
+    // 每次 update() 最多处理 AUTOCORR_LAGS_PER_UPDATE 个 lag。
+    // 不再出现“每 16 点突然做 3~4 万次相关运算”的突发负载。
+    if (!autocorr_scan_active_) {
+        if (!startAutocorrelationScan()) {
+            return;
+        }
     }
 
-    samples_since_autocorr_ = 0;
-
-    float period_ms = 0.0f;
-    float confidence = 0.0f;
-
-    if (
-        estimateAutocorrelationPeriod(
-            period_ms,
-            confidence
-        )
+    for (
+        uint8_t work = 0;
+        work < AUTOCORR_LAGS_PER_UPDATE;
+        ++work
     ) {
-        autocorr_rr_ms_ = period_ms;
-        autocorr_confidence_ = confidence;
-    }
+        if (
+            !autocorr_scan_active_
+            || autocorr_scan_lag_
+            > autocorr_scan_max_lag_
+        ) {
+            break;
+        }
 
-    updateExpectedRR();
+        const size_t lag =
+            autocorr_scan_lag_;
+
+        float correlation = 0.0f;
+
+        const bool valid =
+            computeAutocorrelationLag(
+                lag,
+                correlation
+            );
+
+        if (lag < AUTOCORR_CORR_CAPACITY) {
+            autocorr_scan_values_[lag] =
+                correlation;
+
+            autocorr_scan_valid_[lag] =
+                valid;
+        }
+
+        ++autocorr_scan_lag_;
+
+        // 扫描完成后一次性做很轻量的“找峰”。
+        // 这里最多遍历约 150 个 float，不会阻塞采样。
+        if (
+            autocorr_scan_lag_
+            > autocorr_scan_max_lag_
+        ) {
+            float period_ms = 0.0f;
+            float confidence = 0.0f;
+
+            if (
+                finalizeAutocorrelationScan(
+                    period_ms,
+                    confidence
+                )
+            ) {
+                autocorr_rr_ms_ =
+                    period_ms;
+
+                autocorr_confidence_ =
+                    confidence;
+            }
+
+            autocorr_scan_active_ =
+                false;
+
+            updateExpectedRR();
+            break;
+        }
+    }
 }
 
-bool ZeezAdaptiveDetector::estimateAutocorrelationPeriod(
-    float &period_ms,
-    float &confidence
-) const {
-    if (
-        signal_ring_.count
-        < static_cast<size_t>(
-            sample_rate_hz_ * 1.7f
-        )
-    ) {
-        return false;
-    }
-
-    const size_t n =
-        signal_ring_.count;
-
+bool ZeezAdaptiveDetector::startAutocorrelationScan() {
+    // 搜索范围约 40~220 bpm。
     size_t min_lag =
         static_cast<size_t>(
             sample_rate_hz_
@@ -678,62 +727,145 @@ bool ZeezAdaptiveDetector::estimateAutocorrelationPeriod(
         min_lag = 2;
     }
 
-    if (max_lag >= n - 8) {
-        max_lag = n - 8;
+    if (
+        max_lag
+        >= AUTOCORR_CORR_CAPACITY
+    ) {
+        max_lag =
+            AUTOCORR_CORR_CAPACITY - 1;
     }
 
-    if (min_lag >= max_lag) {
+    // 第一轮至少需要“最长 lag + 32 对重叠数据”。
+    // 125 Hz 下约 2 秒即可开始，不会用几十个点硬猜周期。
+    const size_t minimum_points =
+        max_lag + 32;
+
+    if (
+        signal_ring_.count
+        < minimum_points
+    ) {
         return false;
     }
 
-    const size_t use_n =
-        n > 256
-        ? 256
-        : n;
+    for (
+        size_t lag = min_lag;
+        lag <= max_lag;
+        ++lag
+    ) {
+        autocorr_scan_values_[lag] =
+            0.0f;
 
-    float x[256] = {};
+        autocorr_scan_valid_[lag] =
+            false;
+    }
+
+    autocorr_scan_min_lag_ =
+        min_lag;
+
+    autocorr_scan_max_lag_ =
+        max_lag;
+
+    autocorr_scan_lag_ =
+        min_lag;
+
+    autocorr_scan_active_ =
+        true;
+
+    return true;
+}
+
+bool ZeezAdaptiveDetector::computeAutocorrelationLag(
+    size_t lag,
+    float &correlation
+) const {
+    if (
+        lag == 0
+        || lag >= signal_ring_.count
+    ) {
+        return false;
+    }
+
+    const size_t available_pairs =
+        signal_ring_.count - lag;
+
+    const size_t pair_count =
+        available_pairs
+        > AUTOCORR_MAX_PAIRS_PER_LAG
+        ? AUTOCORR_MAX_PAIRS_PER_LAG
+        : available_pairs;
+
+    if (pair_count < 32) {
+        return false;
+    }
+
+    // filtered PPG 已经去基线。
+    // 继续减去环形缓冲区动态均值，可以降低慢漂移对相关系数的影响。
+    const float mean =
+        signal_stats_.mean();
+
+    float numerator = 0.0f;
+    float energy_a = 0.0f;
+    float energy_b = 0.0f;
 
     for (
-        size_t i = 0;
-        i < use_n;
-        ++i
+        size_t offset = 0;
+        offset < pair_count;
+        ++offset
     ) {
-        SignalPoint point;
-
-        const size_t newest_offset =
-            use_n - 1 - i;
+        SignalPoint a;
+        SignalPoint b;
 
         if (
             !signal_ring_.getNewest(
-                newest_offset,
-                point
+                offset,
+                a
+            )
+            || !signal_ring_.getNewest(
+                offset + lag,
+                b
             )
         ) {
             return false;
         }
 
-        x[i] = point.value;
+        const float da =
+            a.value - mean;
+
+        const float db =
+            b.value - mean;
+
+        numerator +=
+            da * db;
+
+        energy_a +=
+            da * da;
+
+        energy_b +=
+            db * db;
     }
 
-    double mean = 0.0;
-
-    for (
-        size_t i = 0;
-        i < use_n;
-        ++i
-    ) {
-        mean += x[i];
-    }
-
-    mean /=
-        static_cast<double>(
-            use_n
+    const float denominator =
+        sqrtf(
+            energy_a
+            * energy_b
         );
 
-    // 40~220 bpm 的 lag 数量小于 190，固定栈数组足够。
-    float corr_values[192] = {};
-    bool corr_valid[192] = {};
+    if (denominator <= 1e-6f) {
+        return false;
+    }
 
+    correlation =
+        numerator / denominator;
+
+    return isfinite(
+        correlation
+    );
+}
+
+bool ZeezAdaptiveDetector::finalizeAutocorrelationScan(
+    float &period_ms,
+    float &confidence
+) const {
     float global_best_corr =
         -1.0f;
 
@@ -741,58 +873,21 @@ bool ZeezAdaptiveDetector::estimateAutocorrelationPeriod(
         0;
 
     for (
-        size_t lag = min_lag;
-        lag <= max_lag;
+        size_t lag = autocorr_scan_min_lag_;
+        lag <= autocorr_scan_max_lag_;
         ++lag
     ) {
-        double numerator = 0.0;
-        double energy_a = 0.0;
-        double energy_b = 0.0;
-
-        for (
-            size_t i = lag;
-            i < use_n;
-            ++i
+        if (
+            lag >= AUTOCORR_CORR_CAPACITY
+            || !autocorr_scan_valid_[lag]
         ) {
-            const double a =
-                static_cast<double>(
-                    x[i]
-                ) - mean;
-
-            const double b =
-                static_cast<double>(
-                    x[i - lag]
-                ) - mean;
-
-            numerator += a * b;
-            energy_a += a * a;
-            energy_b += b * b;
-        }
-
-        const double denominator =
-            sqrt(
-                energy_a
-                * energy_b
-            );
-
-        if (denominator <= 1e-9) {
             continue;
         }
 
         const float corr =
-            static_cast<float>(
-                numerator
-                / denominator
-            );
+            autocorr_scan_values_[lag];
 
-        if (lag < 192) {
-            corr_values[lag] = corr;
-            corr_valid[lag] = true;
-        }
-
-        if (
-            corr > global_best_corr
-        ) {
+        if (corr > global_best_corr) {
             global_best_corr = corr;
             global_best_lag = lag;
         }
@@ -805,16 +900,9 @@ bool ZeezAdaptiveDetector::estimateAutocorrelationPeriod(
         return false;
     }
 
-    // -----------------------------------------------------------------------
-    // 周期谐波处理
-    // -----------------------------------------------------------------------
-    // 严格取 global max 容易在 180 bpm 时选到 2×/3×周期，
-    // 因为 333、666、999 ms 都会有很高相关。
-    //
-    // 人看周期时通常会选择“最早稳定重复的完整形状”。
-    // 这里在所有接近全局最强的局部相关峰中选择最早一个。
-    //
-    // 同时要求局部峰，避免把平滑信号在 min_lag 附近的高相关斜坡误当周期。
+    // 与 v0.3.1 保持相同的谐波策略：
+    // 在接近全局最强的局部相关峰中选择最早一个，
+    // 避免 2× / 3× 周期抢走基本周期。
     const float strong_threshold =
         global_best_corr * 0.90f;
 
@@ -825,33 +913,42 @@ bool ZeezAdaptiveDetector::estimateAutocorrelationPeriod(
         global_best_corr;
 
     for (
-        size_t lag = min_lag + 1;
-        lag + 1 <= max_lag;
+        size_t lag =
+            autocorr_scan_min_lag_ + 1;
+        lag + 1
+            <= autocorr_scan_max_lag_;
         ++lag
     ) {
         if (
-            lag >= 192
-            || !corr_valid[lag]
-            || !corr_valid[lag - 1]
-            || !corr_valid[lag + 1]
+            lag + 1
+            >= AUTOCORR_CORR_CAPACITY
+            || !autocorr_scan_valid_[lag - 1]
+            || !autocorr_scan_valid_[lag]
+            || !autocorr_scan_valid_[lag + 1]
         ) {
             continue;
         }
 
         const float current =
-            corr_values[lag];
+            autocorr_scan_values_[lag];
 
         const bool local_peak =
-            current >= corr_values[lag - 1]
-            && current >= corr_values[lag + 1];
+            current
+                >= autocorr_scan_values_[lag - 1]
+            && current
+                >= autocorr_scan_values_[lag + 1];
 
         if (
             local_peak
             && current >= strong_threshold
             && current >= 0.18f
         ) {
-            selected_lag = lag;
-            selected_corr = current;
+            selected_lag =
+                lag;
+
+            selected_corr =
+                current;
+
             break;
         }
     }

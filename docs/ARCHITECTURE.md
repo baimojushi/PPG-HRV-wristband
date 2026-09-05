@@ -1,98 +1,63 @@
-# v0.3.0 架构
-
-## 固件
+# v0.3.2 完整架构
 
 ```text
-Core 1 / Acquisition
+Core 1 · 125 Hz Acquisition
 │
-├─ ADC 125 Hz
+├─ ADC GPIO32
 │
 └─ zeezPPG
-   ├─ EMA 去毛刺
-   ├─ 慢基线 EMA
-   ├─ 脉搏 EMA
+   ├─ EMA 去毛刺 / 去基线
    ├─ Signal Ring 320
    ├─ Slope Ring 320
    ├─ RR Ring 9
    ├─ Candidate Pool 16
    │
-   ├─ 动态形态特征
-   │   ├─ amplitude_z
-   │   ├─ prominence_z
-   │   ├─ slope_z
-   │   └─ curvature_z
+   ├─ amplitude / prominence / slope / curvature
+   ├─ polarity lock
+   ├─ cycle-level winner
+   ├─ rescue
    │
-   ├─ Autocorrelation Rhythm Anchor
-   ├─ Polarity Lock (+1 / -1)
-   ├─ Same-polarity Candidate Competition
-   └─ Same-polarity Rescue Search
+   └─ incremental autocorrelation
+       ├─ ≤4 lag / sample
+       └─ ≤96 pair / lag
           ↓
        Accepted Beat
           ↓
  Sample Queue / Beat Queue
           ↓
-Core 0 / Transport
+Core 0 · Transport
           ↓
  Protocol v4 + CRC16
+          ↓
+Desktop Analysis
+│
+├─ Sample Timebase Audit
+│  ├─ effective Hz
+│  ├─ p95 jitter
+│  └─ overrun ratio
+│
+├─ BeatTimelineCleaner
+│  ├─ false peak merge
+│  ├─ missed beat split
+│  └─ unresolved skip
+│
+├─ Time Domain
+│  └─ VALID / LIMITED / INVALID
+│
+└─ Frequency Domain
+   ├─ PCHIP → Welch
+   ├─ Linear → Welch
+   ├─ Irregular NN → Lomb
+   ├─ spectral cross-validation
+   └─ VALID / LIMITED / INVALID
+          ↓
+        SPWVD
 ```
 
-采集任务不进行字符串格式化、USB 或蓝牙输出。
+## 核心原则
 
-## 桌面端
-
-```text
-ProtocolStreamDecoder
-        ↓
-Raw Session Recorder
-        ↓
-AnalysisEngine
-        ↓
-BeatTimelineCleaner
-        ├─ false peak merge
-        ├─ missed beat repair
-        └─ unresolved skip
-        ↓
-Clean NN Timeline
-   ├───────────────┐
-   ↓               ↓
-Time Gate      Frequency Gate
-   ↓               ↓
-RMSSD/SDNN     Welch/Lomb
-pNN50          VLF/LF/HF
-                   ↓
-                 SPWVD
-```
-
-## 两级质量控制
-
-第一层：
-
-```text
-zeezPPG 动态心搏检测
-```
-
-目标是从源头减少误检和漏检。
-
-第二层：
-
-```text
-RR/NN 清洗 + SQI + 结果有效性门
-```
-
-目标是防止残余异常进入正式 HRV。
-
-两层职责分离。HRV 质量门不会反向删除心搏事件。
-
-## 固定内存
-
-检测器核心没有 STL 动态容器：
-
-```text
-SignalPoint[320]
-float signal_stats[320]
-float slope_stats[320]
-RR[9]
-Candidate[16]
-```
-
-纯 C++ 核心可以脱离 Arduino 在 PC 上直接编译和测试。
+1. 125 Hz 采样任务内不能出现突发大计算；
+2. 心搏识别与 HRV 质量门职责分离；
+3. LIMITED 有明确硬门和独立互证，不等于“放宽阈值”；
+4. 采样时基严重失真时，所有正式时频指标停止；
+5. 所有结果均保留原始 Sample / Beat 证据用于回放。

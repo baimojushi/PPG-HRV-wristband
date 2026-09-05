@@ -1,61 +1,99 @@
-# PPG / HRV 实时分析系统 v0.3.1
+# PPG / HRV 实时分析系统 v0.3.2
 
-v0.3.1 根据最新实测数据修复 **峰/谷双极性误计数**。
+v0.3.2 根据最新实测 `samples_debug.csv` 修复采样任务周期性阻塞，
+并让时域 / 频域从“全有或全无”升级为可审计的三级结果。
 
-实测 v0.3.0：
+## 本次实测根因
 
 ```text
-Candidate 49 / 12 s
-Accepted 33 / 12 s
-预测 RR 464 ms
-接受 HR 172 bpm
+目标采样率            125 Hz
+实际有效采样率        85.86 Hz
+p95 采样抖动          58.09 ms
+长停顿比例            6.26%
+长停顿间隔            ≈66 ms
+长停顿周期            每 16 samples
 ```
 
-导出 RR 中位数为 364 ms。隔一个 Accepted 取一个后，
-两条子序列 RR 中位数约 725 / 720 ms，
-对应约 82.7 / 83.3 bpm。
+固件恰好每 16 samples 执行一次完整自相关扫描。
 
-## v0.3.1 核心
+v0.3.2 已将其改为：
 
 ```text
-双极性 Candidate
-      ↓
-首个稳定 Winner
-      ↓
-锁定极性 +1 / -1
-      ↓
-同极性 Candidate 竞争
-      ↓
-同极性 Rescue
-      ↓
+每 sample 最多 4 lag
+每 lag 最多 96 pair
+```
+
+避免在采集核心形成 50–60 ms 的计算尖峰。
+
+## 心搏链
+
+```text
+PPG
+↓
+动态形态 Candidate
+↓
+同极性锁
+↓
+周期内 Winner
+↓
+Rescue
+↓
 Accepted Beat
+↓
+RR / NN
 ```
 
-两个稳定同极性 RR 后，RR 中位数成为主节律锚点。
-明显不一致的自相关周期不再覆盖稳定 RR。
+## 采样时基监控
 
-## 导出增强
-
-“导出分析结果”新增：
+UI Debug 行会直接显示：
 
 ```text
-samples_debug.csv
-beats_raw.csv
+采样 xx.x Hz
+p95抖动 x.x ms
+超时 x.x%
 ```
 
-以后只需提供新的 `hrv_export`，即可逐采样离线重跑检测器。
-
-## UI
+下一轮首要验收：
 
 ```text
-紫：动态形态分数
-黄：Candidate（含峰/谷）
-绿：同极性 Accepted Beat
+有效采样率 ≈125 Hz
+p95 抖动 <2 ms（优先目标）
+超时比例接近 0
 ```
+
+## 时域
+
+```text
+VALID
+LIMITED
+INVALID
+```
+
+LIMITED 仍然只用原始、连续、未修复 NN 对计算 RMSSD。
+
+## 频域
+
+输出前同时验证：
+
+```text
+PCHIP → Welch
+Linear → Welch
+Irregular NN → Lomb–Scargle
+```
+
+硬门：
+
+```text
+采样 p95 >4 ms → INVALID
+Welch/Lomb <70% → INVALID
+插值一致性 <95% → INVALID
+```
+
+少量孤立 RR 异常可以在双谱互证通过后以 LIMITED 输出。
 
 ## 协议
 
-协议保持 v4，不改 Sample / Beat 帧格式。
+仍为 v4，无协议字段变化。
 
 ## 构建
 
@@ -66,18 +104,32 @@ pio run --target upload
 pio device monitor
 ```
 
-## 测试
+## Python
 
 ```bash
-python -m pytest -q tests
+cd desktop
+python -m pytest -q ../tests
+python run_ui.py
 ```
 
-## 文档
+## 关键文档
 
 ```text
-docs/ALGORITHM_v0.3.1.md
-docs/PATCH_v0.3.1_POLARITY_LOCK.md
-docs/VALIDATION_v0.3.1_REAL_MEASUREMENT.md
-docs/PROTOCOL.md
+docs/ALGORITHM_v0.3.2.md
+docs/PATCH_v0.3.2_SAMPLING_AND_HRV_QUALITY.md
+docs/VALIDATION_v0.3.2_REAL_MEASUREMENT.md
 docs/ARCHITECTURE.md
+docs/PROTOCOL.md
 ```
+
+
+## 当前自动验收
+
+```text
+Python compileall     PASS
+pytest                38 passed
+C++ detector host     PASS
+Arduino wrapper stub  PASS
+```
+
+PlatformIO 全固件编译需要在安装了 PlatformIO CLI 的 VS Code 开发机执行。

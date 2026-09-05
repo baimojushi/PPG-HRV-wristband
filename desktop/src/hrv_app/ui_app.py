@@ -608,15 +608,26 @@ class MainWindow(QMainWindow):
         )
 
         if snapshot.time.valid:
+            prefix = (
+                "RMSSD 有效"
+                if snapshot.time.status == "VALID"
+                else "RMSSD 受限可用"
+            )
+
             if (
                 snapshot.time.rmssd_ci_low_ms > 0
                 and snapshot.time.rmssd_ci_high_ms > 0
             ):
                 reasons.insert(
                     0,
-                    "RMSSD 近似95%区间 "
+                    f"{prefix} · 近似95%区间 "
                     f"{snapshot.time.rmssd_ci_low_ms:.1f}–"
                     f"{snapshot.time.rmssd_ci_high_ms:.1f} ms"
+                )
+            else:
+                reasons.insert(
+                    0,
+                    prefix
                 )
         elif snapshot.time.validity_reason:
             reasons.insert(
@@ -690,6 +701,15 @@ class MainWindow(QMainWindow):
         score_mean = debug_stats[
             "accepted_score_mean"
         ]
+        effective_hz = debug_stats[
+            "effective_sample_rate_hz"
+        ]
+        timing_p95 = debug_stats[
+            "timing_jitter_p95_ms"
+        ]
+        timing_overrun = debug_stats[
+            "timing_overrun_ratio"
+        ]
 
         expected_text = (
             f"{expected_rr:.0f} ms"
@@ -706,7 +726,10 @@ class MainWindow(QMainWindow):
             f"未选 {difference} · "
             f"预测RR {expected_text} · "
             f"接受HR {accepted_hr:.0f} bpm · "
-            f"平均Winner分 {score_mean:.2f}"
+            f"平均Winner分 {score_mean:.2f} · "
+            f"采样 {effective_hz:.1f} Hz · "
+            f"p95抖动 {timing_p95:.1f} ms · "
+            f"超时 {timing_overrun * 100:.1f}%"
         )
 
         # --------------------------------------------------------------
@@ -718,9 +741,13 @@ class MainWindow(QMainWindow):
             item
             for item in history
             if (
-                item.get("time_status") == "VALID"
+                item.get("time_status")
+                in {"VALID", "LIMITED"}
                 and np.isfinite(
-                    item.get("rmssd_ms", np.nan)
+                    item.get(
+                        "rmssd_ms",
+                        np.nan,
+                    )
                 )
             )
         ]
@@ -752,15 +779,23 @@ class MainWindow(QMainWindow):
         freq = snapshot.frequency
 
         if freq.valid:
+            frequency_label = (
+                "频域有效"
+                if freq.status == "VALID"
+                else "频域受限可用"
+            )
+
             self.freq_status.setText(
-                "频域有效  |  "
+                f"{frequency_label}  |  "
                 f"Total {freq.total_power_ms2:.1f} ms²  ·  "
                 f"VLF {freq.vlf_ms2:.1f} ms²  ·  "
                 f"LF {freq.lf_ms2:.1f} ms²  ·  "
                 f"HF {freq.hf_ms2:.1f} ms²  ·  "
                 f"LFnu {freq.lf_nu:.1f}%  ·  "
                 f"HFnu {freq.hf_nu:.1f}%  ·  "
-                f"LF/HF {freq.lf_hf:.2f}"
+                f"LF/HF {freq.lf_hf:.2f}  ·  "
+                f"Welch/Lomb {freq.spectral_agreement * 100:.0f}%  ·  "
+                f"插值一致 {freq.interpolation_agreement * 100:.0f}%"
             )
             self.psd_curve.setData(
                 freq.freqs_hz,
@@ -782,7 +817,18 @@ class MainWindow(QMainWindow):
             self.engine.frequency_statistics()
         )
         valid_count = statistics.get(
-            "valid_window_count",
+            "usable_window_count",
+            statistics.get(
+                "valid_window_count",
+                0,
+            ),
+        )
+        strict_count = statistics.get(
+            "strict_valid_window_count",
+            0,
+        )
+        limited_count = statistics.get(
+            "limited_window_count",
             0,
         )
         total_count = statistics.get(
@@ -802,7 +848,8 @@ class MainWindow(QMainWindow):
                 )
 
             self.freq_stats_label.setText(
-                f"有效频域窗口 {valid_count}/{total_count}  |  "
+                f"可计算频域窗口 {valid_count}/{total_count} "
+                f"（VALID {strict_count} · LIMITED {limited_count}）  |  "
                 f"VLF均值 {stat_mean('vlf_ms2'):.1f} ms²  ·  "
                 f"LF均值 {stat_mean('lf_ms2'):.1f} ms²  ·  "
                 f"HF均值 {stat_mean('hf_ms2'):.1f} ms²  ·  "

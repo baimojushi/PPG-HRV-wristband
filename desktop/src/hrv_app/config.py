@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """统一保存分析常量；v0.3.1 的 PPG 检测算法完整位于项目内 zeezPPG。"""
+    """统一保存分析常量；v0.3.2 的 PPG 检测算法完整位于项目内 zeezPPG。"""
 
     sample_rate_hz: float = 125.0
 
@@ -28,7 +28,7 @@ class AnalysisConfig:
     rr_hard_max_ms: float = 2000.0
 
 
-    # v0.3.1 zeezPPG 动态检测器兼容灵敏度中性点。
+    # v0.3.2 zeezPPG 动态检测器兼容灵敏度中性点。
     # 11.0 只小范围缩放综合评分门，不再直接定义心搏阈值。
     detector_legacy_peak_factor: float = 11.0
 
@@ -55,10 +55,35 @@ class AnalysisConfig:
     time_max_consecutive_artifacts: int = 1
     time_min_sqi: float = 0.70
 
-    # 频域允许极少量事件级修复来维持连续时间轴，超过门限直接无效。
+    # v0.3.2 受限时域：
+    # 只使用原始 accepted 且时间上真正相邻的 NN 对，不把修复值塞进 RMSSD。
+    # 中等伪迹时可以输出 LIMITED，超过这些硬门仍然 INVALID。
+    time_limited_max_artifact_ratio: float = 0.10
+    time_limited_max_unresolved_ratio: float = 0.06
+    time_limited_max_consecutive_artifacts: int = 2
+    time_limited_min_contiguous_diffs: int = 30
+
+    # 采样时基是硬证据。
+    # 2 ms 内可进入严格 VALID，2–4 ms 只允许 LIMITED，超过 4 ms 禁止正式 HRV。
+    analysis_strict_max_timing_jitter_p95_ms: float = 2.0
+    analysis_limited_max_timing_jitter_p95_ms: float = 4.0
+
+    # 频域严格门保持原有标准。
     frequency_max_corrected_ratio: float = 0.05
     frequency_max_unresolved_ratio: float = 0.01
     frequency_min_sqi: float = 0.75
+
+    # v0.3.2 受限频域：
+    # 小比例孤立异常可以通过不规则时间 Lomb–Scargle 与 Welch 互证后输出 LIMITED。
+    frequency_limited_max_corrected_ratio: float = 0.08
+    frequency_limited_max_unresolved_ratio: float = 0.05
+    frequency_limited_max_consecutive_artifacts: int = 2
+
+    # 两条独立计算路径必须有足够形状一致性。
+    frequency_min_spectral_agreement: float = 0.70
+    frequency_strict_min_spectral_agreement: float = 0.80
+    frequency_min_interpolation_agreement: float = 0.95
+    frequency_strict_min_interpolation_agreement: float = 0.98
 
     # 协议错误会直接影响完整性。
     protocol_max_error_ratio: float = 0.01
@@ -73,6 +98,13 @@ class AnalysisConfig:
     sqi_sequence_drop_fail_ratio: float = 0.02
     sqi_timing_jitter_fail_ms: float = 2.0
     sqi_protocol_error_fail_ratio: float = 0.02
+
+    # 有效采样率 / 长停顿用于 SQI 硬封顶。
+    # 这些量直接由设备 t_us 推导，不依赖协议是否丢帧。
+    sqi_effective_rate_warn_ratio: float = 0.02
+    sqi_effective_rate_fail_ratio: float = 0.05
+    sqi_timing_overrun_warn_ratio: float = 0.01
+    sqi_timing_overrun_fail_ratio: float = 0.02
 
     # SPWVD 只在频域质量门通过后运行。
     spwvd_hop_seconds: float = 5.0

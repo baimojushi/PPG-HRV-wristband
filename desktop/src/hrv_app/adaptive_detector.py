@@ -251,7 +251,15 @@ class AdaptivePPGDetector:
         self.expected_rr_ms = 0.0
         self.autocorr_rr_ms = 0.0
         self.autocorr_confidence = 0.0
-        self.samples_since_autocorr = 0
+        # v0.3.2：与固件一致的固定预算增量自相关。
+        self.autocorr_scan_values: dict[int, float] = {}
+        self.autocorr_scan_min_lag = 0
+        self.autocorr_scan_max_lag = 0
+        self.autocorr_scan_lag = 0
+        self.autocorr_scan_active = False
+
+        self.autocorr_lags_per_update = 4
+        self.autocorr_max_pairs_per_lag = 96
 
         self.current_hr_bpm = 0.0
 
@@ -609,38 +617,9 @@ class AdaptivePPGDetector:
             >= minimum_t_us
         ]
 
-    def _estimate_autocorrelation(
+    def _start_autocorrelation_scan(
         self,
-    ) -> tuple[float, float] | None:
-        count = len(
-            self.signal_points
-        )
-
-        if (
-            count
-            < int(
-                self.sample_rate_hz
-                * 1.7
-            )
-        ):
-            return None
-
-        values = np.asarray(
-            [
-                point[2]
-                for point in self.signal_points
-            ],
-            dtype=np.float64,
-        )
-
-        if values.size > 256:
-            values = values[-256:]
-
-        values = (
-            values
-            - np.mean(values)
-        )
-
+    ) -> bool:
         min_lag = max(
             int(
                 self.sample_rate_hz
@@ -656,50 +635,126 @@ class AdaptivePPGDetector:
                 * 60.0
                 / 40.0
             ),
-            values.size - 8,
+            191,
         )
 
-        if min_lag >= max_lag:
-            return None
-
-        correlations: dict[
-            int,
-            float,
-        ] = {}
-
-        global_best_corr = -1.0
-        global_best_lag = 0
-
-        for lag in range(
-            min_lag,
-            max_lag + 1,
+        # 与固件一致：最长 lag 后还要保留至少 32 对重叠样本。
+        if (
+            len(self.signal_points)
+            < max_lag + 32
         ):
-            a = values[lag:]
-            b = values[:-lag]
+            return False
 
-            denominator = math.sqrt(
-                float(np.dot(a, a))
-                * float(np.dot(b, b))
-            )
+        self.autocorr_scan_values.clear()
+        self.autocorr_scan_min_lag = min_lag
+        self.autocorr_scan_max_lag = max_lag
+        self.autocorr_scan_lag = min_lag
+        self.autocorr_scan_active = True
 
-            if denominator <= 1e-9:
-                continue
+        return True
 
-            corr = float(
-                np.dot(a, b)
-                / denominator
-            )
-
-            correlations[lag] = corr
-
-            if corr > global_best_corr:
-                global_best_corr = corr
-                global_best_lag = lag
+    def _compute_autocorrelation_lag(
+        self,
+        lag: int,
+    ) -> float | None:
+        count = len(
+            self.signal_points
+        )
 
         if (
-            global_best_lag == 0
-            or global_best_corr < 0.12
+            lag <= 0
+            or lag >= count
         ):
+            return None
+
+        pair_count = min(
+            count - lag,
+            self.autocorr_max_pairs_per_lag,
+        )
+
+        if pair_count < 32:
+            return None
+
+        values = np.asarray(
+            [
+                point[2]
+                for point
+                in list(self.signal_points)[
+                    -(
+                        pair_count
+                        + lag
+                    ):
+                ]
+            ],
+            dtype=np.float64,
+        )
+
+        if (
+            values.size
+            < pair_count + lag
+        ):
+            return None
+
+        mean = (
+            self.signal_stats.mean()
+        )
+
+        a = (
+            values[-pair_count:]
+            - mean
+        )
+        b = (
+            values[
+                -pair_count - lag:
+                -lag
+            ]
+            - mean
+        )
+
+        denominator = math.sqrt(
+            float(np.dot(a, a))
+            * float(np.dot(b, b))
+        )
+
+        if denominator <= 1e-9:
+            return None
+
+        corr = float(
+            np.dot(a, b)
+            / denominator
+        )
+
+        return (
+            corr
+            if np.isfinite(corr)
+            else None
+        )
+
+    def _finalize_autocorrelation_scan(
+        self,
+    ) -> tuple[float, float] | None:
+        if not self.autocorr_scan_values:
+            return None
+
+        valid = {
+            lag: corr
+            for lag, corr
+            in self.autocorr_scan_values.items()
+            if np.isfinite(corr)
+        }
+
+        if not valid:
+            return None
+
+        global_best_lag = max(
+            valid,
+            key=valid.get,
+        )
+        global_best_corr = valid[
+            global_best_lag
+        ]
+
+        if global_best_corr < 0.12:
             return None
 
         strong_threshold = (
@@ -714,41 +769,27 @@ class AdaptivePPGDetector:
             global_best_corr
         )
 
-        # 在“接近全局最强”的局部相关峰里选择最早一个，
-        # 避免 333ms 的真实周期被 666/999ms 谐波抢走。
         for lag in range(
-            min_lag + 1,
-            max_lag,
+            self.autocorr_scan_min_lag + 1,
+            self.autocorr_scan_max_lag,
         ):
             if (
-                lag - 1
-                not in correlations
-                or lag
-                not in correlations
-                or lag + 1
-                not in correlations
+                lag - 1 not in valid
+                or lag not in valid
+                or lag + 1 not in valid
             ):
                 continue
 
-            current = correlations[
-                lag
-            ]
+            current = valid[lag]
 
             local_peak = (
-                current
-                >= correlations[
-                    lag - 1
-                ]
-                and current
-                >= correlations[
-                    lag + 1
-                ]
+                current >= valid[lag - 1]
+                and current >= valid[lag + 1]
             )
 
             if (
                 local_peak
-                and current
-                >= strong_threshold
+                and current >= strong_threshold
                 and current >= 0.18
             ):
                 selected_lag = lag
@@ -760,11 +801,9 @@ class AdaptivePPGDetector:
             * self.sample_period_ms
         )
 
-        confidence = (
-            self._clamp01(
-                (selected_corr - 0.10)
-                / 0.75
-            )
+        confidence = self._clamp01(
+            (selected_corr - 0.10)
+            / 0.75
         )
 
         return (
@@ -860,27 +899,56 @@ class AdaptivePPGDetector:
     def _maybe_update_autocorr(
         self,
     ) -> None:
-        self.samples_since_autocorr += 1
+        # 每个采样只处理固定数量的 lag。
+        # 这和固件的 CPU 预算策略保持一致。
+        if not self.autocorr_scan_active:
+            if not self._start_autocorrelation_scan():
+                return
 
-        if (
-            self.samples_since_autocorr
-            < 16
+        for _ in range(
+            self.autocorr_lags_per_update
         ):
-            return
+            if (
+                not self.autocorr_scan_active
+                or self.autocorr_scan_lag
+                > self.autocorr_scan_max_lag
+            ):
+                break
 
-        self.samples_since_autocorr = 0
+            lag = (
+                self.autocorr_scan_lag
+            )
 
-        result = (
-            self._estimate_autocorrelation()
-        )
+            corr = (
+                self._compute_autocorrelation_lag(
+                    lag
+                )
+            )
 
-        if result is not None:
-            (
-                self.autocorr_rr_ms,
-                self.autocorr_confidence,
-            ) = result
+            if corr is not None:
+                self.autocorr_scan_values[
+                    lag
+                ] = corr
 
-        self._update_expected_rr()
+            self.autocorr_scan_lag += 1
+
+            if (
+                self.autocorr_scan_lag
+                > self.autocorr_scan_max_lag
+            ):
+                result = (
+                    self._finalize_autocorrelation_scan()
+                )
+
+                if result is not None:
+                    (
+                        self.autocorr_rr_ms,
+                        self.autocorr_confidence,
+                    ) = result
+
+                self.autocorr_scan_active = False
+                self._update_expected_rr()
+                break
 
     def _select_best_candidate(
         self,

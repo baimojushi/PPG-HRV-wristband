@@ -33,10 +33,21 @@ def compute_quality_assessment(
     )
 
     if time_metrics.valid and frequency_metrics.valid:
-        status = VALID
+        # “valid=True”表示允许正式显示数值；
+        # 结果等级仍由各模块的 VALID / LIMITED 决定。
+        if (
+            time_metrics.status == VALID
+            and frequency_metrics.status == VALID
+        ):
+            status = VALID
+        else:
+            status = LIMITED
+
     elif time_metrics.valid:
-        # 前 5 分钟频域尚未就绪时，时域可以单独有效。
+        # 前 5 分钟频域尚未就绪，或频域被质量门暂停时，
+        # 时域仍可作为独立 LIMITED 结果。
         status = LIMITED
+
     else:
         status = INVALID
 

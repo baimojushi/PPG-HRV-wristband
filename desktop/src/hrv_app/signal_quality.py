@@ -72,6 +72,28 @@ def evaluate_signal_quality(
         else 0.0
     )
 
+    if t_us.size >= 2 and t_us[-1] > t_us[0]:
+        effective_sample_rate_hz = float(
+            (len(t_us) - 1)
+            / (
+                (t_us[-1] - t_us[0])
+                / 1e6
+            )
+        )
+    else:
+        effective_sample_rate_hz = 0.0
+
+    timing_overrun_ratio = (
+        float(
+            np.mean(
+                dt_ms
+                > expected_ms * 1.5
+            )
+        )
+        if dt_ms.size
+        else 0.0
+    )
+
     protocol_error_ratio = float(protocol.error_ratio)
 
     # -----------------------------------------------------------------------
@@ -106,7 +128,50 @@ def evaluate_signal_quality(
         + 0.10 * sequence_score
         + 0.10 * protocol_score
     )
-    sqi = float(np.clip(sqi, 0.0, 1.0))
+    sqi = float(
+        np.clip(
+            sqi,
+            0.0,
+            1.0,
+        )
+    )
+
+    # -------------------------------------------------------------------
+    # 严重采样时基异常不能被“佩戴很好 / 没削顶”抵消。
+    # -------------------------------------------------------------------
+    effective_rate_error = (
+        abs(
+            effective_sample_rate_hz
+            - cfg.sample_rate_hz
+        )
+        / cfg.sample_rate_hz
+        if effective_sample_rate_hz > 0
+        else 1.0
+    )
+
+    if (
+        effective_rate_error
+        > cfg.sqi_effective_rate_fail_ratio
+        or timing_overrun_ratio
+        > cfg.sqi_timing_overrun_fail_ratio
+    ):
+        # 直接压到 INVALID 区间。
+        sqi = min(
+            sqi,
+            0.64,
+        )
+
+    elif (
+        effective_rate_error
+        > cfg.sqi_effective_rate_warn_ratio
+        or timing_overrun_ratio
+        > cfg.sqi_timing_overrun_warn_ratio
+    ):
+        # 中度时基偏差最多只能 LIMITED。
+        sqi = min(
+            sqi,
+            0.79,
+        )
 
     if sqi >= 0.80:
         status = VALID
@@ -125,7 +190,29 @@ def evaluate_signal_quality(
     if sequence_drop_ratio > 0.002:
         reasons.append("存在采样序号缺口")
     if timing_jitter_p95_ms > 0.8:
-        reasons.append("采样时基抖动偏高")
+        reasons.append(
+            "采样时基抖动偏高"
+            f"（p95 {timing_jitter_p95_ms:.1f} ms，"
+            f"有效 {effective_sample_rate_hz:.1f} Hz）"
+        )
+
+    if (
+        effective_rate_error
+        > cfg.sqi_effective_rate_warn_ratio
+    ):
+        reasons.append(
+            "有效采样率偏离目标 "
+            f"{effective_sample_rate_hz:.1f}/"
+            f"{cfg.sample_rate_hz:.0f} Hz"
+        )
+
+    if (
+        timing_overrun_ratio
+        > cfg.sqi_timing_overrun_warn_ratio
+    ):
+        reasons.append(
+            f"采样超时比例 {timing_overrun_ratio * 100:.1f}%"
+        )
     if protocol_error_ratio > cfg.protocol_max_error_ratio:
         reasons.append("协议错误比例偏高")
     if protocol.sample_seq_gaps > 0:
@@ -141,7 +228,9 @@ def evaluate_signal_quality(
         clip_low_ratio=clip_low_ratio,
         clip_high_ratio=clip_high_ratio,
         sequence_drop_ratio=sequence_drop_ratio,
+        effective_sample_rate_hz=effective_sample_rate_hz,
         timing_jitter_p95_ms=timing_jitter_p95_ms,
+        timing_overrun_ratio=timing_overrun_ratio,
         protocol_error_ratio=protocol_error_ratio,
         protocol_seq_gaps=protocol.sample_seq_gaps,
         reasons=reasons,
