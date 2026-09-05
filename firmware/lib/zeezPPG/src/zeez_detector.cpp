@@ -669,10 +669,12 @@ void ZeezAdaptiveDetector::pushCandidate(
     candidate.timing_score =
         timingScore(candidate.t_us);
 
+    // v0.3.5：Candidate 池优先保留形态更强的极值。
+    // 时间上下文只做弱裁判，避免次级同极性峰因“更靠近预测时刻”挤掉主峰。
     candidate.combined_score =
         clamp01(
-            0.68f * candidate.morphology_score
-            + 0.32f * candidate.timing_score
+            0.86f * candidate.morphology_score
+            + 0.14f * candidate.timing_score
         );
 
     // -----------------------------------------------------------------------
@@ -1304,10 +1306,12 @@ bool ZeezAdaptiveDetector::selectBestCandidate(
             timingScore(candidate.t_us);
 
         // 临近周期中心时，时间上下文权重稍微增加。
+        // v0.3.5：有了完整周期上下文后，形态是第一裁判。
+        // timing 只保留 10% 权重，防止预测相位把 Winner 拉到次级峰分支。
         const float combined =
             clamp01(
-                0.64f * candidate.morphology_score
-                + 0.36f * timing
+                0.90f * candidate.morphology_score
+                + 0.10f * timing
             );
 
         if (
@@ -1725,11 +1729,13 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         // 第一决策点：约到达预测周期后 1.06 倍。
         // 主峰稍早/稍晚都已经进入候选池。
         if (
-            phase >= 1.06f
+            // v0.3.5：延迟到约 1.40×预测相位再决策，
+            // 让同周期后面的真实主峰进入 Candidate Pool。
+            phase >= 1.40f
             && selectBestCandidate(
                 0.72f,
                 1.55f,
-                0.40f * score_threshold_scale_,
+                0.50f * score_threshold_scale_,
                 selected
             )
         ) {
@@ -1758,11 +1764,11 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
 
         // Rescue 1：预测周期已经明显超时，降低候选分数要求。
         if (
-            phase >= 1.35f
+            phase >= 1.50f
             && selectBestCandidate(
                 0.72f,
                 2.20f,
-                0.24f * score_threshold_scale_,
+                0.20f * score_threshold_scale_,
                 selected
             )
         ) {
@@ -1790,7 +1796,7 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
         }
 
         // Rescue 2：候选池也没有合适结果，直接在该周期波形中寻找最显著极值。
-        if (phase >= 1.70f) {
+        if (phase >= 1.65f) {
             ZeezCandidateFeatures rescue;
 
             if (

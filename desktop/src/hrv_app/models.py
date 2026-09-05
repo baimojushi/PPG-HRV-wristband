@@ -46,6 +46,11 @@ class BeatFrame:
     timing_shift_ms: float = 0.0
     timing_quality: float = 1.0
     timing_uncertainty_ms: float = 0.0
+
+    # v0.3.5：
+    # recovered=True 表示常规 ±120 ms 模板搜索失败后，
+    # 在稳健周期预测附近找回了同一生理主峰。
+    timing_recovered: bool = False
     refined: bool = False
 
 
@@ -129,6 +134,7 @@ class BeatRecord:
     timing_shift_ms: float = 0.0
     timing_quality: float = 1.0
     timing_uncertainty_ms: float = 0.0
+    timing_recovered: bool = False
     refined: bool = False
 
     status: str = "accepted"

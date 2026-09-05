@@ -716,6 +716,10 @@ class MainWindow(QMainWindow):
         rescue_count = debug_stats[
             "rescue_count"
         ]
+        fiducial_recovery_count = debug_stats.get(
+            "fiducial_recovery_count",
+            0,
+        )
         candidate_bpm = debug_stats[
             "candidate_bpm_estimate"
         ]
@@ -766,6 +770,7 @@ class MainWindow(QMainWindow):
             f"固件 {firmware_count} · "
             f"HRV Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
             f"Rescue {rescue_count} · "
+            f"相位恢复 {fiducial_recovery_count} · "
             f"未选 {difference} · "
             f"预测RR {expected_text} · "
             f"HR {accepted_hr:.0f} bpm · "

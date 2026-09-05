@@ -1,7 +1,7 @@
 {
   "name": "zeezPPG",
-  "version": "0.3.4",
-  "description": "Adaptive ring-buffer PPG detector with polarity lock, Peak Complex clustering, independent rhythm phase tracking, and incremental autocorrelation",
+  "version": "0.3.5",
+  "description": "Adaptive ring-buffer PPG detector with polarity lock, Peak Complex clustering, morphology-dominant delayed winner selection, independent rhythm phase tracking, and incremental autocorrelation",
   "frameworks": "arduino",
   "platforms": "espressif32"
 }

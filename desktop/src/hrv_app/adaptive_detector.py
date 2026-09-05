@@ -488,9 +488,12 @@ class AdaptivePPGDetector:
         timing = self._timing_score(
             t_us
         )
+        # v0.3.5：
+        # Candidate 池的保留优先级更多看形态，时间只做弱上下文。
+        # 避免“次级同极性峰刚好更接近预测时刻”把主峰挤出候选池。
         combined = self._clamp01(
-            0.68 * morphology_score
-            + 0.32 * timing
+            0.86 * morphology_score
+            + 0.14 * timing
         )
 
         return AdaptiveCandidate(
@@ -1096,10 +1099,13 @@ class AdaptivePPGDetector:
             timing = self._timing_score(
                 candidate.t_us
             )
+            # v0.3.5：
+            # 实测错相位 Winner 平均分约 0.63，主峰约 0.85。
+            # 周期内已经有足够未来上下文后，主峰形态应成为第一裁判。
             combined = self._clamp01(
-                0.64
+                0.90
                 * candidate.morphology_score
-                + 0.36
+                + 0.10
                 * timing
             )
 
@@ -1624,12 +1630,15 @@ class AdaptivePPGDetector:
 
             selected = None
 
-            if phase >= 1.06:
+            # v0.3.5：
+            # 不在预测中心刚过 6% 就立即做决定。
+            # 额外等待约 0.40×RR，让同周期后面的真实主峰有机会进入 Candidate Pool。
+            if phase >= 1.40:
                 selected = (
                     self._select_best_candidate(
                         0.72,
                         1.55,
-                        0.40
+                        0.50
                         * self.score_threshold_scale,
                     )
                 )
@@ -1643,13 +1652,13 @@ class AdaptivePPGDetector:
 
             if (
                 accepted is None
-                and phase >= 1.35
+                and phase >= 1.50
             ):
                 selected = (
                     self._select_best_candidate(
                         0.72,
                         2.20,
-                        0.24
+                        0.20
                         * self.score_threshold_scale,
                     )
                 )
@@ -1663,7 +1672,7 @@ class AdaptivePPGDetector:
 
             if (
                 accepted is None
-                and phase >= 1.70
+                and phase >= 1.65
             ):
                 rescue = (
                     self._waveform_rescue(

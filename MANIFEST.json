@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.4",
-  "base_version": "0.3.3",
-  "release_type": "independent-rhythm-phase-and-template-fiducial",
+  "version": "0.3.5",
+  "base_version": "0.3.4",
+  "release_type": "same-polarity-phase-branch-stabilization",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -39,7 +39,13 @@
     "predicted-phase waveform rescue",
     "desktop full-waveform template fiducial refinement",
     "Beat Timing Quality HRV gate",
-    "low-quality fiducial fallback to firmware timestamp"
+    "low-quality fiducial fallback to firmware timestamp",
+    "delayed winner decision at approximately 1.40 x expected RR",
+    "morphology-dominant 0.90/0.10 final winner score",
+    "high-score template bootstrap",
+    "rhythm-centered fiducial branch recovery",
+    "source-centered sub-half-cycle fiducial recovery",
+    "independent rhythm-consistency gate for large fiducial shifts"
   ],
   "protocol": {
     "version": 4,
@@ -58,7 +64,8 @@
       "score",
       "rescued flag"
     ],
-    "unchanged_from_v0_3_3": true
+    "unchanged_from_v0_3_3": true,
+    "unchanged_from_v0_3_4": true
   },
   "tiny_cnn": {
     "enabled": false,
@@ -68,7 +75,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "50 passed",
+    "tests": "54 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -439,10 +446,54 @@
         "low_quality_boundary_shift_ms": 120,
         "low_quality_boundary_shift_action": "rejected; firmware timestamp retained"
       }
+    },
+    "real_measurement_v0_3_5": {
+      "source": "uploaded v0.3.4 hrv_export.zip",
+      "reference_note": "dominant PPG pulse peaks are an offline engineering reference from smoothed PPG, not ECG ground truth",
+      "sampling": {
+        "effective_hz": 125.0,
+        "timing_jitter_p95_ms": 0.003,
+        "sqi": 0.9994
+      },
+      "root_cause": {
+        "firmware_winner_count_in_sample_range": 374,
+        "secondary_branch_ratio": 0.679144385026738,
+        "branch_transition_count": 47,
+        "outlier_ratio_at_branch_transition": 0.5319148936170213,
+        "outlier_ratio_without_branch_transition": 0.02108433734939759,
+        "main_branch_score_mean": 0.8502083333333333,
+        "secondary_branch_score_mean": 0.6273582677165354,
+        "v034_quality_0209_ratio": 0.5868421052631579
+      },
+      "detector_replay": {
+        "v034_reference_main_peak_within_40ms_ratio": 0.32085561497326204,
+        "v034_reference_over_120ms_ratio": 0.679144385026738,
+        "v035_accepted_count": 369,
+        "v035_main_peak_within_40ms_ratio": 0.907859078590786,
+        "v035_over_120ms_ratio": 0.0921409214092141,
+        "v035_rr_median_ms": 832.0,
+        "v035_rescue_ratio": 0.032520325203252036
+      },
+      "integrated_v035_replay": {
+        "firmware_beat_count": 369,
+        "refined_beat_count": 369,
+        "recovered_count": 1,
+        "recovered_ratio": 0.0027100271002710027,
+        "timing_quality_mean": 0.915178267047201,
+        "timing_unstable_ratio": 0.06233062330623306,
+        "uncertainty_p95_ms": 14.0,
+        "shift_p95_ms": 24.842599999999972,
+        "timeline_artifact_ratio": 0.0625,
+        "time_status": "VALID",
+        "time_reason": "",
+        "rmssd_ms": 40.023,
+        "frequency_status": "INVALID",
+        "frequency_reason": "未解决异常 6.1% > 5.0%；连续未解决异常 4 > 2"
+      }
     }
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 113,
+  "file_count": 118,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
@@ -454,6 +505,7 @@
     "commit_v032.txt",
     "commit_v033.txt",
     "commit_v034.txt",
+    "commit_v035.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
@@ -489,6 +541,7 @@
     "docs/ALGORITHM_v0.3.1.md",
     "docs/ALGORITHM_v0.3.2.md",
     "docs/ALGORITHM_v0.3.4_FIDUCIAL_PHASE.md",
+    "docs/ALGORITHM_v0.3.5_PHASE_BRANCH.md",
     "docs/ARCHITECTURE.md",
     "docs/CHEEZPPG_SOURCE_REVIEW.md",
     "docs/CNN_ENGINEERING_ROI_v0.3.3.md",
@@ -501,6 +554,7 @@
     "docs/PATCH_v0.3.1_POLARITY_LOCK.md",
     "docs/PATCH_v0.3.2_SAMPLING_AND_HRV_QUALITY.md",
     "docs/PATCH_v0.3.4_FIDUCIAL_PHASE.md",
+    "docs/PATCH_v0.3.5_PHASE_BRANCH.md",
     "docs/PROTOCOL.md",
     "docs/QUALITY_CONFIDENCE.md",
     "docs/THIRD_PARTY.md",
@@ -518,6 +572,8 @@
     "docs/VALIDATION_v0.3.3_ROBUST_SPECTRUM.md",
     "docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.json",
     "docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.md",
+    "docs/VALIDATION_v0.3.5_PHASE_BRANCH.json",
+    "docs/VALIDATION_v0.3.5_PHASE_BRANCH.md",
     "firmware/include/acquisition.h",
     "firmware/include/config.h",
     "firmware/include/data_types.h",
@@ -560,7 +616,9 @@
   ],
   "debug_export": [
     "samples_debug.csv",
-    "beats_raw.csv"
+    "beats_raw.csv",
+    "beats_refined.csv: timing_recovered",
+    "beats_cleaned.csv: timing_recovered"
   ],
   "firmware_changed": true,
   "protocol_version": 4,

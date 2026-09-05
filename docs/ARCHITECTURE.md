@@ -1,72 +1,48 @@
-# v0.3.4 完整架构
+# v0.3.5 完整架构
 
 ```text
 Core 1 · Acquisition @125 Hz
 │
-├─ ADC / PPG filtering
-│
 └─ zeezPPG
-   ├─ Signal / Slope Ring
-   ├─ Dynamic morphology score
-   ├─ Raw Candidate
-   ├─ Same-polarity Peak Complex clustering
-   ├─ Independent rhythm phase tracker
-   ├─ Candidate winner
-   ├─ Same-polarity Rescue
-   └─ Incremental autocorrelation
+   ├─ dynamic morphology
+   ├─ raw Candidate
+   ├─ same-polarity Peak Complex
+   ├─ incremental autocorrelation
+   ├─ independent rhythm phase
+   ├─ delayed decision @ ~1.40×RR
+   ├─ morphology-dominant Winner
+   └─ Rescue
           ↓
-      Firmware Accepted Beat
+   Firmware Accepted Beat
           ↓
-Core 0 · Transport
-          ↓
-Protocol v4 + CRC16
+Protocol v4
           ↓
 Desktop
 │
-├─ Raw session recorder
-│  ├─ samples_debug.csv
-│  └─ beats_raw.csv
-│
 ├─ TemplateFiducialRefiner
-│  ├─ full-waveform cross-correlation
-│  ├─ sub-sample peak interpolation
-│  ├─ timing quality
-│  ├─ uncertainty
-│  └─ low-quality fallback
+│  ├─ high-score bootstrap
+│  ├─ normal ±120 ms search
+│  ├─ rhythm-centered recovery
+│  ├─ <0.5×RR source-wide recovery
+│  └─ high-correlation + rhythm-consistency gate
 │       ↓
-│   beats_refined.csv
-│       ↓
+│   Unified HRV fiducial
+│
+├─ Beat Timing Quality
 ├─ BeatTimelineCleaner
-│       ↓
-│   beats_cleaned.csv / NN
-│
-├─ Time domain
-│  └─ VALID / LIMITED / INVALID
-│
-└─ Frequency domain
-   ├─ Welch(PCHIP)
-   ├─ Welch(linear)
-   ├─ Lomb–Scargle
-   ├─ robust spectral cross-validation
-   └─ SPWVD
+├─ Time Domain
+└─ Frequency Domain
 ```
 
-## 两个时间轴
+## 三种时间语义
 
-### 固件时间轴
+### 节律相位
+描述下一搏大致应该出现的周期位置。
 
-用于实时心率、心搏存在性和固件 Debug。
+### 固件 Winner
+描述固件认为本周期最强的实际候选。
 
-### HRV 时间轴
+### HRV fiducial
+描述经过完整 PPG 模板统一后的时间标志点。
 
-由完整 PPG 模板统一 fiducial 后产生。
-
-两条时间轴同时保存，任何 HRV 变化都可以回溯到具体平移。
-
-## 节律相位与 fiducial 解耦
-
-节律预测器负责“下一搏应该大致什么时候出现”。
-
-模板细化器负责“这一搏最终用哪个统一 PPG 相位计算 RR”。
-
-这两个状态不互相强制，从结构上降低相位误差正反馈。
+三者分开维护，避免一个局部峰选错后把下一周期和 HRV 时间轴同时拖偏。

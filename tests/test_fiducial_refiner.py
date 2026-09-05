@@ -312,7 +312,7 @@ def test_engine_rejects_low_quality_template_shift_from_rr_timeline():
 
     # 模拟困难平顶峰：互相关数学最大值落到搜索边界，质量很低。
     # v0.3.4 必须保留固件时间，不允许这个不可靠偏移直接污染 RR。
-    engine._fiducial_refiner.refine = lambda beat, samples: FiducialResult(
+    engine._fiducial_refiner.refine = lambda beat, samples, **kwargs: FiducialResult(
         t_us=source_t_us + 120_000,
         quality=0.20,
         uncertainty_ms=64.0,
@@ -345,3 +345,177 @@ def test_engine_rejects_low_quality_template_shift_from_rr_timeline():
     # 低质量证据仍然保留，用于后续 Beat Timing Quality 质量门。
     assert refined.timing_quality == 0.20
     assert refined.timing_uncertainty_ms == 64.0
+
+
+
+def test_refiner_waits_for_high_score_main_peak_before_bootstrap():
+    samples = build_samples(
+        rr_ms=800.0,
+        duration_s=5.0,
+    )
+    refiner = TemplateFiducialRefiner()
+
+    low = refiner.refine(
+        BeatFrame(
+            seq=1,
+            t_us=1_056_000,
+            rr_ms=0.0,
+            hr_bpm=75.0,
+            score=0.62,
+            flags=0x09,
+        ),
+        samples,
+    )
+
+    assert not low.refined
+    assert not refiner.template_ready
+    assert low.quality < 0.62
+
+    high = refiner.refine(
+        BeatFrame(
+            seq=2,
+            t_us=1_856_000,
+            rr_ms=800.0,
+            hr_bpm=75.0,
+            score=0.90,
+            flags=0x09,
+        ),
+        samples,
+    )
+
+    assert high.refined
+    assert refiner.template_ready
+    assert high.quality >= 0.80
+
+
+def test_refiner_recovers_secondary_peak_branch_near_expected_cycle():
+    rr_ms = 800.0
+    samples = build_samples(
+        rr_ms=rr_ms,
+        duration_s=8.0,
+    )
+    refiner = TemplateFiducialRefiner()
+
+    # 第一搏用高分主峰建立模板。
+    first_true_ms = 1_856.0
+
+    first = refiner.refine(
+        BeatFrame(
+            seq=1,
+            t_us=int(first_true_ms * 1000),
+            rr_ms=0.0,
+            hr_bpm=75.0,
+            score=0.92,
+            flags=0x09,
+        ),
+        samples,
+    )
+
+    assert first.refined
+
+    # 第二搏故意把固件 Winner 放到主峰前 240 ms。
+    second_true_ms = first_true_ms + rr_ms
+    source_ms = second_true_ms - 240.0
+
+    second = refiner.refine(
+        BeatFrame(
+            seq=2,
+            t_us=int(source_ms * 1000),
+            rr_ms=rr_ms,
+            hr_bpm=75.0,
+            score=0.64,
+            flags=0x09,
+        ),
+        samples,
+        expected_t_us=int(
+            second_true_ms
+            * 1000
+        ),
+        expected_rr_ms=rr_ms,
+    )
+
+    assert second.recovered
+    assert second.refined
+    assert abs(
+        second.t_us / 1000.0
+        - second_true_ms
+    ) < 12.0
+    assert second.shift_ms > 180.0
+    assert second.quality >= 0.74
+
+
+def test_engine_accepts_high_quality_recovered_large_shift():
+    from hrv_app.engine import AnalysisEngine
+    from hrv_app.fiducial_refiner import FiducialResult
+
+    engine = AnalysisEngine()
+
+    for sample in build_samples(
+        rr_ms=800.0,
+        duration_s=4.0,
+    ):
+        engine.ingest_sample(sample)
+
+    # 第一搏正常，建立 refined 时间历史。
+    first_t_us = 1_056_000
+    engine._fiducial_refiner.refine = (
+        lambda beat, samples, **kwargs: FiducialResult(
+            t_us=int(beat.t_us),
+            quality=0.90,
+            uncertainty_ms=8.0,
+            shift_ms=0.0,
+            correlation=0.95,
+            refined=True,
+            polarity=1,
+            recovered=False,
+        )
+    )
+
+    engine.ingest_beat(
+        BeatFrame(
+            seq=100,
+            t_us=first_t_us,
+            rr_ms=0.0,
+            hr_bpm=75.0,
+            score=0.90,
+            flags=0x09,
+        )
+    )
+
+    # 第二个固件 Winner 落在主峰前 240 ms。
+    # recovered=True 且相关质量高时允许跨过旧版 ±96 ms 限制。
+    source_t_us = 1_616_000
+    target_t_us = 1_856_000
+
+    engine._fiducial_refiner.refine = (
+        lambda beat, samples, **kwargs: FiducialResult(
+            t_us=target_t_us,
+            quality=0.92,
+            uncertainty_ms=12.0,
+            shift_ms=240.0,
+            correlation=0.96,
+            refined=True,
+            polarity=1,
+            recovered=True,
+        )
+    )
+
+    engine.ingest_beat(
+        BeatFrame(
+            seq=101,
+            t_us=source_t_us,
+            rr_ms=560.0,
+            hr_bpm=75.0,
+            score=0.64,
+            flags=0x09,
+        )
+    )
+
+    refined = engine.export_bundle()[
+        "raw_beats"
+    ]
+
+    assert len(refined) == 2
+    assert refined[-1].t_us == target_t_us
+    assert refined[-1].timing_recovered
+    assert refined[-1].refined

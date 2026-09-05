@@ -208,9 +208,66 @@ class AnalysisEngine:
 
             self._pending_firmware_beats.popleft()
 
+            # --------------------------------------------------------------
+            # v0.3.5：建立“搜索中心”，不直接正则化时间戳。
+            # --------------------------------------------------------------
+            # refined RR 中位数已经不受固件主峰/次级峰分支切换直接驱动；
+            # source.hr_bpm 只在 refined 历史不足时提供一个慢速节律尺度。
+            if self._refined_rr_history:
+                expected_rr_ms = float(
+                    np.median(
+                        np.asarray(
+                            self._refined_rr_history,
+                            dtype=float,
+                        )
+                    )
+                )
+            elif (
+                np.isfinite(source.hr_bpm)
+                and 35.0
+                <= source.hr_bpm
+                <= 220.0
+            ):
+                expected_rr_ms = float(
+                    60000.0
+                    / source.hr_bpm
+                )
+            elif (
+                np.isfinite(source.rr_ms)
+                and 300.0
+                <= source.rr_ms
+                <= 1800.0
+            ):
+                expected_rr_ms = float(
+                    source.rr_ms
+                )
+            else:
+                expected_rr_ms = 0.0
+
+            expected_t_us = (
+                int(
+                    round(
+                        self._last_refined_t_us
+                        + expected_rr_ms
+                        * 1000.0
+                    )
+                )
+                if (
+                    self._last_refined_t_us > 0
+                    and expected_rr_ms > 0
+                )
+                else None
+            )
+
             result = self._fiducial_refiner.refine(
                 source,
                 list(self._samples),
+                expected_t_us=expected_t_us,
+                expected_rr_ms=(
+                    expected_rr_ms
+                    if expected_rr_ms > 0
+                    else None
+                ),
             )
 
             # 会话结束时最后约 0.4 秒可能没有足够未来波形。
@@ -241,28 +298,56 @@ class AnalysisEngine:
             refined_ok = bool(
                 result.refined
             )
+            timing_recovered = bool(
+                result.recovered
+            )
 
             # --------------------------------------------------------------
-            # v0.3.4 低质量模板对齐不允许改写 RR 时间轴。
+            # v0.3.5 低质量模板对齐不允许改写 RR 时间轴。
             # --------------------------------------------------------------
-            # 平顶峰、运动噪声或模板失配时，互相关仍然会给出一个数学最大值。
-            # 如果质量低、相关峰过宽、或最佳平移已经靠近搜索边界，
-            # 直接回退到固件 Accepted 时间；低质量证据继续进入 HRV 质量门。
+            # 普通模板搜索仍限制在 ±96 ms。
+            #
+            # recovered=True 时，允许跨过实测约 0.2–0.35 s 的
+            # “同极性次级峰 → 主峰”相位差，但必须同时满足：
+            # - 高模板质量；
+            # - 小不确定度；
+            # - 偏移小于约 0.48×RR。
+            if (
+                timing_recovered
+                and expected_rr_ms > 0
+            ):
+                max_applied_shift_ms = min(
+                    self.config.fiducial_recovery_max_source_shift_ms,
+                    expected_rr_ms
+                    * self.config.fiducial_recovery_max_source_shift_ratio,
+                )
+                minimum_quality = (
+                    self.config.fiducial_recovery_min_quality
+                )
+            else:
+                max_applied_shift_ms = (
+                    self.config.fiducial_max_applied_shift_ms
+                )
+                minimum_quality = (
+                    self.config.fiducial_unstable_quality_threshold
+                )
+
             if (
                 refined_ok
                 and (
                     timing_quality
-                    < self.config.fiducial_unstable_quality_threshold
+                    < minimum_quality
                     or uncertainty_ms
                     > self.config.fiducial_uncertainty_fail_ms
                     or abs(timing_shift_ms)
-                    > self.config.fiducial_max_applied_shift_ms
+                    > max_applied_shift_ms
                 )
             ):
                 refined_t_us = int(
                     source.t_us
                 )
                 timing_shift_ms = 0.0
+                timing_recovered = False
                 refined_ok = False
 
             if (
@@ -283,6 +368,7 @@ class AnalysisEngine:
                     uncertainty_ms,
                     80.0,
                 )
+                timing_recovered = False
                 refined_ok = False
 
             if self._last_refined_t_us == 0:
@@ -336,6 +422,7 @@ class AnalysisEngine:
                 timing_shift_ms=timing_shift_ms,
                 timing_quality=timing_quality,
                 timing_uncertainty_ms=uncertainty_ms,
+                timing_recovered=timing_recovered,
                 refined=refined_ok,
             )
 
@@ -737,7 +824,7 @@ class AnalysisEngine:
         dict,
     ]:
         """
-        返回 v0.3.4 动态检测 + fiducial 调试序列。
+        返回 v0.3.5 分支稳定检测 + fiducial 恢复调试序列。
 
         右侧 0~1 轴：
         - detector_score：连续形态活跃度；
@@ -1008,6 +1095,13 @@ class AnalysisEngine:
             for beat in accepted_beats
         )
 
+        fiducial_recovery_count = sum(
+            bool(
+                beat.timing_recovered
+            )
+            for beat in accepted_beats
+        )
+
         candidate_bpm = (
             candidate_count
             * 60.0
@@ -1110,6 +1204,7 @@ class AnalysisEngine:
                 "accepted_beat_count": accepted_count,
                 "firmware_beat_count": firmware_count,
                 "rescue_count": rescue_count,
+                "fiducial_recovery_count": fiducial_recovery_count,
                 "candidate_bpm_estimate": candidate_bpm,
                 "accepted_bpm_estimate": accepted_bpm,
                 "candidate_minus_accepted": max(

@@ -73,6 +73,9 @@ class BeatTimelineCleaner:
                 timing_uncertainty_ms=float(
                     getattr(b, "timing_uncertainty_ms", 0.0)
                 ),
+                timing_recovered=bool(
+                    getattr(b, "timing_recovered", False)
+                ),
                 refined=bool(
                     getattr(b, "refined", False)
                 ),

@@ -1,0 +1,44 @@
+{
+  "source": "uploaded v0.3.4 hrv_export.zip",
+  "reference_note": "dominant PPG pulse peaks are an offline engineering reference from smoothed PPG, not ECG ground truth",
+  "sampling": {
+    "effective_hz": 125.0,
+    "timing_jitter_p95_ms": 0.003,
+    "sqi": 0.9994
+  },
+  "root_cause": {
+    "firmware_winner_count_in_sample_range": 374,
+    "secondary_branch_ratio": 0.679144385026738,
+    "branch_transition_count": 47,
+    "outlier_ratio_at_branch_transition": 0.5319148936170213,
+    "outlier_ratio_without_branch_transition": 0.02108433734939759,
+    "main_branch_score_mean": 0.8502083333333333,
+    "secondary_branch_score_mean": 0.6273582677165354,
+    "v034_quality_0209_ratio": 0.5868421052631579
+  },
+  "detector_replay": {
+    "v034_reference_main_peak_within_40ms_ratio": 0.32085561497326204,
+    "v034_reference_over_120ms_ratio": 0.679144385026738,
+    "v035_accepted_count": 369,
+    "v035_main_peak_within_40ms_ratio": 0.907859078590786,
+    "v035_over_120ms_ratio": 0.0921409214092141,
+    "v035_rr_median_ms": 832.0,
+    "v035_rescue_ratio": 0.032520325203252036
+  },
+  "integrated_v035_replay": {
+    "firmware_beat_count": 369,
+    "refined_beat_count": 369,
+    "recovered_count": 1,
+    "recovered_ratio": 0.0027100271002710027,
+    "timing_quality_mean": 0.915178267047201,
+    "timing_unstable_ratio": 0.06233062330623306,
+    "uncertainty_p95_ms": 14.0,
+    "shift_p95_ms": 24.842599999999972,
+    "timeline_artifact_ratio": 0.0625,
+    "time_status": "VALID",
+    "time_reason": "",
+    "rmssd_ms": 40.023,
+    "frequency_status": "INVALID",
+    "frequency_reason": "未解决异常 6.1% > 5.0%；连续未解决异常 4 > 2"
+  }
+}

@@ -297,6 +297,7 @@ def export_engine_results(
             "timing_shift_ms",
             "timing_quality",
             "timing_uncertainty_ms",
+            "timing_recovered",
             "refined",
             "flags",
         ])
@@ -312,6 +313,7 @@ def export_engine_results(
                 beat.timing_shift_ms,
                 beat.timing_quality,
                 beat.timing_uncertainty_ms,
+                int(beat.timing_recovered),
                 int(beat.refined),
                 beat.flags,
             ])
@@ -342,6 +344,7 @@ def export_engine_results(
             "timing_shift_ms",
             "timing_quality",
             "timing_uncertainty_ms",
+            "timing_recovered",
             "refined",
             "flags",
         ])
@@ -364,6 +367,7 @@ def export_engine_results(
                 beat.timing_shift_ms,
                 beat.timing_quality,
                 beat.timing_uncertainty_ms,
+                int(beat.timing_recovered),
                 int(beat.refined),
                 beat.flags,
             ])

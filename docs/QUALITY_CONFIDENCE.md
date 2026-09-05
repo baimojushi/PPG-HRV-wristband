@@ -167,3 +167,26 @@ uncertainty p95 <=50 ms
 ```
 
 超过 LIMITED 门时，HRV 为 INVALID，即使采样 SQI=100%。
+
+
+## v0.3.5 相位分支恢复证据
+
+单搏增加：
+
+```text
+timing_recovered
+```
+
+它只表示该搏通过宽范围模板搜索从次级相位分支恢复到模板相位。
+
+大偏移恢复不会自动获得高质量，仍需满足：
+
+```text
+高模板相关
+低不确定度
+独立节律一致
+<0.5×RR 的源时间偏移
+```
+
+`timing_recovered` 主要用于 Debug、导出和后续难例统计。
+HRV 是否 VALID 仍由 Timing Quality、RR 异常比例和频域互证共同决定。

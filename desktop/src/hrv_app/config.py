@@ -127,6 +127,40 @@ class AnalysisConfig:
     fiducial_search_ms: float = 120.0
     fiducial_search_step_ms: float = 4.0
 
+    # v0.3.5：模板不能由一个低分 Winner 随机决定。
+    # 本次实测中主峰 Winner 平均约 0.85，错相位分支平均约 0.63；
+    # 0.74 可以显著降低“模板从次级局部峰启动”的概率。
+    fiducial_bootstrap_min_winner_score: float = 0.74
+
+    # 正常 ±120 ms 搜索找不到模板时，允许围绕“上一统一 fiducial + 稳健 RR”
+    # 做一次更宽的恢复搜索。预测值只决定搜索窗口，不直接改写时间戳。
+    fiducial_recovery_trigger_correlation: float = 0.70
+    fiducial_recovery_min_correlation: float = 0.78
+
+    # 围绕固件 Winner 做接近半周期的宽恢复时，必须使用更高相关门。
+    # 半径仍严格 <0.5×RR，因此不会主动跨到相邻生理周期。
+    fiducial_source_recovery_min_correlation: float = 0.88
+
+    fiducial_recovery_min_quality: float = 0.74
+    fiducial_recovery_expected_window_ratio: float = 0.30
+    fiducial_recovery_min_window_ms: float = 150.0
+    fiducial_recovery_max_window_ms: float = 260.0
+    fiducial_recovery_max_source_shift_ratio: float = 0.48
+    fiducial_recovery_max_source_shift_ms: float = 420.0
+
+    # 大偏移恢复必须同时靠近独立周期预测。
+    # 这防止同一主峰被两个错误固件事件重复吸附。
+    fiducial_recovery_consistency_ratio: float = 0.22
+    fiducial_recovery_consistency_min_ms: float = 100.0
+    fiducial_recovery_consistency_max_ms: float = 180.0
+
+    fiducial_recovery_step_ms: float = 4.0
+
+    # 连续失配时允许在“高分 Winner”上重新启动模板。
+    # 只在确定性检测器给出明显主峰级形态分时触发。
+    fiducial_rebootstrap_bad_run: int = 6
+    fiducial_rebootstrap_min_winner_score: float = 0.82
+
     fiducial_template_pre_ms: float = 280.0
     fiducial_template_post_ms: float = 280.0
     fiducial_template_step_ms: float = 8.0

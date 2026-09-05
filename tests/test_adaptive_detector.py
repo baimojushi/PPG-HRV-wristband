@@ -398,3 +398,61 @@ def test_single_late_fiducial_only_small_corrects_next_phase_target():
     # 下一目标应接近 2.400 s，仅允许小增益修正，不能被拖到 2.480 s。
     assert 2_400_000 <= detector.predicted_beat_t_us <= 2_410_000
     assert detector.last_phase_error_ms == 80.0
+
+
+
+def test_main_peak_morphology_beats_early_same_polarity_secondary_peak():
+    detector = AdaptivePPGDetector(
+        sample_rate_hz=125.0,
+    )
+
+    detector.last_accepted_t_us = 1_000_000
+    detector.last_accepted_seq = 100
+    detector.locked_polarity = 1
+    detector.expected_rr_ms = 800.0
+
+    # 同一生理周期内：
+    # - 早到的次级同极性局部峰更接近预测时刻，但形态较弱；
+    # - 稍晚的真实主峰形态明显更强。
+    secondary = AdaptiveCandidate(
+        seq=190,
+        t_us=1_720_000,
+        value=42.0,
+        morphology_score=0.63,
+        timing_score=0.0,
+        combined_score=0.0,
+        amplitude_z=1.0,
+        prominence_z=0.9,
+        slope_z=0.9,
+        curvature_z=0.6,
+        polarity=1,
+    )
+
+    main_peak = AdaptiveCandidate(
+        seq=215,
+        t_us=1_920_000,
+        value=78.0,
+        morphology_score=0.85,
+        timing_score=0.0,
+        combined_score=0.0,
+        amplitude_z=2.1,
+        prominence_z=2.0,
+        slope_z=1.8,
+        curvature_z=1.0,
+        polarity=1,
+    )
+
+    detector.candidate_pool = [
+        secondary,
+        main_peak,
+    ]
+
+    selected = detector._select_best_candidate(
+        0.72,
+        1.55,
+        0.50,
+    )
+
+    assert selected is not None
+    assert selected.t_us == main_peak.t_us
+    assert selected.morphology_score > secondary.morphology_score
