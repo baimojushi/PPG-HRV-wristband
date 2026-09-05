@@ -7,6 +7,18 @@ class AnalysisConfig:
 
     sample_rate_hz: float = 125.0
 
+    # ------------------------------------------------------------------
+    # v0.3.6 软件人工标注
+    # ------------------------------------------------------------------
+    # 用户看到 UI 中的异常后，按 F8 或点击“标记异常”。
+    # 标注中心使用“当前屏幕右缘对应的设备 t_us”，不使用 Windows 墙钟。
+    user_annotation_lookback_seconds: float = 3.0
+
+    # 为判断低频潜在状态是否在异常前逐步积累，保留更长的上下文。
+    user_annotation_context_before_seconds: float = 120.0
+    user_annotation_context_after_seconds: float = 5.0
+    user_annotation_context_bin_seconds: float = 1.0
+
     # 原项目时域窗口继续使用最近 60 个 RR，至少 40 个可直接使用的 NN。
     time_window_rr_count: int = 60
     time_min_valid_rr_count: int = 40

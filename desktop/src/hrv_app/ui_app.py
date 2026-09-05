@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
+import time
 import traceback
 
 import numpy as np
@@ -9,6 +10,7 @@ import pyqtgraph as pg
 from serial.tools import list_ports
 
 from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -90,6 +92,15 @@ QPushButton#primary {
     color: white;
     border: none;
 }
+QPushButton#mark {
+    background: #B86F68;
+    color: white;
+    border: none;
+    font-weight: 600;
+}
+QPushButton#mark:hover {
+    background: #A9605A;
+}
 QComboBox {
     min-height: 38px;
     padding: 0 12px;
@@ -161,6 +172,14 @@ class MainWindow(QMainWindow):
         )
 
         self.recorder: SessionRecorder | None = None
+
+        # 先断开设备再导出时，仍保留刚结束的完整实时会话目录。
+        self._last_session_dir: Path | None = None
+
+        # 该时间戳来自最近一次真正绘制到屏幕上的 PPG 右缘。
+        # 软件人工标注使用它，不使用“点击瞬间后台线程收到的更晚 Sample”。
+        self._displayed_end_t_us = 0
+
         self._worker_status = "未连接设备"
         self._csv_loading = False
         self._spwvd_loading = False
@@ -172,6 +191,18 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._refresh_ports()
+
+        # F8 是不会和串口、图表拖动、文本输入冲突的全局人工标注快捷键。
+        self.mark_annotation_shortcut = QShortcut(
+            QKeySequence("F8"),
+            self,
+        )
+        self.mark_annotation_shortcut.setContext(
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+        self.mark_annotation_shortcut.activated.connect(
+            self._mark_annotation
+        )
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh_ui)
@@ -209,6 +240,63 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.open_csv_button)
         toolbar.addWidget(self.export_button)
         root.addLayout(toolbar)
+
+        # ------------------------------------------------------------------
+        # v0.3.6 软件人工标注。
+        # ------------------------------------------------------------------
+        # 点击/F8 只冻结“当前屏幕数据的设备时间”，不修改任何检测状态。
+        annotation_bar = QHBoxLayout()
+
+        annotation_bar.addWidget(
+            QLabel("人工标注")
+        )
+
+        self.annotation_type_combo = QComboBox()
+        self.annotation_type_combo.addItems([
+            "未分类",
+            "峰位漂移",
+            "漏检",
+            "多检",
+            "周期跳变",
+            "其他",
+        ])
+        self.annotation_type_combo.setToolTip(
+            "可先保持“未分类”；时间戳会在按键瞬间立即保存。"
+        )
+
+        self.mark_annotation_button = QPushButton(
+            "标记异常 · F8"
+        )
+        self.mark_annotation_button.setObjectName(
+            "mark"
+        )
+        self.mark_annotation_button.setEnabled(
+            False
+        )
+        self.mark_annotation_button.clicked.connect(
+            self._mark_annotation
+        )
+
+        self.annotation_hint = QLabel(
+            "看到问题后 3 秒内按；标记当前屏幕数据，不反馈给检测算法。"
+        )
+        self.annotation_hint.setObjectName(
+            "heroSub"
+        )
+
+        annotation_bar.addWidget(
+            self.annotation_type_combo
+        )
+        annotation_bar.addWidget(
+            self.mark_annotation_button
+        )
+        annotation_bar.addWidget(
+            self.annotation_hint,
+            1,
+        )
+        root.addLayout(
+            annotation_bar
+        )
 
         # ------------------------------------------------------------------
         # C 端首页主视觉
@@ -291,6 +379,49 @@ class MainWindow(QMainWindow):
             pen=pg.mkPen("#7F718D", width=2)
         )
 
+        # v0.3.6：最近一次人工问题区间。
+        # 半透明区域 = 按键前 3 秒；竖线 = 软件按键对应的屏幕右缘设备时间。
+        self.annotation_region = pg.LinearRegionItem(
+            values=(-3.0, 0.0),
+            movable=False,
+            brush=pg.mkBrush(
+                184,
+                111,
+                104,
+                36,
+            ),
+            pen=pg.mkPen(
+                "#B86F68",
+                width=1,
+            ),
+        )
+        self.annotation_region.setZValue(
+            -5
+        )
+        self.annotation_region.setVisible(
+            False
+        )
+        self.signal_plot.addItem(
+            self.annotation_region
+        )
+
+        self.annotation_line = pg.InfiniteLine(
+            pos=0.0,
+            angle=90,
+            movable=False,
+            pen=pg.mkPen(
+                "#B86F68",
+                width=2,
+                style=Qt.PenStyle.DashLine,
+            ),
+        )
+        self.annotation_line.setVisible(
+            False
+        )
+        self.signal_plot.addItem(
+            self.annotation_line
+        )
+
         # 右侧独立 0/1 轴。
         # PPG 仍使用左侧物理幅值轴，心跳识别状态不会因为波形幅度变化而被压扁。
         self.signal_plot.showAxis("right")
@@ -357,7 +488,7 @@ class MainWindow(QMainWindow):
         self._sync_signal_debug_view()
 
         self.signal_debug_label = QLabel(
-            "调试：紫=形态分数 · 黄=Candidate · 灰虚线=固件Winner · 绿=HRV统一fiducial"
+            "调试：紫=形态分数 · 黄=Candidate · 灰虚线=固件Winner · 绿=HRV统一fiducial · 红=人工标注"
         )
         self.signal_debug_label.setObjectName("heroSub")
         self.signal_debug_label.setWordWrap(True)
@@ -461,9 +592,15 @@ class MainWindow(QMainWindow):
 
         try:
             self.engine.reset()
+            self._displayed_end_t_us = 0
 
             desktop_root = Path(__file__).resolve().parents[2]
-            self.recorder = SessionRecorder(desktop_root / "sessions")
+            self.recorder = SessionRecorder(
+                desktop_root / "sessions"
+            )
+            self._last_session_dir = (
+                self.recorder.session_dir
+            )
 
             self.receiver.start(port, 115200)
             self.connect_button.setText("断开设备")
@@ -510,6 +647,9 @@ class MainWindow(QMainWindow):
         if self._csv_loading:
             return
 
+        self._last_session_dir = None
+        self._displayed_end_t_us = 0
+
         self._csv_loading = True
         self._worker_status = f"正在分析：{Path(path).name}"
 
@@ -528,6 +668,74 @@ class MainWindow(QMainWindow):
             daemon=True,
         ).start()
 
+    def _mark_annotation(self) -> None:
+        """
+        软件人工标注入口。
+
+        关键语义：
+        - 使用最近一次绘图时冻结的 `_displayed_end_t_us`；
+        - 同时保存 host monotonic clock；
+        - 不弹对话框，保证时间标注动作尽可能快；
+        - 当前下拉框的类型只是标签，不影响算法。
+        """
+        if (
+            not self.receiver.running
+            or self._displayed_end_t_us <= 0
+        ):
+            self._worker_status = (
+                "人工标注未记录：需要连接实时设备并先收到 PPG。"
+            )
+            return
+
+        annotation = (
+            self.engine.add_user_annotation(
+                device_t_us=(
+                    self._displayed_end_t_us
+                ),
+                host_monotonic_ns=(
+                    time.monotonic_ns()
+                ),
+                label_type=(
+                    self.annotation_type_combo.currentText()
+                ),
+            )
+        )
+
+        if annotation is None:
+            self._worker_status = (
+                "人工标注未记录：当前屏幕数据已经不在可用设备时间范围内。"
+            )
+            return
+
+        if self.recorder:
+            try:
+                self.recorder.record_annotation(
+                    annotation
+                )
+            except Exception as exc:
+                self._worker_status = (
+                    "人工标注已进入分析引擎，但实时标注落盘失败："
+                    + str(exc)
+                )
+                return
+
+        self._worker_status = (
+            f"已标记异常 #{annotation.annotation_id} · "
+            f"{annotation.label_type} · "
+            f"屏幕数据滞后 {annotation.ui_data_lag_ms:.0f} ms"
+        )
+
+        # 非阻塞视觉确认；800 ms 后恢复按钮文案。
+        self.mark_annotation_button.setText(
+            f"已标记 #{annotation.annotation_id}"
+        )
+        QTimer.singleShot(
+            800,
+            lambda: self.mark_annotation_button.setText(
+                "标记异常 · F8"
+            ),
+        )
+
     def _export_results(self) -> None:
         folder = QFileDialog.getExistingDirectory(
             self,
@@ -538,7 +746,22 @@ class MainWindow(QMainWindow):
 
         try:
             out = Path(folder) / "hrv_export"
-            export_engine_results(self.engine, out)
+
+            raw_session_dir = (
+                self._last_session_dir
+            )
+
+            if self.recorder:
+                self.recorder.flush()
+                raw_session_dir = (
+                    self.recorder.session_dir
+                )
+
+            export_engine_results(
+                self.engine,
+                out,
+                raw_session_dir=raw_session_dir,
+            )
             QMessageBox.information(
                 self,
                 "导出完成",
@@ -757,20 +980,125 @@ class MainWindow(QMainWindow):
             "timing_overrun_ratio"
         ]
 
+        self._displayed_end_t_us = int(
+            debug_stats.get(
+                "end_t_us",
+                0,
+            )
+        )
+
+        annotation_count = int(
+            debug_stats.get(
+                "annotation_count",
+                0,
+            )
+        )
+        recent_annotation_count = int(
+            debug_stats.get(
+                "recent_annotation_count",
+                0,
+            )
+        )
+        last_annotation_age_s = float(
+            debug_stats.get(
+                "last_annotation_age_s",
+                -1.0,
+            )
+        )
+
+        self.mark_annotation_button.setEnabled(
+            bool(
+                self.receiver.running
+                and self._displayed_end_t_us > 0
+            )
+        )
+
+        # 当前 12 秒图只显示最近一条人工标注，减少多次阴影覆盖。
+        recent_annotations = (
+            self.engine.recent_annotations(
+                seconds=12.0,
+                end_t_us=(
+                    self._displayed_end_t_us
+                ),
+            )
+            if self._displayed_end_t_us > 0
+            else []
+        )
+
+        if recent_annotations:
+            latest_annotation = (
+                recent_annotations[-1]
+            )
+
+            region_start = (
+                latest_annotation.label_start_us
+                - self._displayed_end_t_us
+            ) / 1e6
+            region_end = (
+                latest_annotation.label_end_us
+                - self._displayed_end_t_us
+            ) / 1e6
+            line_position = (
+                latest_annotation.device_t_us
+                - self._displayed_end_t_us
+            ) / 1e6
+
+            self.annotation_region.setRegion(
+                (
+                    float(
+                        region_start
+                    ),
+                    float(
+                        region_end
+                    ),
+                )
+            )
+            self.annotation_line.setPos(
+                float(
+                    line_position
+                )
+            )
+            self.annotation_region.setVisible(
+                True
+            )
+            self.annotation_line.setVisible(
+                True
+            )
+        else:
+            self.annotation_region.setVisible(
+                False
+            )
+            self.annotation_line.setVisible(
+                False
+            )
+
         expected_text = (
             f"{expected_rr:.0f} ms"
             if expected_rr > 0
             else "建立中"
         )
 
+        if last_annotation_age_s >= 0:
+            self.annotation_hint.setText(
+                "最近人工标注 "
+                f"{last_annotation_age_s:.1f}s 前 · "
+                "红色区域=标注前3秒"
+            )
+        else:
+            self.annotation_hint.setText(
+                "看到问题后 3 秒内按；标记当前屏幕数据，不反馈给检测算法。"
+            )
+
         self.signal_debug_label.setText(
-            "调试：紫=形态 · 黄=Candidate · 灰=固件Winner · 绿=统一fiducial  |  "
+            "调试：紫=形态 · 黄=Candidate · 灰=固件Winner · 绿=统一fiducial · 红=人工标注  |  "
             f"窗口 {duration:.1f}s · "
             f"Candidate {candidate_count}（≈{candidate_bpm:.0f} bpm） · "
             f"固件 {firmware_count} · "
             f"HRV Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
             f"Rescue {rescue_count} · "
             f"相位恢复 {fiducial_recovery_count} · "
+            f"人工标注 {annotation_count} · "
+            f"近窗 {recent_annotation_count} · "
             f"未选 {difference} · "
             f"预测RR {expected_text} · "
             f"HR {accepted_hr:.0f} bpm · "
@@ -993,6 +1321,9 @@ class MainWindow(QMainWindow):
 
     def _close_recorder(self) -> None:
         if self.recorder:
+            self._last_session_dir = (
+                self.recorder.session_dir
+            )
             self.recorder.close()
             self.recorder = None
 

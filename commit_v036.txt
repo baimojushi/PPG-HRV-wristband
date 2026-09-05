@@ -1,0 +1,21 @@
+v0.3.6 software manual annotation observability
+
+Rebuilt from v0.3.5.
+
+Firmware:
+- byte-identical to v0.3.5;
+- no GPIO annotation;
+- no protocol change;
+- no detector change.
+
+Desktop:
+- F8 / UI mark button;
+- optional label type;
+- annotation timestamp = last UI-displayed device t_us;
+- host monotonic clock and UI data lag saved for audit;
+- red -3..0 s annotation region on PPG plot;
+- annotations.csv is flushed immediately;
+- full raw_session exported;
+- -120 s .. +5 s 1-second context and low-frequency trend analysis.
+
+Artificial annotations never feed back into detector, RR or HRV.

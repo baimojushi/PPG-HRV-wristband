@@ -190,3 +190,32 @@ timing_recovered
 
 `timing_recovered` 主要用于 Debug、导出和后续难例统计。
 HRV 是否 VALID 仍由 Timing Quality、RR 异常比例和频域互证共同决定。
+
+
+## v0.3.6 软件人工标注
+
+人工标注是调试证据，不是 SQI 组成部分。
+
+它不会直接改变：
+
+```text
+Signal Quality
+Time Domain
+Frequency Domain
+Winner
+Rescue
+RR cleaner
+```
+
+人工语义：
+
+```text
+“用户在当前 UI 可见的数据中观察到问题，
+问题发生在软件标记前约 3 秒内。”
+```
+
+`device_t_us` 来自最近一次实际绘制到屏幕的设备时间，
+`host_monotonic_ns` 和 `ui_data_lag_ms` 只用于审计标注延迟。
+
+使用人工标注做算法评估时，需要保留未标注正常时段作为对照，
+避免只在问题段寻找特征造成伪相关。

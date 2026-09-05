@@ -4,15 +4,43 @@ from datetime import datetime
 from pathlib import Path
 import csv
 import json
+import math
+import shutil
 import threading
 
+from .annotation_analysis import build_annotation_context
 from .engine import AnalysisEngine
 from .models import (
     BeatFrame,
     DiagnosticFrame,
     FirmwareMetricFrame,
     SampleFrame,
+    UserAnnotation,
 )
+
+
+def _json_safe(value):
+    """递归把 NaN / Inf 转成严格 JSON 的 null。"""
+    if isinstance(value, float):
+        return (
+            value
+            if math.isfinite(value)
+            else None
+        )
+
+    if isinstance(value, dict):
+        return {
+            key: _json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [
+            _json_safe(item)
+            for item in value
+        ]
+
+    return value
 
 
 class SessionRecorder:
@@ -56,6 +84,34 @@ class SessionRecorder:
                 "expected_rr_ms",
                 "hr_bpm",
                 "flags",
+            ],
+        )
+        self._open_csv(
+            "annotations",
+            [
+                "annotation_id",
+                "device_t_us",
+                "latest_sample_t_us",
+                "latest_sample_seq",
+                "label_start_us",
+                "label_end_us",
+                "host_monotonic_ns",
+                "label_type",
+                "note",
+                "source",
+                "ui_data_lag_ms",
+                "hr_bpm",
+                "expected_rr_ms",
+                "winner_score",
+                "timing_quality",
+                "timing_uncertainty_ms",
+                "fiducial_shift_ms",
+                "candidate_count_12s",
+                "rescue_count_12s",
+                "phase_recovery_count_12s",
+                "sqi",
+                "effective_sample_rate_hz",
+                "timing_jitter_p95_ms",
             ],
         )
         self._open_csv(
@@ -168,6 +224,62 @@ class SessionRecorder:
                     message.sample_queue_high_water,
                 ])
 
+    def record_annotation(
+        self,
+        annotation: UserAnnotation,
+    ) -> None:
+        """
+        软件人工标注非常稀疏，写入后立即 flush。
+
+        即使之后 UI / Python 意外退出，这个关键人工标签也尽量不丢。
+        """
+        with self._lock:
+            self._writers[
+                "annotations"
+            ].writerow([
+                annotation.annotation_id,
+                annotation.device_t_us,
+                annotation.latest_sample_t_us,
+                annotation.latest_sample_seq,
+                annotation.label_start_us,
+                annotation.label_end_us,
+                annotation.host_monotonic_ns,
+                annotation.label_type,
+                annotation.note,
+                annotation.source,
+                annotation.ui_data_lag_ms,
+                annotation.hr_bpm,
+                annotation.expected_rr_ms,
+                annotation.winner_score,
+                annotation.timing_quality,
+                annotation.timing_uncertainty_ms,
+                annotation.fiducial_shift_ms,
+                annotation.candidate_count_12s,
+                annotation.rescue_count_12s,
+                annotation.phase_recovery_count_12s,
+                annotation.sqi,
+                annotation.effective_sample_rate_hz,
+                annotation.timing_jitter_p95_ms,
+            ])
+
+            try:
+                self._files[
+                    "annotations"
+                ].flush()
+                self._files[
+                    "samples"
+                ].flush()
+            except Exception:
+                pass
+
+    def flush(self) -> None:
+        with self._lock:
+            for handle in self._files.values():
+                try:
+                    handle.flush()
+                except Exception:
+                    pass
+
     def close(self) -> None:
         with self._lock:
             for handle in self._files.values():
@@ -181,9 +293,69 @@ class SessionRecorder:
             self._writers.clear()
 
 
+def _load_raw_session_samples(
+    raw_session_dir: Path,
+) -> list[SampleFrame]:
+    path = (
+        raw_session_dir
+        / "samples.csv"
+    )
+
+    if not path.is_file():
+        return []
+
+    result: list[SampleFrame] = []
+
+    with path.open(
+        "r",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        reader = csv.DictReader(
+            handle
+        )
+
+        for row in reader:
+            try:
+                result.append(
+                    SampleFrame(
+                        seq=int(row["seq"]),
+                        t_us=int(row["t_us"]),
+                        raw=float(row["raw"]),
+                        avg=float(row["avg"]),
+                        filtered=float(
+                            row["filtered"]
+                        ),
+                        peak=int(row["peak"]),
+                        detector_score=float(
+                            row["detector_score"]
+                        ),
+                        expected_rr_ms=float(
+                            row["expected_rr_ms"]
+                        ),
+                        hr_bpm=float(
+                            row["hr_bpm"]
+                        ),
+                        flags=int(
+                            row["flags"]
+                        ),
+                    )
+                )
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                # 单行损坏不应让整个标注导出失败。
+                continue
+
+    return result
+
+
 def export_engine_results(
     engine: AnalysisEngine,
     destination: str | Path,
+    raw_session_dir: str | Path | None = None,
 ) -> Path:
     """
     导出同一冻结时刻的：
@@ -204,6 +376,10 @@ def export_engine_results(
     bundle = engine.export_bundle()
     snapshot = bundle["snapshot"]
     samples = bundle["samples"]
+    annotations = bundle.get(
+        "annotations",
+        [],
+    )
     firmware_beats = bundle["firmware_beats"]
     raw_beats = bundle["raw_beats"]
     beats = bundle["beats"]
@@ -212,6 +388,55 @@ def export_engine_results(
     frequency_statistics = bundle[
         "frequency_statistics"
     ]
+
+    # ------------------------------------------------------------------
+    # v0.3.6：人工标注分析优先使用整段实时会话 Sample。
+    # ------------------------------------------------------------------
+    annotation_samples = samples
+    annotation_sample_source = (
+        "engine_recent_samples"
+    )
+
+    if raw_session_dir is not None:
+        raw_session_path = Path(
+            raw_session_dir
+        )
+
+        if raw_session_path.is_dir():
+            raw_export = (
+                destination
+                / "raw_session"
+            )
+            raw_export.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            for source in raw_session_path.glob(
+                "*.csv"
+            ):
+                try:
+                    shutil.copy2(
+                        source,
+                        raw_export
+                        / source.name,
+                    )
+                except OSError:
+                    pass
+
+            full_session_samples = (
+                _load_raw_session_samples(
+                    raw_session_path
+                )
+            )
+
+            if full_session_samples:
+                annotation_samples = (
+                    full_session_samples
+                )
+                annotation_sample_source = (
+                    "raw_session/samples.csv"
+                )
 
     # v0.3.2：把用于算法复盘的原始证据一起导出。
     with (
@@ -248,6 +473,68 @@ def export_engine_results(
                 sample.expected_rr_ms,
                 sample.hr_bpm,
                 sample.flags,
+            ])
+
+    with (
+        destination
+        / "annotations.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        writer = csv.writer(handle)
+        writer.writerow([
+            "annotation_id",
+            "device_t_us",
+            "latest_sample_t_us",
+            "latest_sample_seq",
+            "label_start_us",
+            "label_end_us",
+            "host_monotonic_ns",
+            "label_type",
+            "note",
+            "source",
+            "ui_data_lag_ms",
+            "hr_bpm",
+            "expected_rr_ms",
+            "winner_score",
+            "timing_quality",
+            "timing_uncertainty_ms",
+            "fiducial_shift_ms",
+            "candidate_count_12s",
+            "rescue_count_12s",
+            "phase_recovery_count_12s",
+            "sqi",
+            "effective_sample_rate_hz",
+            "timing_jitter_p95_ms",
+        ])
+
+        for annotation in annotations:
+            writer.writerow([
+                annotation.annotation_id,
+                annotation.device_t_us,
+                annotation.latest_sample_t_us,
+                annotation.latest_sample_seq,
+                annotation.label_start_us,
+                annotation.label_end_us,
+                annotation.host_monotonic_ns,
+                annotation.label_type,
+                annotation.note,
+                annotation.source,
+                annotation.ui_data_lag_ms,
+                annotation.hr_bpm,
+                annotation.expected_rr_ms,
+                annotation.winner_score,
+                annotation.timing_quality,
+                annotation.timing_uncertainty_ms,
+                annotation.fiducial_shift_ms,
+                annotation.candidate_count_12s,
+                annotation.rescue_count_12s,
+                annotation.phase_recovery_count_12s,
+                annotation.sqi,
+                annotation.effective_sample_rate_hz,
+                annotation.timing_jitter_p95_ms,
             ])
 
     with (
@@ -421,6 +708,59 @@ def export_engine_results(
                 ["t_us"]
             )
 
+    annotation_context, annotation_summary = (
+        build_annotation_context(
+            annotation_samples,
+            firmware_beats,
+            raw_beats,
+            beats,
+            annotations,
+            engine.config,
+        )
+    )
+
+    with (
+        destination
+        / "annotation_context_1s.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        if annotation_context:
+            fieldnames = list(
+                annotation_context[0].keys()
+            )
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=fieldnames,
+            )
+            writer.writeheader()
+            writer.writerows(
+                annotation_context
+            )
+        else:
+            csv.writer(handle).writerow([
+                "annotation_id",
+                "relative_center_s",
+                "inside_user_label_window",
+            ])
+
+    (
+        destination
+        / "annotation_summary.json"
+    ).write_text(
+        json.dumps(
+            _json_safe(
+                annotation_summary
+            ),
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ),
+        encoding="utf-8",
+    )
+
     summary = engine.summary_dict(
         snapshot=snapshot
     )
@@ -517,6 +857,12 @@ def export_engine_results(
                     history[-1]["t_us"]
                     if history
                     else None
+                ),
+                "annotation_count": len(
+                    annotations
+                ),
+                "annotation_sample_source": (
+                    annotation_sample_source
                 ),
             },
             ensure_ascii=False,

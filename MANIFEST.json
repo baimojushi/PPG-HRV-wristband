@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.5",
-  "base_version": "0.3.4",
-  "release_type": "same-polarity-phase-branch-stabilization",
+  "version": "0.3.6",
+  "base_version": "0.3.5",
+  "release_type": "software-manual-annotation-observability",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -65,7 +65,9 @@
       "rescued flag"
     ],
     "unchanged_from_v0_3_3": true,
-    "unchanged_from_v0_3_4": true
+    "unchanged_from_v0_3_4": true,
+    "unchanged_from_v0_3_5": true,
+    "annotation_transport_change": false
   },
   "tiny_cnn": {
     "enabled": false,
@@ -75,7 +77,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "54 passed",
+    "tests": "59 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -490,10 +492,18 @@
         "frequency_status": "INVALID",
         "frequency_reason": "未解决异常 6.1% > 5.0%；连续未解决异常 4 > 2"
       }
-    }
+    },
+    "software_annotation_timestamp_semantics": "passed",
+    "software_annotation_no_algorithm_feedback": "passed",
+    "software_annotation_live_flush": "passed",
+    "software_annotation_raw_session_export": "passed",
+    "software_annotation_low_frequency_context": "passed",
+    "firmware_byte_identical_to_v0_3_5": true,
+    "algorithm_core_byte_identical_to_v0_3_5": true,
+    "platformio_required_for_this_release": false
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 118,
+  "file_count": 123,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
@@ -506,12 +516,14 @@
     "commit_v033.txt",
     "commit_v034.txt",
     "commit_v035.txt",
+    "commit_v036.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
     "desktop/run_ui.py",
     "desktop/src/hrv_app/__init__.py",
     "desktop/src/hrv_app/adaptive_detector.py",
+    "desktop/src/hrv_app/annotation_analysis.py",
     "desktop/src/hrv_app/confidence.py",
     "desktop/src/hrv_app/config.py",
     "desktop/src/hrv_app/engine.py",
@@ -542,6 +554,7 @@
     "docs/ALGORITHM_v0.3.2.md",
     "docs/ALGORITHM_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/ALGORITHM_v0.3.5_PHASE_BRANCH.md",
+    "docs/ANNOTATION_WORKFLOW_v0.3.6.md",
     "docs/ARCHITECTURE.md",
     "docs/CHEEZPPG_SOURCE_REVIEW.md",
     "docs/CNN_ENGINEERING_ROI_v0.3.3.md",
@@ -555,6 +568,7 @@
     "docs/PATCH_v0.3.2_SAMPLING_AND_HRV_QUALITY.md",
     "docs/PATCH_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/PATCH_v0.3.5_PHASE_BRANCH.md",
+    "docs/PATCH_v0.3.6_SOFTWARE_ANNOTATION.md",
     "docs/PROTOCOL.md",
     "docs/QUALITY_CONFIDENCE.md",
     "docs/THIRD_PARTY.md",
@@ -610,6 +624,7 @@
     "tests/test_rr_cleaner.py",
     "tests/test_signal_quality.py",
     "tests/test_signal_timing_quality.py",
+    "tests/test_software_annotation.py",
     "tests/test_spwvd.py",
     "tests/test_zeez_detector_cpp.py",
     "tests/test_zeez_wrapper_cpp.py"
@@ -618,9 +633,13 @@
     "samples_debug.csv",
     "beats_raw.csv",
     "beats_refined.csv: timing_recovered",
-    "beats_cleaned.csv: timing_recovered"
+    "beats_cleaned.csv: timing_recovered",
+    "annotations.csv",
+    "annotation_context_1s.csv",
+    "annotation_summary.json",
+    "raw_session/*.csv"
   ],
-  "firmware_changed": true,
+  "firmware_changed": false,
   "protocol_version": 4,
   "frequency_validation": {
     "official_power_estimator": "Welch",
@@ -670,5 +689,28 @@
     "candidate_cluster_min_ms": 80,
     "candidate_cluster_max_ms": 180,
     "protocol_fields_changed": false
+  },
+  "detector_algorithm_changed": false,
+  "software_annotation": {
+    "entry_points": [
+      "UI button",
+      "F8 shortcut"
+    ],
+    "label_types": [
+      "未分类",
+      "峰位漂移",
+      "漏检",
+      "多检",
+      "周期跳变",
+      "其他"
+    ],
+    "timestamp_source": "last UI-displayed device sample t_us",
+    "host_clock": "time.monotonic_ns",
+    "ui_data_lag_audited": true,
+    "label_lookback_seconds": 3.0,
+    "context_before_seconds": 120.0,
+    "context_after_seconds": 5.0,
+    "context_bin_seconds": 1.0,
+    "affects_online_algorithm": false
   }
 }

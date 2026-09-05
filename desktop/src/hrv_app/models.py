@@ -29,6 +29,50 @@ class SampleFrame:
 
 
 @dataclass(slots=True)
+class UserAnnotation:
+    """
+    v0.3.6 软件人工异常标注。
+
+    device_t_us：
+        用户按键时“当前 UI 屏幕右缘”对应的设备时间。
+
+    latest_sample_t_us：
+        点击瞬间 AnalysisEngine 已收到的最新设备 Sample 时间。
+        二者差值可以审计 UI 刷新 / 串口缓冲造成的数据滞后。
+
+    label_start_us ~ label_end_us：
+        人工语义仍是“异常发生在按键前约 3 秒内”。
+    """
+
+    annotation_id: int
+    device_t_us: int
+    latest_sample_t_us: int
+    latest_sample_seq: int
+    label_start_us: int
+    label_end_us: int
+
+    host_monotonic_ns: int
+    label_type: str = "未分类"
+    note: str = ""
+    source: str = "software_ui"
+
+    # 点击时刻冻结的一组可审计调试状态。
+    ui_data_lag_ms: float = 0.0
+    hr_bpm: float = 0.0
+    expected_rr_ms: float = 0.0
+    winner_score: float = 0.0
+    timing_quality: float = 0.0
+    timing_uncertainty_ms: float = 0.0
+    fiducial_shift_ms: float = 0.0
+    candidate_count_12s: int = 0
+    rescue_count_12s: int = 0
+    phase_recovery_count_12s: int = 0
+    sqi: float = 0.0
+    effective_sample_rate_hz: float = 0.0
+    timing_jitter_p95_ms: float = 0.0
+
+
+@dataclass(slots=True)
 class BeatFrame:
     seq: int
     t_us: int

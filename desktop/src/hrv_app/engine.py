@@ -22,6 +22,7 @@ from .models import (
     ProtocolHealth,
     SampleFrame,
     TimelineQuality,
+    UserAnnotation,
 )
 from .rr_cleaner import BeatTimelineCleaner
 from .signal_quality import evaluate_signal_quality
@@ -61,6 +62,12 @@ class AnalysisEngine:
 
         self._samples: deque[SampleFrame] = deque(
             maxlen=sample_capacity
+        )
+
+        # v0.3.6 软件人工标注。
+        # 数量远小于 Sample，不跟随 5 分钟 Sample ring 自动淘汰。
+        self._annotations: deque[UserAnnotation] = deque(
+            maxlen=2000
         )
 
         # 固件 Beat 原样保存，便于确认“存在性判断”是否正确。
@@ -108,6 +115,7 @@ class AnalysisEngine:
     def reset(self) -> None:
         with self._lock:
             self._samples.clear()
+            self._annotations.clear()
             self._firmware_beats.clear()
             self._raw_beats.clear()
             self._pending_firmware_beats.clear()
@@ -147,6 +155,338 @@ class AnalysisEngine:
 
             self._finalize_pending_beats_locked(
                 force=False
+            )
+
+    def add_user_annotation(
+        self,
+        device_t_us: int,
+        host_monotonic_ns: int,
+        label_type: str = "未分类",
+        note: str = "",
+    ) -> UserAnnotation | None:
+        """
+        在当前 UI 显示的数据时间轴上创建人工异常标注。
+
+        `device_t_us` 由 UI 最近一次绘图时冻结，因此它对应用户真正看到的
+        屏幕右缘，而不是按键之后后台线程刚收到的“更新 Sample”。
+
+        标注只记录证据：
+        - 不改变 Winner；
+        - 不改变 RR；
+        - 不改变 SQI / HRV；
+        - 不回馈任何在线检测状态。
+        """
+        with self._lock:
+            if not self._samples:
+                return None
+
+            latest_sample = self._samples[-1]
+
+            # UI 显示时间必须落在当前内存中的设备数据范围。
+            # 极端情况下 UI 卡顿超过 Sample ring 长度时，拒绝伪造标注。
+            minimum_t_us = int(
+                self._samples[0].t_us
+            )
+            maximum_t_us = int(
+                latest_sample.t_us
+            )
+            mark_t_us = int(
+                device_t_us
+            )
+
+            if not (
+                minimum_t_us
+                <= mark_t_us
+                <= maximum_t_us
+            ):
+                return None
+
+            # 找到最接近屏幕右缘的真实 Sample，用它记录 seq。
+            sample_times = np.asarray(
+                [
+                    sample.t_us
+                    for sample in self._samples
+                ],
+                dtype=np.int64,
+            )
+
+            index = int(
+                np.searchsorted(
+                    sample_times,
+                    mark_t_us,
+                )
+            )
+            index = min(
+                max(index, 0),
+                len(
+                    sample_times
+                ) - 1,
+            )
+
+            if (
+                index > 0
+                and abs(
+                    int(
+                        sample_times[
+                            index - 1
+                        ]
+                    )
+                    - mark_t_us
+                )
+                < abs(
+                    int(
+                        sample_times[index]
+                    )
+                    - mark_t_us
+                )
+            ):
+                index -= 1
+
+            anchor_sample = self._samples[
+                index
+            ]
+
+            # 点击时冻结最近 12 秒状态，和 UI Debug 行使用相同观察尺度。
+            debug_start_us = (
+                mark_t_us
+                - 12_000_000
+            )
+
+            recent_samples = [
+                sample
+                for sample in self._samples
+                if (
+                    debug_start_us
+                    <= sample.t_us
+                    <= mark_t_us
+                )
+            ]
+
+            recent_firmware = [
+                beat
+                for beat in self._firmware_beats
+                if (
+                    debug_start_us
+                    <= beat.t_us
+                    <= mark_t_us
+                )
+            ]
+
+            recent_refined = [
+                beat
+                for beat in self._raw_beats
+                if (
+                    debug_start_us
+                    <= beat.t_us
+                    <= mark_t_us
+                )
+            ]
+
+            expected_rr_values = np.asarray(
+                [
+                    sample.expected_rr_ms
+                    for sample in recent_samples
+                    if (
+                        np.isfinite(
+                            sample.expected_rr_ms
+                        )
+                        and sample.expected_rr_ms > 0
+                    )
+                ],
+                dtype=float,
+            )
+
+            expected_rr_ms = (
+                float(
+                    np.median(
+                        expected_rr_values
+                    )
+                )
+                if expected_rr_values.size
+                else 0.0
+            )
+
+            last_firmware = (
+                recent_firmware[-1]
+                if recent_firmware
+                else None
+            )
+            last_refined = (
+                recent_refined[-1]
+                if recent_refined
+                else None
+            )
+
+            signal_quality = (
+                evaluate_signal_quality(
+                    recent_samples,
+                    self._protocol_health,
+                    self.config,
+                )
+                if recent_samples
+                else self._last_snapshot.signal_quality
+            )
+
+            next_id = (
+                self._annotations[-1].annotation_id
+                + 1
+                if self._annotations
+                else 1
+            )
+
+            lookback_us = int(
+                round(
+                    self.config.user_annotation_lookback_seconds
+                    * 1e6
+                )
+            )
+
+            annotation = UserAnnotation(
+                annotation_id=next_id,
+                device_t_us=mark_t_us,
+                latest_sample_t_us=int(
+                    latest_sample.t_us
+                ),
+                latest_sample_seq=int(
+                    latest_sample.seq
+                ),
+                label_start_us=(
+                    mark_t_us
+                    - lookback_us
+                ),
+                label_end_us=mark_t_us,
+                host_monotonic_ns=int(
+                    host_monotonic_ns
+                ),
+                label_type=(
+                    str(label_type).strip()
+                    or "未分类"
+                ),
+                note=str(
+                    note
+                ).strip(),
+                ui_data_lag_ms=float(
+                    (
+                        latest_sample.t_us
+                        - mark_t_us
+                    )
+                    / 1000.0
+                ),
+                hr_bpm=float(
+                    last_refined.hr_bpm
+                    if last_refined is not None
+                    else 0.0
+                ),
+                expected_rr_ms=(
+                    expected_rr_ms
+                ),
+                winner_score=float(
+                    last_firmware.score
+                    if last_firmware is not None
+                    else 0.0
+                ),
+                timing_quality=float(
+                    last_refined.timing_quality
+                    if last_refined is not None
+                    else 0.0
+                ),
+                timing_uncertainty_ms=float(
+                    last_refined.timing_uncertainty_ms
+                    if last_refined is not None
+                    else 0.0
+                ),
+                fiducial_shift_ms=float(
+                    last_refined.timing_shift_ms
+                    if last_refined is not None
+                    else 0.0
+                ),
+                candidate_count_12s=int(
+                    sum(
+                        bool(
+                            sample.peak
+                        )
+                        for sample in recent_samples
+                    )
+                ),
+                rescue_count_12s=int(
+                    sum(
+                        bool(
+                            beat.flags
+                            & 0x10
+                        )
+                        for beat in recent_refined
+                    )
+                ),
+                phase_recovery_count_12s=int(
+                    sum(
+                        bool(
+                            beat.timing_recovered
+                        )
+                        for beat in recent_refined
+                    )
+                ),
+                sqi=float(
+                    signal_quality.sqi
+                ),
+                effective_sample_rate_hz=float(
+                    signal_quality.effective_sample_rate_hz
+                ),
+                timing_jitter_p95_ms=float(
+                    signal_quality.timing_jitter_p95_ms
+                ),
+            )
+
+            self._annotations.append(
+                annotation
+            )
+
+            return copy.deepcopy(
+                annotation
+            )
+
+    def annotations(
+        self,
+    ) -> list[UserAnnotation]:
+        with self._lock:
+            return copy.deepcopy(
+                list(
+                    self._annotations
+                )
+            )
+
+    def recent_annotations(
+        self,
+        seconds: float = 12.0,
+        end_t_us: int | None = None,
+    ) -> list[UserAnnotation]:
+        with self._lock:
+            if not self._annotations:
+                return []
+
+            if end_t_us is None:
+                if not self._samples:
+                    return []
+                end_t_us = int(
+                    self._samples[-1].t_us
+                )
+
+            start_t_us = int(
+                end_t_us
+                - seconds
+                * 1e6
+            )
+
+            return copy.deepcopy(
+                [
+                    annotation
+                    for annotation
+                    in self._annotations
+                    if (
+                        start_t_us
+                        <= annotation.device_t_us
+                        <= end_t_us
+                    )
+                ]
             )
 
     def ingest_beat(
@@ -613,6 +953,7 @@ class AnalysisEngine:
     ) -> dict:
         time_metrics = snapshot.time
         frequency = snapshot.frequency
+        annotations = self.annotations()
 
         return {
             "t_us": snapshot.t_us,
@@ -824,7 +1165,7 @@ class AnalysisEngine:
         dict,
     ]:
         """
-        返回 v0.3.5 分支稳定检测 + fiducial 恢复调试序列。
+        返回 v0.3.6 检测 + fiducial + 软件人工标注调试序列。
 
         右侧 0~1 轴：
         - detector_score：连续形态活跃度；
@@ -865,6 +1206,12 @@ class AnalysisEngine:
                         "effective_sample_rate_hz": 0.0,
                         "timing_jitter_p95_ms": 0.0,
                         "timing_overrun_ratio": 0.0,
+                        "end_t_us": 0,
+                        "annotation_count": len(
+                            self._annotations
+                        ),
+                        "recent_annotation_count": 0,
+                        "last_annotation_age_s": -1.0,
                     },
                 )
 
@@ -890,6 +1237,26 @@ class AnalysisEngine:
                 for beat in self._firmware_beats
                 if start_us <= beat.t_us <= end_us
             ]
+
+            recent_annotations = [
+                annotation
+                for annotation in self._annotations
+                if (
+                    start_us
+                    <= annotation.device_t_us
+                    <= end_us
+                )
+            ]
+
+            annotation_count = len(
+                self._annotations
+            )
+
+            last_annotation_t_us = (
+                self._annotations[-1].device_t_us
+                if self._annotations
+                else 0
+            )
 
             sample_hr_bpm = (
                 self._latest_sample_hr_bpm
@@ -927,6 +1294,28 @@ class AnalysisEngine:
                     "effective_sample_rate_hz": 0.0,
                     "timing_jitter_p95_ms": 0.0,
                     "timing_overrun_ratio": 0.0,
+                    "end_t_us": int(
+                        end_us
+                    ),
+                    "annotation_count": int(
+                        annotation_count
+                    ),
+                    "recent_annotation_count": int(
+                        len(
+                            recent_annotations
+                        )
+                    ),
+                    "last_annotation_age_s": (
+                        float(
+                            (
+                                end_us
+                                - last_annotation_t_us
+                            )
+                            / 1e6
+                        )
+                        if last_annotation_t_us > 0
+                        else -1.0
+                    ),
                 },
             )
 
@@ -1230,6 +1619,28 @@ class AnalysisEngine:
                 "timing_overrun_ratio": float(
                     timing_overrun_ratio
                 ),
+                "end_t_us": int(
+                    end_us
+                ),
+                "annotation_count": int(
+                    annotation_count
+                ),
+                "recent_annotation_count": int(
+                    len(
+                        recent_annotations
+                    )
+                ),
+                "last_annotation_age_s": (
+                    float(
+                        (
+                            end_us
+                            - last_annotation_t_us
+                        )
+                        / 1e6
+                    )
+                    if last_annotation_t_us > 0
+                    else -1.0
+                ),
             },
         )
 
@@ -1332,6 +1743,9 @@ class AnalysisEngine:
                 "samples": copy.deepcopy(
                     list(self._samples)
                 ),
+                "annotations": copy.deepcopy(
+                    list(self._annotations)
+                ),
                 "firmware_beats": copy.deepcopy(
                     list(self._firmware_beats)
                 ),
@@ -1367,6 +1781,7 @@ class AnalysisEngine:
 
         time_metrics = snapshot.time
         frequency = snapshot.frequency
+        user_annotations = self.annotations()
 
         return {
             "snapshot_t_us": snapshot.t_us,
@@ -1377,6 +1792,25 @@ class AnalysisEngine:
             "result_status": (
                 snapshot.quality.status
             ),
+
+            "user_annotations": {
+                "count": len(
+                    user_annotations
+                ),
+                "last_device_t_us": (
+                    user_annotations[-1].device_t_us
+                    if user_annotations
+                    else None
+                ),
+                "last_label_type": (
+                    user_annotations[-1].label_type
+                    if user_annotations
+                    else None
+                ),
+                "label_lookback_seconds": (
+                    self.config.user_annotation_lookback_seconds
+                ),
+            },
 
             "time_domain": {
                 "valid": time_metrics.valid,
