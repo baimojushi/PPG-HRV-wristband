@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QProgressBar,
+    QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -133,6 +135,31 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #DCD1E2;
 }
+QScrollArea {
+    border: none;
+    background: transparent;
+}
+QScrollArea > QWidget > QWidget {
+    background: transparent;
+}
+QScrollBar:vertical {
+    width: 12px;
+    margin: 2px 0 2px 0;
+    background: #EEE8E2;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical {
+    min-height: 36px;
+    background: #B8ACA2;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #9D9086;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
 """
 
 
@@ -188,7 +215,11 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("此刻 · HRV 身体节律")
         self.resize(1180, 820)
+        self.setMinimumSize(520, 480)
         self.setStyleSheet(APP_STYLE)
+
+        self._hero_compact = False
+        self._responsive_mode = ""
 
         self._build_ui()
         self._refresh_ports()
@@ -213,14 +244,31 @@ class MainWindow(QMainWindow):
         container = QWidget()
         root = QVBoxLayout(container)
         root.setContentsMargins(24, 22, 24, 22)
-        root.setSpacing(16)
+        root.setSpacing(14)
+        self.root_layout = root
         self.setCentralWidget(container)
 
         # ------------------------------------------------------------------
-        # 顶部连接工具栏
+        # 顶部连接工具栏：使用 GridLayout，窗口变窄时可以安全换行。
         # ------------------------------------------------------------------
-        toolbar = QHBoxLayout()
+        self.toolbar_widget = QWidget()
+        self.toolbar_layout = QGridLayout(
+            self.toolbar_widget
+        )
+        self.toolbar_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        self.toolbar_layout.setHorizontalSpacing(8)
+        self.toolbar_layout.setVerticalSpacing(8)
+
         self.port_combo = QComboBox()
+        self.port_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
 
         self.refresh_port_button = QPushButton("刷新串口")
         self.refresh_port_button.clicked.connect(self._refresh_ports)
@@ -235,22 +283,39 @@ class MainWindow(QMainWindow):
         self.export_button = QPushButton("导出分析结果")
         self.export_button.clicked.connect(self._export_results)
 
-        toolbar.addWidget(self.port_combo, 1)
-        toolbar.addWidget(self.refresh_port_button)
-        toolbar.addWidget(self.connect_button)
-        toolbar.addWidget(self.open_csv_button)
-        toolbar.addWidget(self.export_button)
-        root.addLayout(toolbar)
+        self._toolbar_widgets = [
+            self.port_combo,
+            self.refresh_port_button,
+            self.connect_button,
+            self.open_csv_button,
+            self.export_button,
+        ]
+
+        for widget in self._toolbar_widgets[1:]:
+            widget.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed,
+            )
+
+        root.addWidget(self.toolbar_widget)
 
         # ------------------------------------------------------------------
-        # v0.3.6 软件人工标注。
+        # 软件人工标注：窄窗口时说明文字自动换到下一行。
         # ------------------------------------------------------------------
-        # 点击/F8 只冻结“当前屏幕数据的设备时间”，不修改任何检测状态。
-        annotation_bar = QHBoxLayout()
-
-        annotation_bar.addWidget(
-            QLabel("人工标注")
+        self.annotation_widget = QWidget()
+        self.annotation_layout = QGridLayout(
+            self.annotation_widget
         )
+        self.annotation_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        self.annotation_layout.setHorizontalSpacing(8)
+        self.annotation_layout.setVerticalSpacing(6)
+
+        self.annotation_title_label = QLabel("人工标注")
 
         self.annotation_type_combo = QComboBox()
         self.annotation_type_combo.addItems([
@@ -262,7 +327,7 @@ class MainWindow(QMainWindow):
             "其他",
         ])
         self.annotation_type_combo.setToolTip(
-            "可先保持“未分类”；时间戳会在按键瞬间立即保存。"
+            "可先保持‘未分类’；时间戳会在按键瞬间立即保存。"
         )
 
         self.mark_annotation_button = QPushButton(
@@ -284,52 +349,76 @@ class MainWindow(QMainWindow):
         self.annotation_hint.setObjectName(
             "heroSub"
         )
+        self.annotation_hint.setWordWrap(True)
 
-        annotation_bar.addWidget(
-            self.annotation_type_combo
-        )
-        annotation_bar.addWidget(
-            self.mark_annotation_button
-        )
-        annotation_bar.addWidget(
+        self._annotation_widgets = [
+            self.annotation_title_label,
+            self.annotation_type_combo,
+            self.mark_annotation_button,
             self.annotation_hint,
-            1,
-        )
-        root.addLayout(
-            annotation_bar
-        )
+        ]
+        root.addWidget(self.annotation_widget)
 
         # ------------------------------------------------------------------
-        # C 端首页主视觉
+        # C 端首页主视觉。
+        # 专业分析页会自动折叠成极简条，避免占用图表纵向空间。
         # ------------------------------------------------------------------
-        hero = QFrame()
-        hero.setObjectName("hero")
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(24, 20, 24, 20)
-        hero_layout.setSpacing(12)
+        self.hero = QFrame()
+        self.hero.setObjectName("hero")
+        self.hero_layout = QVBoxLayout(self.hero)
+        self.hero_layout.setContentsMargins(24, 20, 24, 20)
+        self.hero_layout.setSpacing(12)
 
         self.hero_title = QLabel("此刻 · 身体节律")
         self.hero_title.setObjectName("heroTitle")
+
+        self.hero_compact_summary = QLabel(
+            "HR -- bpm · RMSSD -- ms · SQI --%"
+        )
+        self.hero_compact_summary.setObjectName("heroSub")
+        self.hero_compact_summary.setWordWrap(False)
+        self.hero_compact_summary.setVisible(False)
 
         self.status_label = QLabel("等待设备或历史记录")
         self.status_label.setObjectName("heroSub")
         self.status_label.setWordWrap(True)
 
-        hero_layout.addWidget(self.hero_title)
-        hero_layout.addWidget(self.status_label)
+        self.hero_layout.addWidget(self.hero_title)
+        self.hero_layout.addWidget(self.hero_compact_summary)
+        self.hero_layout.addWidget(self.status_label)
 
-        card_row = QGridLayout()
-        card_row.setHorizontalSpacing(12)
+        self.metric_cards_widget = QWidget()
+        self.card_row = QGridLayout(
+            self.metric_cards_widget
+        )
+        self.card_row.setContentsMargins(0, 0, 0, 0)
+        self.card_row.setHorizontalSpacing(12)
+        self.card_row.setVerticalSpacing(10)
 
         self.hr_card = MetricCard("心率", "bpm")
         self.rmssd_card = MetricCard("HRV · RMSSD", "ms")
         self.conf_card = MetricCard("数据质量 · SQI", "%")
 
-        card_row.addWidget(self.hr_card, 0, 0)
-        card_row.addWidget(self.rmssd_card, 0, 1)
-        card_row.addWidget(self.conf_card, 0, 2)
+        self._metric_cards = [
+            self.hr_card,
+            self.rmssd_card,
+            self.conf_card,
+        ]
+        self.hero_layout.addWidget(
+            self.metric_cards_widget
+        )
 
-        hero_layout.addLayout(card_row)
+        self.hero_quality_widget = QWidget()
+        self.hero_quality_layout = QVBoxLayout(
+            self.hero_quality_widget
+        )
+        self.hero_quality_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        self.hero_quality_layout.setSpacing(8)
 
         self.conf_progress = QProgressBar()
         self.conf_progress.setRange(0, 100)
@@ -339,23 +428,454 @@ class MainWindow(QMainWindow):
         self.quality_reason.setObjectName("heroSub")
         self.quality_reason.setWordWrap(True)
 
-        hero_layout.addWidget(self.conf_progress)
-        hero_layout.addWidget(self.quality_reason)
-        root.addWidget(hero)
+        self.hero_quality_layout.addWidget(
+            self.conf_progress
+        )
+        self.hero_quality_layout.addWidget(
+            self.quality_reason
+        )
+        self.hero_layout.addWidget(
+            self.hero_quality_widget
+        )
+        root.addWidget(self.hero)
 
         # ------------------------------------------------------------------
-        # 两层信息架构：状态页 + 专业分析页
+        # 两层信息架构。
+        # 每页内部使用原生 QScrollArea，任何分辨率下都不会截断底部图表。
         # ------------------------------------------------------------------
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_state_tab(), "状态与趋势")
-        self.tabs.addTab(self._build_analysis_tab(), "专业分析")
+        self.state_scroll = self._make_scrollable_page(
+            self._build_state_tab(),
+            always_vertical=False,
+        )
+        self.analysis_scroll = self._make_scrollable_page(
+            self._build_analysis_tab(),
+            always_vertical=True,
+        )
+
+        self.tabs.addTab(
+            self.state_scroll,
+            "状态与趋势",
+        )
+        self.tabs.addTab(
+            self.analysis_scroll,
+            "专业分析",
+        )
+        self.tabs.currentChanged.connect(
+            self._on_tab_changed
+        )
         root.addWidget(self.tabs, 1)
 
-        disclaimer = QLabel(
+        self.disclaimer = QLabel(
             "数据用于自我觉察、艺术疗愈交互与研究记录，不用于医疗诊断。"
         )
-        disclaimer.setObjectName("heroSub")
-        root.addWidget(disclaimer)
+        self.disclaimer.setObjectName("heroSub")
+        self.disclaimer.setWordWrap(True)
+        root.addWidget(self.disclaimer)
+
+        self._apply_responsive_layout(
+            self.width()
+        )
+        self._on_tab_changed(
+            self.tabs.currentIndex()
+        )
+
+    def _make_scrollable_page(
+        self,
+        content: QWidget,
+        *,
+        always_vertical: bool,
+    ) -> QScrollArea:
+        content.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.MinimumExpanding,
+        )
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+            if always_vertical
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        scroll.setWidget(content)
+        return scroll
+
+    def _clear_grid_layout(
+        self,
+        layout: QGridLayout,
+        widgets: list[QWidget],
+    ) -> None:
+        for widget in widgets:
+            layout.removeWidget(widget)
+
+    def _set_hero_compact(
+        self,
+        compact: bool,
+    ) -> None:
+        if self._hero_compact == compact:
+            return
+
+        self._hero_compact = compact
+
+        self.status_label.setVisible(
+            not compact
+        )
+        self.metric_cards_widget.setVisible(
+            not compact
+        )
+        self.hero_quality_widget.setVisible(
+            not compact
+        )
+        self.hero_compact_summary.setVisible(
+            compact
+        )
+
+        if compact:
+            self.hero_layout.setContentsMargins(
+                18,
+                7,
+                18,
+                7,
+            )
+            self.hero_layout.setSpacing(2)
+            self.hero_title.setStyleSheet(
+                "font-size: 17px; font-weight: 650;"
+            )
+            self.hero.setMaximumHeight(72)
+        else:
+            self.hero_layout.setContentsMargins(
+                24,
+                20,
+                24,
+                20,
+            )
+            self.hero_layout.setSpacing(12)
+            self.hero_title.setStyleSheet("")
+            self.hero.setMaximumHeight(16777215)
+
+    def _on_tab_changed(
+        self,
+        index: int,
+    ) -> None:
+        # 专业分析页固定采用极简 Hero。
+        # 极小分辨率下状态页也自动折叠，优先保证图表和滚动区域可用。
+        compact = (
+            index == 1
+            or self.height() < 650
+            or self.width() < 700
+        )
+        self._set_hero_compact(
+            compact
+        )
+        self._apply_responsive_layout(
+            self.width()
+        )
+
+    def _apply_responsive_layout(
+        self,
+        width: int,
+    ) -> None:
+        width = max(
+            int(width),
+            1,
+        )
+
+        if width >= 1000:
+            mode = "wide"
+            margins = (24, 22, 24, 22)
+        elif width >= 700:
+            mode = "medium"
+            margins = (14, 12, 14, 12)
+        else:
+            mode = "narrow"
+            margins = (8, 8, 8, 8)
+
+        self.root_layout.setContentsMargins(
+            *margins
+        )
+        self.root_layout.setSpacing(
+            12 if mode == "wide" else 8
+        )
+
+        # 顶部连接栏换行。
+        self._clear_grid_layout(
+            self.toolbar_layout,
+            self._toolbar_widgets,
+        )
+        for column in range(8):
+            self.toolbar_layout.setColumnStretch(
+                column,
+                0,
+            )
+
+        if mode == "wide":
+            self.toolbar_layout.addWidget(
+                self.port_combo,
+                0,
+                0,
+                1,
+                4,
+            )
+            for column, widget in enumerate(
+                self._toolbar_widgets[1:],
+                start=4,
+            ):
+                self.toolbar_layout.addWidget(
+                    widget,
+                    0,
+                    column,
+                )
+            self.toolbar_layout.setColumnStretch(
+                0,
+                1,
+            )
+        elif mode == "medium":
+            self.toolbar_layout.addWidget(
+                self.port_combo,
+                0,
+                0,
+                1,
+                4,
+            )
+            for column, widget in enumerate(
+                self._toolbar_widgets[1:]
+            ):
+                self.toolbar_layout.addWidget(
+                    widget,
+                    1,
+                    column,
+                )
+                self.toolbar_layout.setColumnStretch(
+                    column,
+                    1,
+                )
+        else:
+            self.toolbar_layout.addWidget(
+                self.port_combo,
+                0,
+                0,
+                1,
+                2,
+            )
+            self.toolbar_layout.addWidget(
+                self.refresh_port_button,
+                1,
+                0,
+            )
+            self.toolbar_layout.addWidget(
+                self.connect_button,
+                1,
+                1,
+            )
+            self.toolbar_layout.addWidget(
+                self.open_csv_button,
+                2,
+                0,
+            )
+            self.toolbar_layout.addWidget(
+                self.export_button,
+                2,
+                1,
+            )
+            self.toolbar_layout.setColumnStretch(
+                0,
+                1,
+            )
+            self.toolbar_layout.setColumnStretch(
+                1,
+                1,
+            )
+
+        # 人工标注栏换行。
+        self._clear_grid_layout(
+            self.annotation_layout,
+            self._annotation_widgets,
+        )
+        for column in range(4):
+            self.annotation_layout.setColumnStretch(
+                column,
+                0,
+            )
+
+        if mode == "wide":
+            self.annotation_layout.addWidget(
+                self.annotation_title_label,
+                0,
+                0,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_type_combo,
+                0,
+                1,
+            )
+            self.annotation_layout.addWidget(
+                self.mark_annotation_button,
+                0,
+                2,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_hint,
+                0,
+                3,
+            )
+            self.annotation_layout.setColumnStretch(
+                3,
+                1,
+            )
+        elif mode == "medium":
+            self.annotation_layout.addWidget(
+                self.annotation_title_label,
+                0,
+                0,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_type_combo,
+                0,
+                1,
+            )
+            self.annotation_layout.addWidget(
+                self.mark_annotation_button,
+                0,
+                2,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_hint,
+                1,
+                0,
+                1,
+                3,
+            )
+            self.annotation_layout.setColumnStretch(
+                1,
+                1,
+            )
+        else:
+            self.annotation_layout.addWidget(
+                self.annotation_title_label,
+                0,
+                0,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_type_combo,
+                0,
+                1,
+            )
+            self.annotation_layout.addWidget(
+                self.mark_annotation_button,
+                1,
+                0,
+                1,
+                2,
+            )
+            self.annotation_layout.addWidget(
+                self.annotation_hint,
+                2,
+                0,
+                1,
+                2,
+            )
+            self.annotation_layout.setColumnStretch(
+                1,
+                1,
+            )
+
+        # 首页三张指标卡：只有完整 Hero 才参与布局。
+        self._clear_grid_layout(
+            self.card_row,
+            self._metric_cards,
+        )
+        for column in range(3):
+            self.card_row.setColumnStretch(
+                column,
+                0,
+            )
+        if width >= 700:
+            for column, card in enumerate(
+                self._metric_cards
+            ):
+                self.card_row.addWidget(
+                    card,
+                    0,
+                    column,
+                )
+                self.card_row.setColumnStretch(
+                    column,
+                    1,
+                )
+        else:
+            for row, card in enumerate(
+                self._metric_cards
+            ):
+                self.card_row.addWidget(
+                    card,
+                    row,
+                    0,
+                )
+            self.card_row.setColumnStretch(
+                0,
+                1,
+            )
+
+        # 图表采用“最小高度 + 页内滚动”，不再依赖固定窗口分辨率。
+        if self.height() >= 900:
+            analysis_heights = (260, 280, 300)
+            state_heights = (280, 190)
+        elif self.height() >= 700:
+            analysis_heights = (230, 250, 270)
+            state_heights = (250, 175)
+        else:
+            analysis_heights = (200, 220, 240)
+            state_heights = (220, 160)
+
+        self.frequency_trend_plot.setMinimumHeight(
+            analysis_heights[0]
+        )
+        self.psd_plot.setMinimumHeight(
+            analysis_heights[1]
+        )
+        self.tf_plot.setMinimumHeight(
+            analysis_heights[2]
+        )
+        self.signal_plot.setMinimumHeight(
+            state_heights[0]
+        )
+        self.trend_plot.setMinimumHeight(
+            state_heights[1]
+        )
+
+        should_compact = (
+            self.tabs.currentIndex() == 1
+            or self.height() < 650
+            or width < 700
+        )
+        self._set_hero_compact(
+            should_compact
+        )
+        self._responsive_mode = mode
+
+        QTimer.singleShot(
+            0,
+            self._sync_signal_debug_view,
+        )
+        QTimer.singleShot(
+            0,
+            self._sync_frequency_trend_view,
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(
+            self,
+            "root_layout",
+        ):
+            self._apply_responsive_layout(
+                event.size().width()
+            )
 
     def _style_plot(self, plot: pg.PlotWidget) -> None:
         # 图表背景保持透明 / 暖白，避免传统监护仪的强对比黑底。
@@ -971,6 +1491,32 @@ class MainWindow(QMainWindow):
         )
         self.conf_progress.setValue(
             sqi_percent
+        )
+
+        hr_compact = (
+            f"{snapshot.hr_bpm:.0f}"
+            if snapshot.hr_bpm > 0
+            else "--"
+        )
+        rmssd_compact = (
+            f"{snapshot.time.rmssd_ms:.1f}"
+            if snapshot.time.valid
+            else "--"
+        )
+        frequency_compact = (
+            "频域有效"
+            if snapshot.frequency.status == "VALID"
+            else (
+                "频域受限"
+                if snapshot.frequency.status == "LIMITED"
+                else "频域积累中"
+            )
+        )
+        self.hero_compact_summary.setText(
+            f"HR {hr_compact} bpm · "
+            f"RMSSD {rmssd_compact} ms · "
+            f"SQI {sqi_percent}% · "
+            f"{frequency_compact}"
         )
 
         reasons = list(

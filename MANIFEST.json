@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.7",
-  "base_version": "0.3.6",
-  "release_type": "desktop-fixed-lag-whole-waveform-correction",
+  "version": "0.3.9",
+  "base_version": "0.3.8",
+  "release_type": "desktop-responsive-scroll-compact-analysis",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "72 passed",
+    "tests": "80 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -753,10 +753,12 @@
     "final_delivery_python_compileall": "passed",
     "final_delivery_tests": "72 passed",
     "fresh_baseline_plus_patch_tests": "72 passed",
-    "git_apply_check": "passed"
+    "git_apply_check": "passed",
+    "responsive_ui_tests": "5 passed",
+    "qt_runtime_window_test": "not executed: PySide6 unavailable in artifact runtime"
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 165,
+  "file_count": 171,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
@@ -771,6 +773,7 @@
     "commit_v035.txt",
     "commit_v036.txt",
     "commit_v037.txt",
+    "commit_v039.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
@@ -783,6 +786,7 @@
     "desktop/src/hrv_app/engine.py",
     "desktop/src/hrv_app/fiducial_refiner.py",
     "desktop/src/hrv_app/fixed_lag_corrector.py",
+    "desktop/src/hrv_app/frequency_insights.py",
     "desktop/src/hrv_app/frequency_stats.py",
     "desktop/src/hrv_app/hrv_frequency.py",
     "desktop/src/hrv_app/hrv_time.py",
@@ -881,6 +885,8 @@
     "docs/VALIDATION_v0.3.5_PHASE_BRANCH.md",
     "docs/VALIDATION_v0.3.7_FIXED_LAG.json",
     "docs/VALIDATION_v0.3.7_FIXED_LAG.md",
+    "docs/VALIDATION_v0.3.8_AUTOPARSE_VISUAL.md",
+    "docs/VALIDATION_v0.3.9_RESPONSIVE_UI.md",
     "firmware/include/acquisition.h",
     "firmware/include/config.h",
     "firmware/include/data_types.h",
@@ -908,6 +914,7 @@
     "tests/test_fixed_lag_corrector_v037.py",
     "tests/test_fixed_lag_waveform_v037.py",
     "tests/test_frequency.py",
+    "tests/test_frequency_insights_v038.py",
     "tests/test_frequency_stats.py",
     "tests/test_hrv_time.py",
     "tests/test_legacy_peak_edges.py",
@@ -915,6 +922,7 @@
     "tests/test_local_zeez_library.py",
     "tests/test_peak_debug_overlay.py",
     "tests/test_protocol.py",
+    "tests/test_responsive_ui_v039.py",
     "tests/test_robust_spectral_agreement.py",
     "tests/test_rr_cleaner.py",
     "tests/test_signal_quality.py",
@@ -1059,5 +1067,33 @@
       "low-prominence waveform rescue",
       "future-aware RR quality audit"
     ]
+  },
+  "responsive_ui": {
+    "native_scroll_area": true,
+    "analysis_scrollbar_policy": "vertical-always-on-horizontal-off",
+    "responsive_modes": {
+      "wide_min_width_px": 1000,
+      "medium_min_width_px": 700,
+      "narrow_max_width_px": 699
+    },
+    "minimum_window_size_px": [
+      520,
+      480
+    ],
+    "professional_analysis_compact_hero": true,
+    "compact_hero_max_height_px": 72,
+    "compact_hero_fields": [
+      "HR",
+      "RMSSD",
+      "SQI",
+      "frequency status"
+    ],
+    "small_window_auto_compact": {
+      "height_below_px": 650,
+      "width_below_px": 700
+    },
+    "toolbar_reflow": true,
+    "annotation_reflow": true,
+    "dual_axis_resize_resync": true
   }
 }
