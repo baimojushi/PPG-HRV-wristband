@@ -671,6 +671,55 @@ def build_annotation_context(
                         in refined_bin
                     )
                 ),
+
+                # v0.3.7 fixed-lag waveform evidence.
+                "waveform_score_mean": (
+                    _mean_or_nan(
+                        beat.waveform_score
+                        for beat
+                        in refined_bin
+                    )
+                ),
+                "waveform_reference_rr_median_ms": (
+                    _median_or_nan(
+                        beat.reference_rr_ms
+                        for beat
+                        in refined_bin
+                        if (
+                            beat.reference_rr_ms
+                            > 0
+                        )
+                    )
+                ),
+                "waveform_inserted_count": int(
+                    sum(
+                        bool(
+                            beat.inserted_by_smoother
+                        )
+                        for beat
+                        in refined_bin
+                    )
+                ),
+                "waveform_low_prominence_rescue_count": int(
+                    sum(
+                        bool(
+                            beat.low_prominence_rescue
+                        )
+                        for beat
+                        in refined_bin
+                    )
+                ),
+                "waveform_firmware_matched_count": int(
+                    sum(
+                        bool(
+                            beat.matched_firmware_t_us
+                        )
+                        for beat
+                        in refined_bin
+                    )
+                ),
+
+                # Firmware Rescue remains a diagnostic of the raw detector.
                 "rescue_count": int(
                     sum(
                         bool(
@@ -678,7 +727,7 @@ def build_annotation_context(
                             & 0x10
                         )
                         for beat
-                        in refined_bin
+                        in firmware_bin
                     )
                 ),
 

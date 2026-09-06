@@ -88,3 +88,20 @@ Beat:    7 fields
 ```
 
 CRC 错误、格式错误、重同步次数与 Sample 序号缺口继续进入协议健康统计。
+
+## v0.3.7 固定滞后纠错
+
+协议继续为 v4。
+
+v0.3.7 的 7.25 秒固定滞后发生在桌面正式结果层，不改变串口 Sample / Beat 帧。
+
+ESP32 继续立即发送 v0.3.6 Firmware Beat。
+
+桌面端同时保存：
+
+```text
+Firmware Beat
+Formal fixed-lag PPG Beat
+```
+
+两条时间线用于后续审计。

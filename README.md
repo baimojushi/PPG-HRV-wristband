@@ -1,193 +1,147 @@
-# PPG / HRV 实时分析系统 v0.3.6
+# PPG / HRV 实时分析系统 v0.3.7
 
-v0.3.6 重做为 **软件人工异常标注版**。
+v0.3.7 已根据 v0.3.6 人工标注数据重新设计。
 
-这版从 v0.3.5 重新建立，取消 GPIO 按钮方案。
+上一版实验性的 `HOLD / trusted-state` 固件冻结方案已经完整撤销。项目内 ESP32 固件与用户当前 v0.3.6 固件保持字节一致。协议继续使用 v4。
 
-## 重要
-
-```text
-ESP32 固件        与 v0.3.5 完全相同
-zeezPPG           与 v0.3.5 完全相同
-协议              v4，不变
-检测参数          不变
-HRV 参数          不变
-```
-
-**不需要重新烧录 ESP32。**
-
-只更新桌面端。
-
-## 为什么用软件标注
-
-异常是通过桌面 UI 观察到的。
-
-因此 F8 记录的是：
+## 核心结构
 
 ```text
-当前屏幕真正显示到的设备 Sample t_us
+ESP32 zeezPPG（v0.3.6 行为）
+        ↓ 实时
+Sample + Firmware Beat
+        ↓
+PC 保存原始证据
+        ↓
+7.25 s 固定滞后窗口
+        ↓
+整窗 PPG 主波解析
+├─ 全窗自相关估计主周期
+├─ 主波 / 次级峰竞争
+├─ 长间隙低门限补峰
+├─ 未来波形确认
+└─ 局部抛物线波顶细化
+        ↓
+正式 PPG 心搏时间线
+        ↓
+未来感知 RR 清洗
+        ↓
+HR / RMSSD / 频域 HRV
 ```
 
-而不是：
+正式 HRV 心搏不再要求 Firmware Beat 先存在。固件漏检时，PC 可以直接从完整 PPG 波形补回主波；固件多检或落到次级峰时，该事件仍保留在原始证据中，但不会自动进入正式 HRV 时间线。
+
+## 8 秒纠错余裕
+
+用户允许正式结果最多滞后 8 秒。
+
+当前实时目标：
 
 ```text
-Windows 墙钟
-最新后台串口 Sample
+固定滞后目标       7.25 s
+纠错运行周期       0.20 s
+工程上限           8.00 s
 ```
 
-这能让人工标签直接对齐你肉眼看到的 PPG / Winner / fiducial。
+一个待提交波顶可以看到约 7.25 秒未来 PPG，相当于常见心率下后续多个完整心动周期。
 
-## 使用
+周期模型只决定搜索尺度。正式时间戳仍必须落在真实 PPG 局部波顶，不会把 RR 强制写成规则等间隔。
 
-实时连接设备后：
+停止采集或离线导出时，会使用已经采到的完整尾部波形完成最终离线纠错，只保留约 0.25 秒右边界保护。
+
+## 波形图
+
+状态页只保留两条连续视觉序列：
 
 ```text
-F8
+紫线    滤波 PPG
+绿线    7.25 s 固定滞后纠错后的正式心搏
 ```
 
-或点击：
+形态分、Firmware Candidate、Firmware Winner 不再绘制，仍完整保留在 Debug 与导出数据中。
+
+人工 F8 标注继续保留红色半透明 3 秒问题区间，不再画额外红色竖线。PPG 图网格也关闭，进一步降低人工视觉标注负荷。
+
+PPG 画面本身也使用相同的成熟时间窗，因此紫线与绿线始终处在同一时间语义。F8 保存当前屏幕右缘对应的真实设备 `t_us`。
+
+## 已标注历史数据回放
+
+来源：v0.3.6 的 92,051 个 Sample、22 次 F8 标注。
 
 ```text
-标记异常 · F8
+                              v0.3.6       v0.3.7
+Timeline artifact               7.31%         0.00%
+Unresolved                      4.87%         0.00%
+人工问题窗含 RR artifact      18/22          0/22
+频域状态                      INVALID     VALID
+RMSSD                         36.16 ms     25.04 ms
 ```
 
-可提前选择：
+正式整窗心搏：
 
 ```text
-未分类
-峰位漂移
-漏检
-多检
-周期跳变
-其他
+Firmware Beat                  904
+v0.3.7 正式 Beat               918
+匹配到 Firmware                864
+PPG 独立补回                   54
+Firmware 未进入正式时间线      40
+RR 中位数                      798.1 ms
 ```
 
-来不及分类就保持“未分类”。
-
-## 人工标签
-
-看到问题后 3 秒内按一次。
+额外使用固定参数的整段 PPG `find_peaks` 作为离线视觉形态工程参考：
 
 ```text
-device_t_us
-    当前屏幕 PPG 右缘设备时间
-
-label window
-    device_t_us - 3 s
-    ~ device_t_us
+视觉参考主波数                 919
+v0.3.7 正式主波数              918
+波顶位置差中位数               1.935 ms
+波顶位置差 p95                 4.000 ms
 ```
 
-同时记录：
+这个参考只验证“PPG 中明显主波的数量和波顶位置”，没有同步心电，不能视为生理真值。新的 RMSSD 也只能说明 PPG 观测时间线内部更一致。
+
+## 神经网络接口
+
+当前 `FixedLagWaveformCorrector` 是确定性的数学基线。
+
+未来可以将其中的整窗主波选择器替换为小参数视觉 Transformer / 一维时序模型：
 
 ```text
-latest_sample_t_us
-host_monotonic_ns
-ui_data_lag_ms
+长窗 PPG
+→ 主波数量
+→ 波顶热力图
+→ 原始 PPG 局部极值细化
+→ 正式时间线
 ```
 
-用于审计 UI / 串口延迟。
+Engine、HRV、导出和 8 秒固定滞后接口无需重写。
 
-## UI
+## 固件
 
-PPG 图：
+重做版 v0.3.7 没有修改 v0.3.6 固件。
 
-```text
-红色阴影 = 最近一次人工标注前 3 秒
-红虚线   = 标注时刻
-```
+如果 ESP32 仍运行 v0.3.6，无需重新烧录。
 
-Debug 行：
+如果此前已经烧入失败版 v0.3.7 的 `HOLD/trusted-state` 固件，请用本工程 `firmware/` 重新烧录一次，把固件恢复到 v0.3.6 行为。
 
-```text
-人工标注 N
-近窗 N
-```
-
-## 低频前兆分析
-
-每个标注自动分析：
-
-```text
-前 120 秒
-到
-后 5 秒
-```
-
-输出 1 秒粒度：
-
-```text
-PPG baseline / amplitude
-detector score
-Candidate rate
-expected RR
-Winner score
-Timing Quality
-fiducial shift
-Rescue / phase recovery
-RR artifact
-```
-
-并计算：
-
-```text
-30 秒滚动水平
-60 秒趋势斜率
-```
-
-## 导出新增
-
-```text
-annotations.csv
-annotation_context_1s.csv
-annotation_summary.json
-raw_session/
-```
-
-`annotation_summary.json` 自动比较：
-
-```text
-远期 -120~-30 s
-vs
-临近 -30~0 s
-```
-
-多个问题事件还会统计趋势是否反复同向。
-
-## 完整会话
-
-导出会包含整个实时 SessionRecorder：
-
-```text
-hrv_export/raw_session/
-```
-
-所以连续采集 20–30 分钟也可以追溯早期标注前的完整 PPG。
-
-先断开设备再导出也支持。
-
-## 推荐实验
-
-```text
-单次连续 15–30 分钟
-收集 10–20 个独立异常标注
-保留大量正常无标注区间
-测试期间不改算法参数
-```
-
-完成后把整个 `hrv_export` 压缩用于下一轮分析。
-
-## 桌面运行
+## 运行
 
 ```bash
 cd desktop
 python run_ui.py
 ```
 
+固件恢复时：
+
+```bash
+cd firmware
+pio run
+pio run --target upload
+```
+
 ## 关键文档
 
 ```text
-docs/ANNOTATION_WORKFLOW_v0.3.6.md
-docs/PATCH_v0.3.6_SOFTWARE_ANNOTATION.md
-docs/QUALITY_CONFIDENCE.md
-docs/ARCHITECTURE.md
+docs/ALGORITHM_v0.3.7_FIXED_LAG_WAVEFORM.md
+docs/VALIDATION_v0.3.7_FIXED_LAG.md
+docs/PATCH_v0.3.7_FIXED_LAG_WAVEFORM.md
 ```

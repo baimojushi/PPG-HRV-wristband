@@ -200,3 +200,20 @@
 - 导出完整 raw_session；
 - 每个标签生成前120秒低频趋势；
 - 检测和 HRV 算法不受人工标注反馈。
+
+## v0.3.7 重做：固定滞后整窗波形纠错
+
+- 撤销失败实验版 HOLD / trusted-state 固件冻结；
+- firmware/ 与用户 v0.3.6 工程字节一致；
+- 正式输出目标滞后 7.25 s，硬约束 8 s；
+- 正式 HRV Beat 可以独立于 Firmware Beat 产生；
+- 历史标注回放正式 Beat 918；
+- PPG 独立补回 54 搏；
+- 40 个 Firmware Beat 没有进入正式时间线；
+- Timeline artifact 7.31% → 0.00%；
+- Unresolved 4.87% → 0.00%；
+- 22 个人工标注窗口的 RR artifact：18 → 0；
+- 独立视觉形态参考：919 个峰，正式时间线 918 个峰，位置差 p95 4.00 ms；
+- 历史回放频域状态 VALID；
+- 上述视觉参考没有 ECG，不作为生理真值。
+- v0.3.7 自动验收：72 passed；固定滞后专项 13 passed；Python compileall PASS。

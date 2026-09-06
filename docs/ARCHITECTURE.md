@@ -85,3 +85,31 @@ annotation → logging
 ```text
 annotation → detector feedback
 ```
+
+## v0.3.7 固定滞后正式时间线
+
+```text
+ESP32 v0.3.6 zeezPPG
+├─ Sample
+└─ Firmware Beat
+        ↓ 实时记录
+PC 原始证据
+        ↓
+7.25 s mature window
+        ↓
+FixedLagWaveformCorrector
+├─ whole-window autocorrelation
+├─ waveform peak topology
+├─ missing-peak rescue
+└─ firmware match audit
+        ↓
+Formal PPG Beat
+        ↓
+future-aware BeatTimelineCleaner
+        ↓
+HRV
+```
+
+Firmware Beat 与 Formal PPG Beat 是两条独立语义时间线。
+
+前者描述实时检测器输出，后者描述拥有未来波形信息后的正式观测主波。

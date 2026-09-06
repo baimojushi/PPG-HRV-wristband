@@ -1,3 +1,5 @@
+import numpy as np
+
 from hrv_app.engine import AnalysisEngine
 from hrv_app.models import BeatFrame, SampleFrame
 
@@ -58,10 +60,12 @@ def test_recent_signal_debug_exposes_score_candidate_and_accepted():
     assert detector_score.min() >= 0.0
 
     assert stats["candidate_count"] == 4
-    assert stats["accepted_beat_count"] == 2
-    assert stats["candidate_minus_accepted"] == 2
-    assert stats["expected_rr_ms"] == 960.0
-    assert stats["accepted_hr_bpm"] == 62.5
-    assert stats["accepted_score_mean"] == 0.81
+    assert stats["firmware_beat_count"] == 2
 
-    assert engine.snapshot().hr_bpm == 62.5
+    # filtered PPG 是常数 100，没有任何视觉主波。
+    # v0.3.7 不再因为 Firmware Beat 存在就强制生成正式 HRV Beat。
+    assert stats["accepted_beat_count"] == 0
+    assert stats["accepted_hr_bpm"] == 0.0
+    assert np.count_nonzero(accepted) == 0
+
+    assert engine.snapshot().hr_bpm == 0.0

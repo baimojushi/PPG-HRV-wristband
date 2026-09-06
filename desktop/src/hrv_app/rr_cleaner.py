@@ -79,6 +79,48 @@ class BeatTimelineCleaner:
                 refined=bool(
                     getattr(b, "refined", False)
                 ),
+                correction_method=str(
+                    getattr(
+                        b,
+                        "correction_method",
+                        "",
+                    )
+                ),
+                waveform_score=float(
+                    getattr(
+                        b,
+                        "waveform_score",
+                        0.0,
+                    )
+                ),
+                reference_rr_ms=float(
+                    getattr(
+                        b,
+                        "reference_rr_ms",
+                        0.0,
+                    )
+                ),
+                matched_firmware_t_us=int(
+                    getattr(
+                        b,
+                        "matched_firmware_t_us",
+                        0,
+                    )
+                ),
+                inserted_by_smoother=bool(
+                    getattr(
+                        b,
+                        "inserted_by_smoother",
+                        False,
+                    )
+                ),
+                low_prominence_rescue=bool(
+                    getattr(
+                        b,
+                        "low_prominence_rescue",
+                        False,
+                    )
+                ),
                 status="unresolved",
                 metric_eligible=False,
             )
@@ -306,35 +348,167 @@ class BeatTimelineCleaner:
         index: int,
         history: deque[float],
     ) -> tuple[float, float]:
+        """
+        v0.3.7：未来感知局部节律。
+
+        v0.3.6 的 expected RR 一旦 `history` 足够长，就完全依赖单向历史。
+        一个被拒绝的 RR 会停止 history 更新，随后可能形成“越拒绝越不能恢复”
+        的长串 local_outlier。
+
+        现在正式 Beat 本身已经延迟约 7.25 s 提交，清洗器天然拥有后续 RR。
+        因此这里始终参考对称邻域：
+        - 单个异常不会改变邻域中位数；
+        - 持续的真实心率变化可以由未来正常搏确认；
+        - false-peak / missed-beat 的结构判定仍由后面的专门规则完成。
+        """
         cfg = self.config
 
-        # 优先使用已确认的历史 NN，避免当前异常污染期望值。
-        if len(history) >= cfg.rr_local_min_history:
-            data = np.asarray(history, dtype=float)
-        else:
-            # 启动阶段从邻域中挑选 450–1200 ms 的候选做初始节律估计。
-            # 这个范围只用于“建立初始中位数”，不直接决定最终 valid。
-            left = max(0, index - 7)
-            right = min(len(source), index + 8)
-            data = np.asarray(
-                [float(b.rr_ms) for b in source[left:right]],
+        left = max(
+            0,
+            index - 8,
+        )
+        right = min(
+            len(source),
+            index + 9,
+        )
+
+        local = np.asarray(
+            [
+                float(
+                    beat.rr_ms
+                )
+                for beat in source[
+                    left:right
+                ]
+            ],
+            dtype=float,
+        )
+
+        # 这里只建立局部节律中心。
+        # 过短 / 过长值留给结构性伪峰与漏搏规则处理。
+        local = local[
+            np.isfinite(local)
+            & (
+                local
+                >= max(
+                    400.0,
+                    cfg.rr_hard_min_ms,
+                )
+            )
+            & (
+                local
+                <= min(
+                    1400.0,
+                    cfg.rr_hard_max_ms,
+                )
+            )
+        ]
+
+        historical = (
+            np.asarray(
+                history,
                 dtype=float,
             )
-            data = data[(data >= 450.0) & (data <= 1200.0)]
+            if history
+            else np.asarray(
+                [],
+                dtype=float,
+            )
+        )
 
-            if data.size < 3 and history:
-                data = np.asarray(history, dtype=float)
+        if (
+            local.size >= 5
+            and historical.size
+            >= cfg.rr_local_min_history
+        ):
+            local_median = float(
+                np.median(
+                    local
+                )
+            )
+            history_median = float(
+                np.median(
+                    historical
+                )
+            )
 
-        if data.size == 0:
-            return 800.0, cfg.rr_robust_scale_floor_ms
+            relative_shift = abs(
+                local_median
+                - history_median
+            ) / max(
+                history_median,
+                1.0,
+            )
 
-        median = float(np.median(data))
-        mad = float(np.median(np.abs(data - median)))
+            local_mad = float(
+                np.median(
+                    np.abs(
+                        local
+                        - local_median
+                    )
+                )
+            )
+
+            local_coherent = (
+                local_mad
+                / max(
+                    local_median,
+                    1.0,
+                )
+                <= 0.12
+            )
+
+            if (
+                relative_shift > 0.10
+                and local_coherent
+            ):
+                # 未来若确认新的稳定节律，允许 expected 跟随真实变化。
+                data = local
+            else:
+                # 正常情况下融合过去和未来，提高单搏抗扰动能力。
+                data = np.concatenate(
+                    [
+                        historical,
+                        local,
+                    ]
+                )
+
+        elif local.size >= 3:
+            data = local
+
+        elif historical.size:
+            data = historical
+
+        else:
+            data = np.asarray(
+                [800.0],
+                dtype=float,
+            )
+
+        median = float(
+            np.median(
+                data
+            )
+        )
+        mad = float(
+            np.median(
+                np.abs(
+                    data
+                    - median
+                )
+            )
+        )
+
         robust_scale = max(
-            1.4826 * mad,
+            1.4826
+            * mad,
             cfg.rr_robust_scale_floor_ms,
         )
-        return median, robust_scale
+
+        return (
+            median,
+            robust_scale,
+        )
 
     def _is_false_peak_pair(
         self,

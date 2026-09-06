@@ -97,6 +97,18 @@ class BeatFrame:
     timing_recovered: bool = False
     refined: bool = False
 
+    # ------------------------------------------------------------------
+    # v0.3.7 固定滞后整窗波形复核证据。
+    # ------------------------------------------------------------------
+    # 正式 HRV Beat 现在可以完全由 PPG 波形产生，
+    # 因此 source_t_us=0 也是合法情况，表示固件漏检后由整窗复核补回。
+    correction_method: str = ""
+    waveform_score: float = 0.0
+    reference_rr_ms: float = 0.0
+    matched_firmware_t_us: int = 0
+    inserted_by_smoother: bool = False
+    low_prominence_rescue: bool = False
+
 
 @dataclass(slots=True)
 class FirmwareMetricFrame:
@@ -180,6 +192,14 @@ class BeatRecord:
     timing_uncertainty_ms: float = 0.0
     timing_recovered: bool = False
     refined: bool = False
+
+    # v0.3.7 整窗纠错来源。
+    correction_method: str = ""
+    waveform_score: float = 0.0
+    reference_rr_ms: float = 0.0
+    matched_firmware_t_us: int = 0
+    inserted_by_smoother: bool = False
+    low_prominence_rescue: bool = False
 
     status: str = "accepted"
     metric_eligible: bool = True

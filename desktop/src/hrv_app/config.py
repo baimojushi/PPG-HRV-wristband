@@ -19,6 +19,53 @@ class AnalysisConfig:
     user_annotation_context_after_seconds: float = 5.0
     user_annotation_context_bin_seconds: float = 1.0
 
+    # ------------------------------------------------------------------
+    # v0.3.7 固定滞后整窗纠错
+    # ------------------------------------------------------------------
+    # 用户允许正式输出最多滞后 8 s。
+    #
+    # 目标值使用 7.25 s，并以 0.20 s 周期运行复核器，
+    # 给 UI 刷新 / Python 调度留下工程余量。
+    correction_output_lag_seconds: float = 7.25
+    correction_max_output_lag_seconds: float = 8.0
+    correction_run_interval_seconds: float = 0.20
+
+    # 每次纠错同时观察成熟点之前约 12 s 历史 + 未来约 7.25 s。
+    # 这样一个待提交波顶能够看到后续约 8~10 个心动周期。
+    waveform_context_history_seconds: float = 12.0
+
+    # 波形解析的生理搜索范围。
+    # 这些只是候选搜索尺度，不会把 RR 强制写成等间隔。
+    waveform_min_rr_ms: float = 300.0
+    waveform_max_rr_ms: float = 1500.0
+
+    # 普通主波候选。
+    waveform_min_prominence_abs: float = 5.0
+    waveform_prominence_ratio: float = 0.08
+    waveform_peak_distance_rr_ratio: float = 0.36
+    waveform_peak_distance_min_s: float = 0.18
+    waveform_peak_distance_max_s: float = 0.42
+
+    # 同一视觉主波内部的双峰 / 切迹冲突。
+    waveform_pair_min_ms: float = 220.0
+    waveform_short_pair_rr_ratio: float = 0.50
+    waveform_commit_refractory_rr_ratio: float = 0.42
+
+    # 长 gap 补峰。
+    # 普通 prominence 门没有找到心搏时，利用前后主波和未来窗口
+    # 在预测槽位附近搜索更低幅的真实局部最大值。
+    waveform_long_gap_trigger_ratio: float = 1.55
+    waveform_rescue_prominence_ratio: float = 0.035
+    waveform_rescue_peak_distance_s: float = 0.16
+    waveform_rescue_search_rr_ratio: float = 0.28
+    waveform_rescue_min_score: float = 0.22
+    waveform_rescue_max_cycles: int = 4
+
+    # 正式波顶和 Firmware Beat 只做诊断匹配。
+    # 找不到匹配也允许波形复核器独立补搏。
+    waveform_firmware_match_rr_ratio: float = 0.45
+    waveform_firmware_match_max_ms: float = 380.0
+
     # 原项目时域窗口继续使用最近 60 个 RR，至少 40 个可直接使用的 NN。
     time_window_rr_count: int = 60
     time_min_valid_rr_count: int = 40

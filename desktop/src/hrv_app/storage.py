@@ -586,6 +586,12 @@ def export_engine_results(
             "timing_uncertainty_ms",
             "timing_recovered",
             "refined",
+            "correction_method",
+            "waveform_score",
+            "reference_rr_ms",
+            "matched_firmware_t_us",
+            "inserted_by_smoother",
+            "low_prominence_rescue",
             "flags",
         ])
 
@@ -602,6 +608,12 @@ def export_engine_results(
                 beat.timing_uncertainty_ms,
                 int(beat.timing_recovered),
                 int(beat.refined),
+                beat.correction_method,
+                beat.waveform_score,
+                beat.reference_rr_ms,
+                beat.matched_firmware_t_us,
+                int(beat.inserted_by_smoother),
+                int(beat.low_prominence_rescue),
                 beat.flags,
             ])
 
@@ -633,6 +645,12 @@ def export_engine_results(
             "timing_uncertainty_ms",
             "timing_recovered",
             "refined",
+            "correction_method",
+            "waveform_score",
+            "reference_rr_ms",
+            "matched_firmware_t_us",
+            "inserted_by_smoother",
+            "low_prominence_rescue",
             "flags",
         ])
 
@@ -656,6 +674,12 @@ def export_engine_results(
                 beat.timing_uncertainty_ms,
                 int(beat.timing_recovered),
                 int(beat.refined),
+                beat.correction_method,
+                beat.waveform_score,
+                beat.reference_rr_ms,
+                beat.matched_firmware_t_us,
+                int(beat.inserted_by_smoother),
+                int(beat.low_prominence_rescue),
                 beat.flags,
             ])
 

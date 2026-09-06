@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.3.6",
-  "base_version": "0.3.5",
-  "release_type": "software-manual-annotation-observability",
+  "version": "0.3.7",
+  "base_version": "0.3.6",
+  "release_type": "desktop-fixed-lag-whole-waveform-correction",
   "algorithm_source": "project-local firmware/lib/zeezPPG",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -67,7 +67,9 @@
     "unchanged_from_v0_3_3": true,
     "unchanged_from_v0_3_4": true,
     "unchanged_from_v0_3_5": true,
-    "annotation_transport_change": false
+    "annotation_transport_change": false,
+    "unchanged_from_v0_3_6": true,
+    "v0_3_7_transport_change": false
   },
   "tiny_cnn": {
     "enabled": false,
@@ -77,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "59 passed",
+    "tests": "72 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -500,10 +502,261 @@
     "software_annotation_low_frequency_context": "passed",
     "firmware_byte_identical_to_v0_3_5": true,
     "algorithm_core_byte_identical_to_v0_3_5": true,
-    "platformio_required_for_this_release": false
+    "platformio_required_for_this_release": false,
+    "firmware_byte_identical_to_uploaded_v0_3_6": true,
+    "output_lag_constraint": "7.25 s target <= 8.0 s",
+    "ui_continuous_series_count": 2,
+    "annotated_v0_3_6_fixed_lag_replay": {
+      "source": "v0.3.6 annotated hrv_export.zip",
+      "sample_count": 92051,
+      "annotation_count": 22,
+      "replay_elapsed_seconds": 31.121,
+      "old_v0_3_6": {
+        "firmware_beat_count": 904,
+        "timeline_artifact_ratio": 0.07309,
+        "timeline_unresolved_ratio": 0.04873,
+        "frequency_status": "INVALID",
+        "rmssd_ms": 36.161,
+        "annotation_windows_with_rr_artifact": 18
+      },
+      "rebuilt_v0_3_7": {
+        "formal_beat_count": 918,
+        "matched_firmware_count": 864,
+        "waveform_inserted_count": 54,
+        "firmware_unmatched_count": 40,
+        "rr_median_ms": 798.139,
+        "rr_p01_ms": 630.6936000000001,
+        "rr_p99_ms": 953.0531200000003,
+        "timeline_artifact_ratio": 0.0,
+        "timeline_unresolved_ratio": 0.0,
+        "time_status": "VALID",
+        "frequency_status": "VALID",
+        "rmssd_ms": 25.037300276499323,
+        "hr_bpm": 79.6332622827671,
+        "annotation_windows_with_rr_artifact": 0
+      },
+      "offline_visual_reference": {
+        "note": "simple whole-session find_peaks engineering reference; not ECG ground truth",
+        "peak_count": 919,
+        "formal_peak_count": 918,
+        "formal_to_reference_abs_offset_median_ms": 1.935,
+        "formal_to_reference_abs_offset_p95_ms": 4.0
+      },
+      "annotation_windows": [
+        {
+          "annotation_id": 1,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 2,
+          "label_type": "未分类",
+          "firmware_count_3s": 2,
+          "formal_count_3s": 3,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 3,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 3,
+          "old_artifact_count": 2,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 4,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 5,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 3,
+          "old_artifact_count": 0,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 6,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 7,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 3,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 8,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 9,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 3,
+          "old_artifact_count": 3,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 10,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 11,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 3,
+          "old_artifact_count": 2,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 12,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 2,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 13,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 4,
+          "old_artifact_count": 3,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 14,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 3,
+          "old_artifact_count": 2,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 15,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 16,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 4,
+          "old_artifact_count": 0,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 17,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 4,
+          "old_artifact_count": 0,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 18,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 3,
+          "old_artifact_count": 0,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 19,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 5,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 20,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 4,
+          "old_artifact_count": 2,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 21,
+          "label_type": "未分类",
+          "firmware_count_3s": 3,
+          "formal_count_3s": 4,
+          "old_artifact_count": 1,
+          "new_artifact_count": 0
+        },
+        {
+          "annotation_id": 22,
+          "label_type": "未分类",
+          "firmware_count_3s": 4,
+          "formal_count_3s": 3,
+          "old_artifact_count": 3,
+          "new_artifact_count": 0
+        }
+      ]
+    },
+    "final_rebuild_tests": "70 passed",
+    "fixed_lag_specific_tests": "13 passed",
+    "protocol_version": 4,
+    "annotated_v0_3_6_replay": {
+      "sample_count": 92051,
+      "annotation_count": 22,
+      "firmware_beat_count": 904,
+      "formal_waveform_beat_count": 918,
+      "matched_firmware_count": 864,
+      "waveform_inserted_count": 54,
+      "firmware_unmatched_count": 40,
+      "timeline_artifact_ratio_old": 0.07309,
+      "timeline_artifact_ratio_new": 0.0,
+      "timeline_unresolved_ratio_old": 0.04873,
+      "timeline_unresolved_ratio_new": 0.0,
+      "old_frequency_status": "INVALID",
+      "new_frequency_status": "VALID",
+      "old_rmssd_ms": 36.161,
+      "new_rmssd_ms": 25.0373,
+      "visual_reference_peak_count": 919,
+      "formal_peak_count": 918,
+      "formal_to_reference_abs_offset_median_ms": 1.935,
+      "formal_to_reference_abs_offset_p95_ms": 4.0,
+      "note": "PPG visual morphology engineering reference only; no synchronized ECG ground truth"
+    },
+    "hard_negative_tests": [
+      "variable RR waveform peaks remain variable and are not regularized to reference RR",
+      "smooth physiological HRV remains present after future-aware RR cleaning"
+    ],
+    "final_delivery_python_compileall": "passed",
+    "final_delivery_tests": "72 passed",
+    "fresh_baseline_plus_patch_tests": "72 passed",
+    "git_apply_check": "passed"
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 123,
+  "file_count": 165,
   "files": [
     ".gitignore",
     ".vscode/extensions.json",
@@ -517,6 +770,7 @@
     "commit_v034.txt",
     "commit_v035.txt",
     "commit_v036.txt",
+    "commit_v037.txt",
     "desktop/analyze_csv.py",
     "desktop/pyproject.toml",
     "desktop/requirements.txt",
@@ -528,6 +782,7 @@
     "desktop/src/hrv_app/config.py",
     "desktop/src/hrv_app/engine.py",
     "desktop/src/hrv_app/fiducial_refiner.py",
+    "desktop/src/hrv_app/fixed_lag_corrector.py",
     "desktop/src/hrv_app/frequency_stats.py",
     "desktop/src/hrv_app/hrv_frequency.py",
     "desktop/src/hrv_app/hrv_time.py",
@@ -549,11 +804,46 @@
     "desktop/第一次/hrv_export/nn_intervals.csv",
     "desktop/第一次/hrv_export/protocol_health.json",
     "desktop/第一次/hrv_export/summary.json",
+    "desktop/第三次/hrv_export.zip",
+    "desktop/第三次/hrv_export/beats_cleaned.csv",
+    "desktop/第三次/hrv_export/beats_raw.csv",
+    "desktop/第三次/hrv_export/export_snapshot.json",
+    "desktop/第三次/hrv_export/frequency_statistics.csv",
+    "desktop/第三次/hrv_export/frequency_statistics.json",
+    "desktop/第三次/hrv_export/hrv_windows.csv",
+    "desktop/第三次/hrv_export/nn_intervals.csv",
+    "desktop/第三次/hrv_export/protocol_health.json",
+    "desktop/第三次/hrv_export/samples_debug.csv",
+    "desktop/第三次/hrv_export/summary.json",
+    "desktop/第二次/hrv_export.zip",
+    "desktop/第二次/hrv_export/beats_cleaned.csv",
+    "desktop/第二次/hrv_export/beats_raw.csv",
+    "desktop/第二次/hrv_export/export_snapshot.json",
+    "desktop/第二次/hrv_export/frequency_statistics.csv",
+    "desktop/第二次/hrv_export/frequency_statistics.json",
+    "desktop/第二次/hrv_export/hrv_windows.csv",
+    "desktop/第二次/hrv_export/nn_intervals.csv",
+    "desktop/第二次/hrv_export/protocol_health.json",
+    "desktop/第二次/hrv_export/samples_debug.csv",
+    "desktop/第二次/hrv_export/summary.json",
+    "desktop/第四次/hrv_export.zip",
+    "desktop/第四次/hrv_export/beats_cleaned.csv",
+    "desktop/第四次/hrv_export/beats_raw.csv",
+    "desktop/第四次/hrv_export/beats_refined.csv",
+    "desktop/第四次/hrv_export/export_snapshot.json",
+    "desktop/第四次/hrv_export/frequency_statistics.csv",
+    "desktop/第四次/hrv_export/frequency_statistics.json",
+    "desktop/第四次/hrv_export/hrv_windows.csv",
+    "desktop/第四次/hrv_export/nn_intervals.csv",
+    "desktop/第四次/hrv_export/protocol_health.json",
+    "desktop/第四次/hrv_export/samples_debug.csv",
+    "desktop/第四次/hrv_export/summary.json",
     "docs/ALGORITHM_v0.3.0.md",
     "docs/ALGORITHM_v0.3.1.md",
     "docs/ALGORITHM_v0.3.2.md",
     "docs/ALGORITHM_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/ALGORITHM_v0.3.5_PHASE_BRANCH.md",
+    "docs/ALGORITHM_v0.3.7_FIXED_LAG_WAVEFORM.md",
     "docs/ANNOTATION_WORKFLOW_v0.3.6.md",
     "docs/ARCHITECTURE.md",
     "docs/CHEEZPPG_SOURCE_REVIEW.md",
@@ -569,6 +859,7 @@
     "docs/PATCH_v0.3.4_FIDUCIAL_PHASE.md",
     "docs/PATCH_v0.3.5_PHASE_BRANCH.md",
     "docs/PATCH_v0.3.6_SOFTWARE_ANNOTATION.md",
+    "docs/PATCH_v0.3.7_FIXED_LAG_WAVEFORM.md",
     "docs/PROTOCOL.md",
     "docs/QUALITY_CONFIDENCE.md",
     "docs/THIRD_PARTY.md",
@@ -588,6 +879,8 @@
     "docs/VALIDATION_v0.3.4_FIDUCIAL_REPLAY.md",
     "docs/VALIDATION_v0.3.5_PHASE_BRANCH.json",
     "docs/VALIDATION_v0.3.5_PHASE_BRANCH.md",
+    "docs/VALIDATION_v0.3.7_FIXED_LAG.json",
+    "docs/VALIDATION_v0.3.7_FIXED_LAG.md",
     "firmware/include/acquisition.h",
     "firmware/include/config.h",
     "firmware/include/data_types.h",
@@ -612,6 +905,8 @@
     "tests/test_adaptive_detector.py",
     "tests/test_debug_export.py",
     "tests/test_fiducial_refiner.py",
+    "tests/test_fixed_lag_corrector_v037.py",
+    "tests/test_fixed_lag_waveform_v037.py",
     "tests/test_frequency.py",
     "tests/test_frequency_stats.py",
     "tests/test_hrv_time.py",
@@ -637,7 +932,10 @@
     "annotations.csv",
     "annotation_context_1s.csv",
     "annotation_summary.json",
-    "raw_session/*.csv"
+    "raw_session/*.csv",
+    "beats_refined.csv: fixed-lag waveform evidence",
+    "beats_cleaned.csv: fixed-lag waveform evidence",
+    "annotation_context_1s.csv: waveform correction statistics"
   ],
   "firmware_changed": false,
   "protocol_version": 4,
@@ -712,5 +1010,54 @@
     "context_after_seconds": 5.0,
     "context_bin_seconds": 1.0,
     "affects_online_algorithm": false
+  },
+  "desktop_changed": true,
+  "fixed_lag_waveform_correction": {
+    "enabled": true,
+    "formal_output_lag_seconds": 7.25,
+    "engineering_max_output_lag_seconds": 8.0,
+    "run_interval_seconds": 0.2,
+    "past_context_seconds": 12.0,
+    "formal_timeline_requires_firmware_beat": false,
+    "firmware_beat_role": "diagnostic evidence only",
+    "whole_waveform_autocorrelation": true,
+    "same_cycle_peak_competition": true,
+    "long_gap_low_prominence_rescue": true,
+    "quadratic_peak_refinement": true,
+    "future_aware_rr_cleaner": true,
+    "future_model_backend": "visual Transformer or 1-D temporal model"
+  },
+  "ui_waveform": {
+    "continuous_series_count": 2,
+    "series": [
+      "filtered PPG",
+      "fixed-lag formal Beat 0/1"
+    ],
+    "grid_enabled": false,
+    "hidden_but_exported": [
+      "detector score",
+      "Firmware Candidate",
+      "Firmware Winner"
+    ],
+    "annotation_overlay": "semi-transparent 3-second region",
+    "annotation_vertical_line": false
+  },
+  "desktop_correction_algorithm_changed": true,
+  "delayed_correction": {
+    "enabled": true,
+    "target_output_lag_seconds": 7.25,
+    "maximum_output_lag_seconds": 8.0,
+    "run_interval_seconds": 0.2,
+    "past_context_seconds": 12.0,
+    "formal_timeline_source": "whole-window PPG waveform peaks",
+    "firmware_beat_required": false,
+    "reference_rr_generates_timestamp": false,
+    "future_information_role": [
+      "autocorrelation rhythm scale",
+      "main-vs-secondary peak competition",
+      "long-gap detection",
+      "low-prominence waveform rescue",
+      "future-aware RR quality audit"
+    ]
   }
 }

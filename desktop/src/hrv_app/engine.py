@@ -9,7 +9,7 @@ import numpy as np
 from .config import AnalysisConfig
 from .confidence import compute_quality_assessment
 from .frequency_stats import compute_frequency_statistics
-from .fiducial_refiner import TemplateFiducialRefiner
+from .fixed_lag_corrector import FixedLagWaveformCorrector
 from .hrv_frequency import compute_frequency_domain
 from .hrv_time import compute_time_domain
 from .models import (
@@ -33,10 +33,12 @@ class AnalysisEngine:
     """
     线程安全分析引擎。
 
-    关键变化：
-    - `_raw_beats` 永远保存原始 BeatFrame；
-    - 每次指标更新都用 BeatTimelineCleaner 重建最近整段 NN 时间轴；
-    - 因此伪峰可以回溯删除，漏搏可以插入合成时间点；
+    v0.3.7 关键变化：
+    - `_firmware_beats` 保存固件实时 Accepted，只作为诊断证据；
+    - `_raw_beats` 改为 7.25 s 固定滞后整窗 PPG 复核后的正式心搏；
+    - 正式心搏可以在固件漏检时直接由波形补回；
+    - 固件多检 / 次级峰不会自动进入正式 HRV 时间线；
+    - BeatTimelineCleaner 再对正式时间线做未来感知的 NN 质量审计；
     - 导出通过 export_bundle() 冻结同一个 snapshot，避免 CSV/JSON 不同步。
     """
 
@@ -75,22 +77,25 @@ class AnalysisEngine:
             maxlen=5000
         )
 
-        # `_raw_beats` 从 v0.3.4 起表示：
-        # 固件 Accepted Beat 经 PPG 模板对齐后的 HRV 输入时间线。
+        # `_raw_beats` 从 v0.3.7 起表示：
+        # 固定滞后整窗波形复核后的正式 HRV 心搏时间线。
         self._raw_beats: deque[BeatFrame] = deque(
             maxlen=5000
         )
 
-        # Beat 到达时可能还没有足够的后向波形。
-        # 延迟约 120 ms 后再做 fiducial refinement，不阻塞串口线程。
-        self._pending_firmware_beats: deque[BeatFrame] = deque()
-        self._fiducial_refiner = TemplateFiducialRefiner(
-            self.config
+        self._waveform_corrector = (
+            FixedLagWaveformCorrector(
+                self.config
+            )
         )
+
+        # 正式时间线自己的 RR 历史。
+        # 它只来自已经提交的 PPG 主波，不再由固件 Winner 直接驱动。
         self._refined_rr_history: deque[float] = deque(
-            maxlen=9
+            maxlen=15
         )
         self._last_refined_t_us = 0
+        self._last_correction_run_t_us = 0
 
         self._cleaned_records: list[BeatRecord] = []
         self._nn_intervals: list[NNInterval] = []
@@ -118,10 +123,10 @@ class AnalysisEngine:
             self._annotations.clear()
             self._firmware_beats.clear()
             self._raw_beats.clear()
-            self._pending_firmware_beats.clear()
-            self._fiducial_refiner.reset()
+            self._waveform_corrector.reset()
             self._refined_rr_history.clear()
             self._last_refined_t_us = 0
+            self._last_correction_run_t_us = 0
             self._cleaned_records.clear()
             self._nn_intervals.clear()
             self._metric_history.clear()
@@ -153,7 +158,7 @@ class AnalysisEngine:
                     frame.hr_bpm
                 )
 
-            self._finalize_pending_beats_locked(
+            self._run_fixed_lag_correction_locked(
                 force=False
             )
 
@@ -296,14 +301,22 @@ class AnalysisEngine:
                 dtype=float,
             )
 
+            waveform_reference_rr_ms = float(
+                self._waveform_corrector.last_diagnostics.reference_rr_ms
+            )
+
             expected_rr_ms = (
-                float(
-                    np.median(
-                        expected_rr_values
+                waveform_reference_rr_ms
+                if waveform_reference_rr_ms > 0
+                else (
+                    float(
+                        np.median(
+                            expected_rr_values
+                        )
                     )
+                    if expected_rr_values.size
+                    else 0.0
                 )
-                if expected_rr_values.size
-                else 0.0
             )
 
             last_firmware = (
@@ -494,9 +507,15 @@ class AnalysisEngine:
         frame: BeatFrame,
     ) -> None:
         """
-        保存固件 Accepted Beat，并延迟约 120 ms 做 PPG 模板对齐。
+        保存固件实时 Accepted Beat。
 
-        固件 RR / HR 继续作为诊断证据；正式 HRV 使用 refined Beat 时间线。
+        v0.3.7 中它不再直接进入 HRV 时间线。
+        固件 Beat 的作用：
+        - 对照 zeezPPG 是否漏检 / 多检 / 错相位；
+        - 给导出和未来模型训练提供证据；
+        - 与整窗波形解析出的正式主波做匹配审计。
+
+        正式 HR / RR / HRV 只由固定滞后波形复核器提交。
         """
         with self._lock:
             firmware_frame = copy.deepcopy(
@@ -509,207 +528,175 @@ class AnalysisEngine:
             self._firmware_beats.append(
                 firmware_frame
             )
-            self._pending_firmware_beats.append(
-                firmware_frame
-            )
 
-            self._finalize_pending_beats_locked(
-                force=False
-            )
+    def _sample_flags_near_locked(
+        self,
+        t_us: int,
+    ) -> int:
+        if not self._samples:
+            return 0
 
-    def _finalize_pending_beats_locked(
+        sample_times = np.asarray(
+            [
+                sample.t_us
+                for sample in self._samples
+            ],
+            dtype=np.int64,
+        )
+
+        index = int(
+            np.searchsorted(
+                sample_times,
+                int(
+                    t_us
+                ),
+            )
+        )
+        index = min(
+            max(
+                index,
+                0,
+            ),
+            len(
+                sample_times
+            ) - 1,
+        )
+
+        if (
+            index > 0
+            and abs(
+                int(
+                    sample_times[
+                        index - 1
+                    ]
+                )
+                - int(
+                    t_us
+                )
+            )
+            < abs(
+                int(
+                    sample_times[
+                        index
+                    ]
+                )
+                - int(
+                    t_us
+                )
+            )
+        ):
+            index -= 1
+
+        return int(
+            self._samples[
+                index
+            ].flags
+        )
+
+    def _run_fixed_lag_correction_locked(
         self,
         force: bool,
     ) -> None:
-        if not self._pending_firmware_beats:
+        """
+        将“8 秒输出余裕”用于真正的未来波形复核。
+
+        实时模式：
+            commit_until = latest_sample - 7.25 s
+
+        因此一个待提交主波拥有：
+        - 约 12 s 过去波形；
+        - 约 7.25 s 未来波形；
+        - 未来多个 Firmware Beat；
+        - 完整的主周期自相关证据。
+
+        会话结束 / 导出时 `force=True`：
+        最后约 0.25 s 边界仍不提交，避免卷积和局部最大值边缘效应；
+        其余尾部使用当前会话全部已知波形离线完成。
+        """
+        if not self._samples:
             return
 
-        latest_sample_t_us = (
+        latest_sample_t_us = int(
             self._samples[-1].t_us
-            if self._samples
-            else 0
         )
 
-        required_future_us = (
-            self._fiducial_refiner.required_future_us()
-        )
-
-        while self._pending_firmware_beats:
-            source = (
-                self._pending_firmware_beats[0]
+        if not force:
+            interval_us = int(
+                round(
+                    self.config.correction_run_interval_seconds
+                    * 1e6
+                )
             )
 
             if (
-                not force
+                self._last_correction_run_t_us > 0
                 and latest_sample_t_us
-                < source.t_us + required_future_us
+                - self._last_correction_run_t_us
+                < interval_us
             ):
-                break
+                return
 
-            self._pending_firmware_beats.popleft()
-
-            # --------------------------------------------------------------
-            # v0.3.5：建立“搜索中心”，不直接正则化时间戳。
-            # --------------------------------------------------------------
-            # refined RR 中位数已经不受固件主峰/次级峰分支切换直接驱动；
-            # source.hr_bpm 只在 refined 历史不足时提供一个慢速节律尺度。
-            if self._refined_rr_history:
-                expected_rr_ms = float(
-                    np.median(
-                        np.asarray(
-                            self._refined_rr_history,
-                            dtype=float,
-                        )
-                    )
+            commit_until_t_us = int(
+                latest_sample_t_us
+                - round(
+                    self.config.correction_output_lag_seconds
+                    * 1e6
                 )
-            elif (
-                np.isfinite(source.hr_bpm)
-                and 35.0
-                <= source.hr_bpm
-                <= 220.0
-            ):
-                expected_rr_ms = float(
-                    60000.0
-                    / source.hr_bpm
-                )
-            elif (
-                np.isfinite(source.rr_ms)
-                and 300.0
-                <= source.rr_ms
-                <= 1800.0
-            ):
-                expected_rr_ms = float(
-                    source.rr_ms
-                )
-            else:
-                expected_rr_ms = 0.0
-
-            expected_t_us = (
-                int(
-                    round(
-                        self._last_refined_t_us
-                        + expected_rr_ms
-                        * 1000.0
-                    )
-                )
-                if (
-                    self._last_refined_t_us > 0
-                    and expected_rr_ms > 0
-                )
-                else None
+            )
+        else:
+            # 导出 / 停止采集时可以使用已经存在的全部未来数据。
+            # 只保留 0.25 s 右边界保护，不把卷积边界误认成主峰。
+            commit_until_t_us = int(
+                latest_sample_t_us
+                - 250_000
             )
 
-            result = self._fiducial_refiner.refine(
-                source,
-                list(self._samples),
-                expected_t_us=expected_t_us,
-                expected_rr_ms=(
-                    expected_rr_ms
-                    if expected_rr_ms > 0
-                    else None
+        self._last_correction_run_t_us = (
+            latest_sample_t_us
+        )
+
+        if (
+            commit_until_t_us
+            <= int(
+                self._samples[0].t_us
+            )
+        ):
+            return
+
+        proposals = (
+            self._waveform_corrector.propose(
+                list(
+                    self._samples
+                ),
+                list(
+                    self._firmware_beats
+                ),
+                last_committed_t_us=int(
+                    self._last_refined_t_us
+                ),
+                rr_history_ms=list(
+                    self._refined_rr_history
+                ),
+                commit_until_t_us=(
+                    commit_until_t_us
                 ),
             )
+        )
 
-            # 会话结束时最后约 0.4 秒可能没有足够未来波形。
-            # 这类尾部 Beat 保留在 beats_raw.csv 作证据，但不强塞进 HRV 时间轴。
-            if (
-                force
-                and not result.refined
-                and latest_sample_t_us
-                < source.t_us + required_future_us
-            ):
-                continue
+        if not proposals:
+            return
 
+        for proposal in proposals:
             refined_t_us = int(
-                result.t_us
+                proposal.t_us
             )
-
-            # 模板对齐绝不允许改变事件顺序。
-            # 若困难波形导致相关峰跳到前一搏附近，保留固件时间并降低质量。
-            timing_quality = float(
-                result.quality
-            )
-            uncertainty_ms = float(
-                result.uncertainty_ms
-            )
-            timing_shift_ms = float(
-                result.shift_ms
-            )
-            refined_ok = bool(
-                result.refined
-            )
-            timing_recovered = bool(
-                result.recovered
-            )
-
-            # --------------------------------------------------------------
-            # v0.3.5 低质量模板对齐不允许改写 RR 时间轴。
-            # --------------------------------------------------------------
-            # 普通模板搜索仍限制在 ±96 ms。
-            #
-            # recovered=True 时，允许跨过实测约 0.2–0.35 s 的
-            # “同极性次级峰 → 主峰”相位差，但必须同时满足：
-            # - 高模板质量；
-            # - 小不确定度；
-            # - 偏移小于约 0.48×RR。
-            if (
-                timing_recovered
-                and expected_rr_ms > 0
-            ):
-                max_applied_shift_ms = min(
-                    self.config.fiducial_recovery_max_source_shift_ms,
-                    expected_rr_ms
-                    * self.config.fiducial_recovery_max_source_shift_ratio,
-                )
-                minimum_quality = (
-                    self.config.fiducial_recovery_min_quality
-                )
-            else:
-                max_applied_shift_ms = (
-                    self.config.fiducial_max_applied_shift_ms
-                )
-                minimum_quality = (
-                    self.config.fiducial_unstable_quality_threshold
-                )
-
-            if (
-                refined_ok
-                and (
-                    timing_quality
-                    < minimum_quality
-                    or uncertainty_ms
-                    > self.config.fiducial_uncertainty_fail_ms
-                    or abs(timing_shift_ms)
-                    > max_applied_shift_ms
-                )
-            ):
-                refined_t_us = int(
-                    source.t_us
-                )
-                timing_shift_ms = 0.0
-                timing_recovered = False
-                refined_ok = False
 
             if (
                 self._last_refined_t_us > 0
                 and refined_t_us
                 <= self._last_refined_t_us
-                + 180_000
             ):
-                refined_t_us = int(
-                    source.t_us
-                )
-                timing_shift_ms = 0.0
-                timing_quality = min(
-                    timing_quality,
-                    0.35,
-                )
-                uncertainty_ms = max(
-                    uncertainty_ms,
-                    80.0,
-                )
-                timing_recovered = False
-                refined_ok = False
+                continue
 
             if self._last_refined_t_us == 0:
                 rr_ms = 0.0
@@ -719,51 +706,155 @@ class AnalysisEngine:
                     - self._last_refined_t_us
                 ) / 1000.0
 
-                if (
-                    220.0
-                    <= rr_ms
-                    <= 2000.0
-                ):
-                    self._refined_rr_history.append(
-                        float(rr_ms)
+            # 这里不因为“看起来不像 expected RR”而删除主波。
+            # reference RR 只用于搜索尺度。
+            # 最终 RR 是否可进入 HRV 由未来感知 BeatTimelineCleaner 审计。
+            if (
+                np.isfinite(
+                    rr_ms
+                )
+                and self.config.waveform_min_rr_ms
+                <= rr_ms
+                <= self.config.rr_hard_max_ms
+            ):
+                self._refined_rr_history.append(
+                    float(
+                        rr_ms
                     )
+                )
 
             self._last_refined_t_us = (
                 refined_t_us
             )
 
-            if self._refined_rr_history:
+            valid_history = np.asarray(
+                [
+                    value
+                    for value
+                    in self._refined_rr_history
+                    if (
+                        np.isfinite(
+                            value
+                        )
+                        and value > 0
+                    )
+                ],
+                dtype=float,
+            )
+
+            if valid_history.size:
                 median_rr = float(
                     np.median(
-                        np.asarray(
-                            self._refined_rr_history,
-                            dtype=float,
-                        )
+                        valid_history[
+                            -min(
+                                valid_history.size,
+                                9,
+                            ):
+                        ]
                     )
                 )
+
                 refined_hr = (
-                    60000.0 / median_rr
+                    60000.0
+                    / median_rr
                     if median_rr > 0
                     else 0.0
                 )
-            else:
-                refined_hr = float(
-                    source.hr_bpm
+            elif (
+                proposal.reference_rr_ms > 0
+            ):
+                refined_hr = (
+                    60000.0
+                    / proposal.reference_rr_ms
                 )
+            else:
+                refined_hr = 0.0
+
+            matched_source_t_us = int(
+                proposal.matched_firmware_t_us
+            )
+
+            timing_shift_ms = (
+                (
+                    refined_t_us
+                    - matched_source_t_us
+                )
+                / 1000.0
+                if matched_source_t_us > 0
+                else 0.0
+            )
+
+            flags = (
+                int(
+                    proposal.matched_firmware_flags
+                )
+                if matched_source_t_us > 0
+                else self._sample_flags_near_locked(
+                    refined_t_us
+                )
+            )
+
+            waveform_score = float(
+                np.clip(
+                    proposal.waveform_score,
+                    0.0,
+                    1.0,
+                )
+            )
 
             refined = BeatFrame(
-                seq=int(source.seq),
+                seq=int(
+                    proposal.seq
+                ),
                 t_us=refined_t_us,
-                rr_ms=float(rr_ms),
-                hr_bpm=float(refined_hr),
-                score=float(source.score),
-                flags=int(source.flags),
-                source_t_us=int(source.t_us),
-                timing_shift_ms=timing_shift_ms,
-                timing_quality=timing_quality,
-                timing_uncertainty_ms=uncertainty_ms,
-                timing_recovered=timing_recovered,
-                refined=refined_ok,
+                rr_ms=float(
+                    rr_ms
+                ),
+                hr_bpm=float(
+                    refined_hr
+                ),
+                # v0.3.7 正式 Beat 的 score 表示整窗波形主波质量。
+                score=waveform_score,
+                flags=flags,
+                source_t_us=(
+                    matched_source_t_us
+                ),
+                timing_shift_ms=float(
+                    timing_shift_ms
+                ),
+                timing_quality=(
+                    waveform_score
+                ),
+                timing_uncertainty_ms=float(
+                    proposal.timing_uncertainty_ms
+                ),
+                timing_recovered=bool(
+                    proposal.inserted_by_smoother
+                    or proposal.low_prominence_rescue
+                    or abs(
+                        timing_shift_ms
+                    )
+                    > self.config.fiducial_max_applied_shift_ms
+                ),
+                refined=True,
+                correction_method=(
+                    "fixed_lag_waveform"
+                ),
+                waveform_score=(
+                    waveform_score
+                ),
+                reference_rr_ms=float(
+                    proposal.reference_rr_ms
+                ),
+                matched_firmware_t_us=(
+                    matched_source_t_us
+                ),
+                inserted_by_smoother=bool(
+                    proposal.inserted_by_smoother
+                ),
+                low_prominence_rescue=bool(
+                    proposal.low_prominence_rescue
+                ),
             )
 
             self._raw_beats.append(
@@ -771,11 +862,11 @@ class AnalysisEngine:
             )
 
             if refined_hr > 0:
-                self._latest_hr_bpm = (
+                self._latest_hr_bpm = float(
                     refined_hr
                 )
 
-            # 第一搏没有 RR，不触发 HRV 指标刷新。
+            # 第一搏没有 RR，不刷新 HRV。
             if rr_ms <= 0:
                 continue
 
@@ -785,8 +876,10 @@ class AnalysisEngine:
                 )
 
             if (
-                refined_t_us - self._last_metric_us
-                >= self.config.metric_update_seconds * 1e6
+                refined_t_us
+                - self._last_metric_us
+                >= self.config.metric_update_seconds
+                * 1e6
             ):
                 self._update_metrics_locked(
                     refined_t_us,
@@ -825,7 +918,7 @@ class AnalysisEngine:
         record_history: bool = False,
     ) -> AnalysisSnapshot:
         with self._lock:
-            self._finalize_pending_beats_locked(
+            self._run_fixed_lag_correction_locked(
                 force=True
             )
             self._update_metrics_locked(
@@ -1165,16 +1258,20 @@ class AnalysisEngine:
         dict,
     ]:
         """
-        返回 v0.3.6 检测 + fiducial + 软件人工标注调试序列。
+        返回 v0.3.7 固定滞后整窗复核调试序列。
 
-        右侧 0~1 轴：
-        - detector_score：连续形态活跃度；
-        - candidate：局部极值候选脉冲；
-        - firmware_accepted：固件 Winner 原始时间；
-        - accepted：模板统一相位后的 HRV fiducial。
+        数据层仍保留：
+        - detector_score；
+        - Firmware Candidate；
+        - Firmware Accepted；
+        - 正式 fixed-lag waveform Beat。
 
-        Candidate 可以多于 Accepted。
-        最终 RR / HR / HRV 只使用 Accepted Beat。
+        UI 只绘制两条连续视觉序列：
+        - 滤波 PPG；
+        - 正式 fixed-lag waveform Beat 0/1。
+
+        窗口右缘与正式 Beat 使用同一个成熟时间：
+        latest received - 7.25 s。
         """
         with self._lock:
             if not self._samples:
@@ -1207,6 +1304,12 @@ class AnalysisEngine:
                         "timing_jitter_p95_ms": 0.0,
                         "timing_overrun_ratio": 0.0,
                         "end_t_us": 0,
+                        "latest_received_t_us": 0,
+                        "display_lag_s": 0.0,
+                        "correction_reference_rr_ms": 0.0,
+                        "correction_autocorr_confidence": 0.0,
+                        "correction_inserted_count": 0,
+                        "correction_firmware_matched_count": 0,
                         "annotation_count": len(
                             self._annotations
                         ),
@@ -1215,7 +1318,38 @@ class AnalysisEngine:
                     },
                 )
 
-            end_us = self._samples[-1].t_us
+            latest_received_t_us = int(
+                self._samples[-1].t_us
+            )
+
+            target_lag_us = int(
+                round(
+                    self.config.correction_output_lag_seconds
+                    * 1e6
+                )
+            )
+
+            delayed_end_us = (
+                latest_received_t_us
+                - target_lag_us
+            )
+
+            # 启动阶段尚未积累 7.25 s 时先显示已有 PPG，
+            # 但正式绿色 Beat 只有成熟后才出现。
+            if (
+                delayed_end_us
+                <= int(
+                    self._samples[0].t_us
+                )
+            ):
+                end_us = (
+                    latest_received_t_us
+                )
+            else:
+                end_us = int(
+                    delayed_end_us
+                )
+
             start_us = end_us - int(
                 seconds * 1e6
             )
@@ -1223,7 +1357,11 @@ class AnalysisEngine:
             selected = [
                 sample
                 for sample in self._samples
-                if sample.t_us >= start_us
+                if (
+                    start_us
+                    <= sample.t_us
+                    <= end_us
+                )
             ]
 
             accepted_beats = [
@@ -1297,6 +1435,25 @@ class AnalysisEngine:
                     "end_t_us": int(
                         end_us
                     ),
+                    "latest_received_t_us": int(
+                        latest_received_t_us
+                    ),
+                    "display_lag_s": float(
+                        max(
+                            latest_received_t_us
+                            - end_us,
+                            0,
+                        )
+                        / 1e6
+                    ),
+                    "correction_reference_rr_ms": float(
+                        self._waveform_corrector.last_diagnostics.reference_rr_ms
+                    ),
+                    "correction_autocorr_confidence": float(
+                        self._waveform_corrector.last_diagnostics.autocorr_confidence
+                    ),
+                    "correction_inserted_count": 0,
+                    "correction_firmware_matched_count": 0,
                     "annotation_count": int(
                         annotation_count
                     ),
@@ -1480,13 +1637,30 @@ class AnalysisEngine:
         )
 
         rescue_count = sum(
-            bool(beat.flags & 0x10)
-            for beat in accepted_beats
+            bool(
+                beat.flags
+                & 0x10
+            )
+            for beat in firmware_beats
         )
 
         fiducial_recovery_count = sum(
             bool(
                 beat.timing_recovered
+            )
+            for beat in accepted_beats
+        )
+
+        waveform_inserted_count = sum(
+            bool(
+                beat.inserted_by_smoother
+            )
+            for beat in accepted_beats
+        )
+
+        waveform_firmware_matched_count = sum(
+            bool(
+                beat.matched_firmware_t_us
             )
             for beat in accepted_beats
         )
@@ -1516,10 +1690,20 @@ class AnalysisEngine:
             dtype=float,
         )
 
+        correction_reference_rr_ms = float(
+            self._waveform_corrector.last_diagnostics.reference_rr_ms
+        )
+
         expected_rr_ms = (
-            float(expected_values[-1])
-            if expected_values.size
-            else 0.0
+            correction_reference_rr_ms
+            if correction_reference_rr_ms > 0
+            else (
+                float(
+                    expected_values[-1]
+                )
+                if expected_values.size
+                else 0.0
+            )
         )
 
         beat_scores = np.asarray(
@@ -1543,7 +1727,7 @@ class AnalysisEngine:
             [
                 beat.timing_quality
                 for beat in accepted_beats
-                if beat.source_t_us > 0
+                if beat.refined
             ],
             dtype=float,
         )
@@ -1551,7 +1735,7 @@ class AnalysisEngine:
             [
                 beat.timing_uncertainty_ms
                 for beat in accepted_beats
-                if beat.source_t_us > 0
+                if beat.refined
             ],
             dtype=float,
         )
@@ -1559,7 +1743,7 @@ class AnalysisEngine:
             [
                 abs(beat.timing_shift_ms)
                 for beat in accepted_beats
-                if beat.source_t_us > 0
+                if beat.refined
             ],
             dtype=float,
         )
@@ -1621,6 +1805,29 @@ class AnalysisEngine:
                 ),
                 "end_t_us": int(
                     end_us
+                ),
+                "latest_received_t_us": int(
+                    latest_received_t_us
+                ),
+                "display_lag_s": float(
+                    max(
+                        latest_received_t_us
+                        - end_us,
+                        0,
+                    )
+                    / 1e6
+                ),
+                "correction_reference_rr_ms": float(
+                    correction_reference_rr_ms
+                ),
+                "correction_autocorr_confidence": float(
+                    self._waveform_corrector.last_diagnostics.autocorr_confidence
+                ),
+                "correction_inserted_count": int(
+                    waveform_inserted_count
+                ),
+                "correction_firmware_matched_count": int(
+                    waveform_firmware_matched_count
                 ),
                 "annotation_count": int(
                     annotation_count

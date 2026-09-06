@@ -174,7 +174,7 @@ def test_broad_flat_peak_reports_higher_timing_uncertainty():
     )
 
 
-def test_engine_keeps_firmware_beats_and_uses_refined_timeline():
+def test_engine_keeps_firmware_evidence_but_formal_timeline_follows_waveform():
     from hrv_app.engine import AnalysisEngine
 
     rr_ms = 800.0
@@ -183,29 +183,20 @@ def test_engine_keeps_firmware_beats_and_uses_refined_timeline():
         duration_s=6.0,
     )
 
-    true_times_ms = [
-        1056.0,
-        1856.0,
-        2656.0,
-        3456.0,
+    # 故意只提供 5 个、且带 ±40~72 ms 偏移的 Firmware Beat。
+    firmware_times_ms = [
+        1056.0 - 64.0,
+        1856.0 + 48.0,
+        2656.0 + 72.0,
+        3456.0 - 40.0,
         4256.0,
-    ]
-    shifts_ms = [
-        -64.0,
-        48.0,
-        72.0,
-        -40.0,
-        0.0,
     ]
 
     beats = [
         BeatFrame(
             seq=1000 + index,
             t_us=int(
-                (
-                    true_t
-                    + shifts_ms[index]
-                )
+                t_ms
                 * 1000
             ),
             rr_ms=(
@@ -217,8 +208,10 @@ def test_engine_keeps_firmware_beats_and_uses_refined_timeline():
             score=0.9,
             flags=0x09,
         )
-        for index, true_t
-        in enumerate(true_times_ms)
+        for index, t_ms
+        in enumerate(
+            firmware_times_ms
+        )
     ]
 
     engine = AnalysisEngine()
@@ -230,12 +223,17 @@ def test_engine_keeps_firmware_beats_and_uses_refined_timeline():
         )
 
         while (
-            beat_index < len(beats)
-            and beats[beat_index].t_us
+            beat_index
+            < len(beats)
+            and beats[
+                beat_index
+            ].t_us
             <= sample.t_us
         ):
             engine.ingest_beat(
-                beats[beat_index]
+                beats[
+                    beat_index
+                ]
             )
             beat_index += 1
 
@@ -245,108 +243,104 @@ def test_engine_keeps_firmware_beats_and_uses_refined_timeline():
     firmware = bundle[
         "firmware_beats"
     ]
-    refined = bundle[
+    formal = bundle[
         "raw_beats"
     ]
 
-    assert len(firmware) == len(beats)
-    assert len(refined) == len(beats)
+    assert len(firmware) == 5
 
-    refined_errors = [
+    # 6 s 合成波形在 0.256, 1.056, ..., 5.856 s 有主峰。
+    # force 模式保留 0.25 s 右边界，因此应提交前 7 个视觉主波。
+    expected_ms = [
+        256.0
+        + cycle
+        * rr_ms
+        for cycle in range(7)
+    ]
+
+    assert len(formal) == len(
+        expected_ms
+    )
+
+    errors_ms = [
         abs(
-            beat.t_us / 1000.0
-            - true_t
+            beat.t_us
+            / 1000.0
+            - expected
         )
-        for beat, true_t
+        for beat, expected
         in zip(
-            refined,
-            true_times_ms,
+            formal,
+            expected_ms,
         )
     ]
 
     assert np.percentile(
-        refined_errors,
+        errors_ms,
         95,
     ) < 8.0
 
-    refined_rr = np.asarray(
-        [
-            beat.rr_ms
-            for beat in refined[1:]
-        ],
-        dtype=float,
-    )
-
-    assert np.max(
-        np.abs(
-            refined_rr - rr_ms
-        )
-    ) < 12.0
-
+    # Firmware 没有报告最早和部分边界主波，正式时间线仍可独立补回。
     assert any(
-        abs(
-            refined[index].t_us
-            - firmware[index].t_us
-        )
-        > 20_000
-        for index in range(
-            len(refined)
-        )
+        beat.inserted_by_smoother
+        for beat in formal
     )
 
+    assert all(
+        beat.correction_method
+        == "fixed_lag_waveform"
+        for beat in formal
+    )
 
-def test_engine_rejects_low_quality_template_shift_from_rr_timeline():
+def test_engine_wrong_firmware_phase_cannot_move_visual_wave_top():
     from hrv_app.engine import AnalysisEngine
-    from hrv_app.fiducial_refiner import FiducialResult
 
     engine = AnalysisEngine()
 
-    # 先提供足够的前后 PPG，使 Beat 到达时可以立即进入细化路径。
     for sample in build_samples(
         rr_ms=800.0,
         duration_s=3.0,
     ):
-        engine.ingest_sample(sample)
+        engine.ingest_sample(
+            sample
+        )
 
-    source_t_us = 1_056_000
-
-    # 模拟困难平顶峰：互相关数学最大值落到搜索边界，质量很低。
-    # v0.3.4 必须保留固件时间，不允许这个不可靠偏移直接污染 RR。
-    engine._fiducial_refiner.refine = lambda beat, samples, **kwargs: FiducialResult(
-        t_us=source_t_us + 120_000,
-        quality=0.20,
-        uncertainty_ms=64.0,
-        shift_ms=120.0,
-        correlation=0.55,
-        refined=True,
-        polarity=1,
-    )
-
+    # 真正视觉主峰在 1.056 s；Firmware Winner 故意晚 120 ms。
     engine.ingest_beat(
         BeatFrame(
             seq=100,
-            t_us=source_t_us,
-            rr_ms=0.0,
+            t_us=1_176_000,
+            rr_ms=800.0,
             hr_bpm=75.0,
-            score=0.70,
+            score=0.95,
             flags=0x09,
         )
     )
 
-    refined = engine.export_bundle()[
+    engine.force_update()
+
+    formal = engine.export_bundle()[
         "raw_beats"
-    ][0]
+    ]
 
-    assert refined.t_us == source_t_us
-    assert refined.source_t_us == source_t_us
-    assert not refined.refined
-    assert refined.timing_shift_ms == 0.0
+    target = min(
+        formal,
+        key=lambda beat:
+            abs(
+                beat.t_us
+                - 1_056_000
+            ),
+    )
 
-    # 低质量证据仍然保留，用于后续 Beat Timing Quality 质量门。
-    assert refined.timing_quality == 0.20
-    assert refined.timing_uncertainty_ms == 64.0
+    assert abs(
+        target.t_us
+        - 1_056_000
+    ) < 8_000
 
-
+    # 固件位置只作为匹配证据，不拥有改写正式波顶的权力。
+    assert target.matched_firmware_t_us == 1_176_000
+    assert target.timing_shift_ms < -100.0
+    assert target.refined
 
 def test_refiner_waits_for_high_score_main_peak_before_bootstrap():
     samples = build_samples(
@@ -444,78 +438,78 @@ def test_refiner_recovers_secondary_peak_branch_near_expected_cycle():
     assert second.quality >= 0.74
 
 
-def test_engine_accepts_high_quality_recovered_large_shift():
+def test_engine_can_restore_a_beat_without_any_firmware_source():
     from hrv_app.engine import AnalysisEngine
-    from hrv_app.fiducial_refiner import FiducialResult
 
     engine = AnalysisEngine()
 
-    for sample in build_samples(
+    samples = build_samples(
         rr_ms=800.0,
         duration_s=4.0,
-    ):
-        engine.ingest_sample(sample)
-
-    # 第一搏正常，建立 refined 时间历史。
-    first_t_us = 1_056_000
-    engine._fiducial_refiner.refine = (
-        lambda beat, samples, **kwargs: FiducialResult(
-            t_us=int(beat.t_us),
-            quality=0.90,
-            uncertainty_ms=8.0,
-            shift_ms=0.0,
-            correlation=0.95,
-            refined=True,
-            polarity=1,
-            recovered=False,
-        )
     )
 
-    engine.ingest_beat(
+    # 只提供第 1、3 个 Firmware Beat，中间 1.856 s 主波完全漏报。
+    firmware = [
         BeatFrame(
             seq=100,
-            t_us=first_t_us,
+            t_us=1_056_000,
             rr_ms=0.0,
             hr_bpm=75.0,
             score=0.90,
             flags=0x09,
-        )
-    )
-
-    # 第二个固件 Winner 落在主峰前 240 ms。
-    # recovered=True 且相关质量高时允许跨过旧版 ±96 ms 限制。
-    source_t_us = 1_616_000
-    target_t_us = 1_856_000
-
-    engine._fiducial_refiner.refine = (
-        lambda beat, samples, **kwargs: FiducialResult(
-            t_us=target_t_us,
-            quality=0.92,
-            uncertainty_ms=12.0,
-            shift_ms=240.0,
-            correlation=0.96,
-            refined=True,
-            polarity=1,
-            recovered=True,
-        )
-    )
-
-    engine.ingest_beat(
+        ),
         BeatFrame(
-            seq=101,
-            t_us=source_t_us,
-            rr_ms=560.0,
+            seq=102,
+            t_us=2_656_000,
+            rr_ms=1_600.0,
             hr_bpm=75.0,
-            score=0.64,
+            score=0.90,
             flags=0x09,
-        )
-    )
+        ),
+    ]
 
-    refined = engine.export_bundle()[
+    beat_index = 0
+
+    for sample in samples:
+        engine.ingest_sample(
+            sample
+        )
+
+        while (
+            beat_index
+            < len(firmware)
+            and firmware[
+                beat_index
+            ].t_us
+            <= sample.t_us
+        ):
+            engine.ingest_beat(
+                firmware[
+                    beat_index
+                ]
+            )
+            beat_index += 1
+
+    engine.force_update()
+
+    formal = engine.export_bundle()[
         "raw_beats"
     ]
 
-    assert len(refined) == 2
-    assert refined[-1].t_us == target_t_us
-    assert refined[-1].timing_recovered
-    assert refined[-1].refined
+    restored = min(
+        formal,
+        key=lambda beat:
+            abs(
+                beat.t_us
+                - 1_856_000
+            ),
+    )
+
+    assert abs(
+        restored.t_us
+        - 1_856_000
+    ) < 8_000
+    assert restored.matched_firmware_t_us == 0
+    assert restored.inserted_by_smoother
+    assert restored.refined
+

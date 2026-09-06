@@ -1,0 +1,12 @@
+v0.3.7 rebuilt fixed-lag waveform correction
+
+- Rebuilt from the user's current v0.3.6 software-annotation project.
+- Removed the failed experimental firmware HOLD/trusted-state path.
+- Firmware is byte-identical to the uploaded v0.3.6 firmware.
+- Protocol remains v4.
+- Formal HR/RR/HRV now uses a 7.25 s fixed-lag whole-waveform observer.
+- Formal beats can be inserted directly from PPG when firmware misses them.
+- Firmware extras/secondary peaks remain evidence without automatically entering HRV.
+- Added future-aware RR cleaning to avoid one-sided rejection cascades.
+- UI shows only filtered PPG + formal corrected Beat as continuous series.
+- F8 annotation remains aligned to the mature displayed device time.

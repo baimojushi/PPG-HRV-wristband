@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         )
 
         self.annotation_hint = QLabel(
-            "看到问题后 3 秒内按；标记当前屏幕数据，不反馈给检测算法。"
+            "屏幕显示约7.25秒成熟波形；看到问题后3秒内按F8。"
         )
         self.annotation_hint.setObjectName(
             "heroSub"
@@ -373,14 +373,21 @@ class MainWindow(QMainWindow):
         # ------------------------------------------------------------------
         self.signal_plot = pg.PlotWidget()
         self._style_plot(self.signal_plot)
+
+        # 人工视觉复核页去掉网格，只保留波形本身和正式心搏序列。
+        self.signal_plot.showGrid(
+            x=False,
+            y=False,
+        )
+
         self.signal_plot.setLabel("left", "滤波 PPG")
         self.signal_plot.setLabel("bottom", "最近时间", units="s")
         self.signal_curve = self.signal_plot.plot(
             pen=pg.mkPen("#7F718D", width=2)
         )
 
-        # v0.3.6：最近一次人工问题区间。
-        # 半透明区域 = 按键前 3 秒；竖线 = 软件按键对应的屏幕右缘设备时间。
+        # 人工问题区间。
+        # 只保留半透明区域，不再增加第三根竖线。
         self.annotation_region = pg.LinearRegionItem(
             values=(-3.0, 0.0),
             movable=False,
@@ -405,23 +412,6 @@ class MainWindow(QMainWindow):
             self.annotation_region
         )
 
-        self.annotation_line = pg.InfiniteLine(
-            pos=0.0,
-            angle=90,
-            movable=False,
-            pen=pg.mkPen(
-                "#B86F68",
-                width=2,
-                style=Qt.PenStyle.DashLine,
-            ),
-        )
-        self.annotation_line.setVisible(
-            False
-        )
-        self.signal_plot.addItem(
-            self.annotation_line
-        )
-
         # 右侧独立 0/1 轴。
         # PPG 仍使用左侧物理幅值轴，心跳识别状态不会因为波形幅度变化而被压扁。
         self.signal_plot.showAxis("right")
@@ -443,41 +433,20 @@ class MainWindow(QMainWindow):
             padding=0.0,
         )
 
-        # 紫线：连续动态形态分数 0~1。
-        # 它是可解释算法评分，不是“心搏概率”。
-        self.detector_score_curve = pg.PlotCurveItem(
-            pen=pg.mkPen("#B06C9B", width=2)
-        )
-
-        # 黄线：局部极值 Candidate 脉冲。
-        self.candidate_curve = pg.PlotCurveItem(
-            pen=pg.mkPen("#C79A3B", width=2)
-        )
-
-        # 灰虚线：固件 Winner 原始时间。
-        # 用于观察“心搏存在性判断”与桌面端统一 fiducial 的偏移。
-        self.firmware_accepted_curve = pg.PlotCurveItem(
+        # v0.3.7：
+        # 波形图严格只保留两条连续视觉序列：
+        # 1) 左轴紫色滤波 PPG；
+        # 2) 右轴绿色 8 秒整窗纠错后的正式 Beat 0/1。
+        #
+        # detector score / Candidate / Firmware Winner 仍保留在数据层、
+        # Debug 数字和导出 CSV 中。
+        self.accepted_beat_curve = pg.PlotCurveItem(
             pen=pg.mkPen(
-                "#9A938C",
-                width=1,
-                style=Qt.PenStyle.DashLine,
+                "#4F8A6B",
+                width=3,
             )
         )
 
-        # 绿线：模板相关统一相位后的 HRV fiducial。
-        self.accepted_beat_curve = pg.PlotCurveItem(
-            pen=pg.mkPen("#4F8A6B", width=3)
-        )
-
-        self.signal_debug_view.addItem(
-            self.detector_score_curve
-        )
-        self.signal_debug_view.addItem(
-            self.candidate_curve
-        )
-        self.signal_debug_view.addItem(
-            self.firmware_accepted_curve
-        )
         self.signal_debug_view.addItem(
             self.accepted_beat_curve
         )
@@ -488,7 +457,7 @@ class MainWindow(QMainWindow):
         self._sync_signal_debug_view()
 
         self.signal_debug_label = QLabel(
-            "调试：紫=形态分数 · 黄=Candidate · 灰虚线=固件Winner · 绿=HRV统一fiducial · 红=人工标注"
+            "显示：紫=滤波PPG · 绿=8秒整窗纠错心搏 · 红色阴影=人工标注窗口"
         )
         self.signal_debug_label.setObjectName("heroSub")
         self.signal_debug_label.setWordWrap(True)
@@ -503,7 +472,7 @@ class MainWindow(QMainWindow):
             symbolSize=5,
         )
 
-        layout.addWidget(QLabel("实时 PPG + zeezPPG 动态检测"))
+        layout.addWidget(QLabel("实时 PPG + 8秒整窗波形复核"))
         layout.addWidget(self.signal_plot, 1)
         layout.addWidget(self.signal_debug_label)
         layout.addWidget(QLabel("HRV 趋势"))
@@ -581,6 +550,11 @@ class MainWindow(QMainWindow):
     def _toggle_connection(self) -> None:
         if self.receiver.running:
             self.receiver.stop()
+
+            # 设备停止后，不再需要遵守实时 7.25 s 固定滞后。
+            # 使用已经采到的完整尾部 PPG 做一次最终离线提交。
+            self.engine.force_update()
+
             self._close_recorder()
             self.connect_button.setText("连接设备")
             return
@@ -641,6 +615,7 @@ class MainWindow(QMainWindow):
 
         if self.receiver.running:
             self.receiver.stop()
+            self.engine.force_update()
             self._close_recorder()
             self.connect_button.setText("连接设备")
 
@@ -722,7 +697,7 @@ class MainWindow(QMainWindow):
         self._worker_status = (
             f"已标记异常 #{annotation.annotation_id} · "
             f"{annotation.label_type} · "
-            f"屏幕数据滞后 {annotation.ui_data_lag_ms:.0f} ms"
+            f"纠错显示滞后 {annotation.ui_data_lag_ms:.0f} ms"
         )
 
         # 非阻塞视觉确认；800 ms 后恢复按钮文案。
@@ -746,6 +721,11 @@ class MainWindow(QMainWindow):
 
         try:
             out = Path(folder) / "hrv_export"
+
+            # 非实时状态下把会话尾部也用全部已知波形完成离线纠错。
+            # 实时连接时保持 7.25 s 固定滞后，不提前偷看未成熟区域。
+            if not self.receiver.running:
+                self.engine.force_update()
 
             raw_session_dir = (
                 self._last_session_dir
@@ -909,18 +889,6 @@ class MainWindow(QMainWindow):
             x,
             y,
         )
-        self.detector_score_curve.setData(
-            x,
-            detector_score,
-        )
-        self.candidate_curve.setData(
-            x,
-            candidate,
-        )
-        self.firmware_accepted_curve.setData(
-            x,
-            firmware_accepted,
-        )
         self.accepted_beat_curve.setData(
             x,
             accepted_beat,
@@ -980,6 +948,37 @@ class MainWindow(QMainWindow):
             "timing_overrun_ratio"
         ]
 
+        display_lag_s = float(
+            debug_stats.get(
+                "display_lag_s",
+                0.0,
+            )
+        )
+        correction_rr = float(
+            debug_stats.get(
+                "correction_reference_rr_ms",
+                0.0,
+            )
+        )
+        correction_autocorr = float(
+            debug_stats.get(
+                "correction_autocorr_confidence",
+                0.0,
+            )
+        )
+        correction_inserted = int(
+            debug_stats.get(
+                "correction_inserted_count",
+                0,
+            )
+        )
+        correction_matched = int(
+            debug_stats.get(
+                "correction_firmware_matched_count",
+                0,
+            )
+        )
+
         self._displayed_end_t_us = int(
             debug_stats.get(
                 "end_t_us",
@@ -1038,11 +1037,6 @@ class MainWindow(QMainWindow):
                 latest_annotation.label_end_us
                 - self._displayed_end_t_us
             ) / 1e6
-            line_position = (
-                latest_annotation.device_t_us
-                - self._displayed_end_t_us
-            ) / 1e6
-
             self.annotation_region.setRegion(
                 (
                     float(
@@ -1053,22 +1047,11 @@ class MainWindow(QMainWindow):
                     ),
                 )
             )
-            self.annotation_line.setPos(
-                float(
-                    line_position
-                )
-            )
             self.annotation_region.setVisible(
-                True
-            )
-            self.annotation_line.setVisible(
                 True
             )
         else:
             self.annotation_region.setVisible(
-                False
-            )
-            self.annotation_line.setVisible(
                 False
             )
 
@@ -1086,26 +1069,27 @@ class MainWindow(QMainWindow):
             )
         else:
             self.annotation_hint.setText(
-                "看到问题后 3 秒内按；标记当前屏幕数据，不反馈给检测算法。"
+                "屏幕显示约7.25秒成熟波形；看到问题后3秒内按F8。"
             )
 
         self.signal_debug_label.setText(
-            "调试：紫=形态 · 黄=Candidate · 灰=固件Winner · 绿=统一fiducial · 红=人工标注  |  "
+            "显示：紫=PPG · 绿=8秒整窗纠错心搏 · 红色阴影=人工标注窗口  |  "
+            f"屏幕滞后 {display_lag_s:.2f}s · "
             f"窗口 {duration:.1f}s · "
-            f"Candidate {candidate_count}（≈{candidate_bpm:.0f} bpm） · "
-            f"固件 {firmware_count} · "
-            f"HRV Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
-            f"Rescue {rescue_count} · "
-            f"相位恢复 {fiducial_recovery_count} · "
+            f"正式Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
+            f"固件Beat {firmware_count} · "
+            f"波形补搏 {correction_inserted} · "
+            f"匹配固件 {correction_matched} · "
+            f"波形RR {correction_rr:.0f} ms · "
+            f"自相关 {correction_autocorr:.2f} · "
+            f"Firmware Candidate {candidate_count} · "
+            f"固件Rescue {rescue_count} · "
             f"人工标注 {annotation_count} · "
             f"近窗 {recent_annotation_count} · "
-            f"未选 {difference} · "
-            f"预测RR {expected_text} · "
             f"HR {accepted_hr:.0f} bpm · "
-            f"Winner {score_mean:.2f} · "
-            f"Fiducial质量 {fiducial_quality * 100:.0f}% · "
+            f"波顶质量 {fiducial_quality * 100:.0f}% · "
             f"不确定度p95 {fiducial_uncertainty:.0f} ms · "
-            f"修正p95 {fiducial_shift:.0f} ms · "
+            f"固件↔波顶偏移p95 {fiducial_shift:.0f} ms · "
             f"采样 {effective_hz:.1f} Hz · "
             f"p95抖动 {timing_p95:.1f} ms · "
             f"超时 {timing_overrun * 100:.1f}%"
