@@ -1138,6 +1138,11 @@ class AnalysisEngine:
                 if frequency.valid
                 else np.nan
             ),
+            "median_frequency_hz": (
+                frequency.median_frequency_hz
+                if frequency.valid
+                else np.nan
+            ),
             "spectral_agreement": (
                 frequency.spectral_agreement
             ),
@@ -2163,6 +2168,11 @@ class AnalysisEngine:
                 ),
                 "hf_lf": (
                     round(frequency.hf_lf, 4)
+                    if frequency.valid
+                    else None
+                ),
+                "median_frequency_hz": (
+                    round(frequency.median_frequency_hz, 5)
                     if frequency.valid
                     else None
                 ),

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from .engine import AnalysisEngine
+from .frequency_insights import AUTONOMIC_ZONES, describe_frequency_balance, frequency_zone_brushes
 from .legacy_csv import load_csv_into_engine
 from .models import (
     BeatFrame,
@@ -360,8 +361,14 @@ class MainWindow(QMainWindow):
         # 图表背景保持透明 / 暖白，避免传统监护仪的强对比黑底。
         plot.setBackground("#FCFAF7")
         plot.showGrid(x=True, y=True, alpha=0.12)
-        plot.getAxis("bottom").setTextPen("#746C66")
-        plot.getAxis("left").setTextPen("#746C66")
+
+        for axis_name in ("bottom", "left", "right", "top"):
+            axis = plot.getAxis(axis_name)
+            axis.setTextPen("#746C66")
+            axis.setPen(pg.mkPen("#BFAF9E", width=1.35))
+            axis.setTickPen(pg.mkPen("#BFAF9E", width=1.15))
+
+        plot.getPlotItem().layout.setContentsMargins(10, 8, 18, 8)
 
     def _build_state_tab(self) -> QWidget:
         page = QWidget()
@@ -493,10 +500,24 @@ class MainWindow(QMainWindow):
             pg.ViewBox.XAxis,
         )
 
+    def _sync_frequency_trend_view(self) -> None:
+        if not hasattr(self, "frequency_trend_view"):
+            return
+
+        main_view = self.frequency_trend_plot.getViewBox()
+        self.frequency_trend_view.setGeometry(
+            main_view.sceneBoundingRect()
+        )
+        self.frequency_trend_view.linkedViewChanged(
+            main_view,
+            pg.ViewBox.XAxis,
+        )
+
     def _build_analysis_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 12, 0, 0)
+        layout.setSpacing(10)
 
         summary = QHBoxLayout()
         self.freq_status = QLabel("频域：等待 5 分钟 NN 窗口")
@@ -506,6 +527,16 @@ class MainWindow(QMainWindow):
         self.freq_stats_label.setWordWrap(True)
         self.freq_stats_label.setObjectName("heroSub")
 
+        self.freq_auto_label = QLabel("自动解析：等待频域窗口。")
+        self.freq_auto_label.setWordWrap(True)
+        self.freq_auto_label.setObjectName("heroSub")
+
+        self.freq_guide_label = QLabel(
+            "说明：VLF=极慢变化背景；LF=低频调节；HF=呼吸相关快波动；中位频率=频谱能量重心。"
+        )
+        self.freq_guide_label.setWordWrap(True)
+        self.freq_guide_label.setObjectName("heroSub")
+
         self.spwvd_button = QPushButton("更新 SPWVD 时频图")
         self.spwvd_button.clicked.connect(self._start_spwvd)
 
@@ -513,29 +544,152 @@ class MainWindow(QMainWindow):
         summary.addWidget(self.spwvd_button)
         layout.addLayout(summary)
         layout.addWidget(self.freq_stats_label)
+        layout.addWidget(self.freq_auto_label)
+        layout.addWidget(self.freq_guide_label)
+
+        self.frequency_trend_plot = pg.PlotWidget()
+        self._style_plot(self.frequency_trend_plot)
+        self.frequency_trend_plot.setMinimumHeight(240)
+        self.frequency_trend_plot.setLabel("left", "频带功率", units="ms²")
+        self.frequency_trend_plot.setLabel("bottom", "窗口时间", units="min")
+        self.frequency_trend_plot.showAxis("right")
+        self.frequency_trend_plot.getAxis("right").setLabel("中位频率", units="mHz")
+        self.frequency_trend_plot.addLegend(offset=(12, 10))
+
+        self.vlf_trend_curve = self.frequency_trend_plot.plot(
+            pen=pg.mkPen("#9B7B62", width=2.2),
+            name="VLF",
+        )
+        self.lf_trend_curve = self.frequency_trend_plot.plot(
+            pen=pg.mkPen("#D67A56", width=2.2),
+            name="LF",
+        )
+        self.hf_trend_curve = self.frequency_trend_plot.plot(
+            pen=pg.mkPen("#609B7C", width=2.2),
+            name="HF",
+        )
+
+        self.frequency_trend_view = pg.ViewBox()
+        self.frequency_trend_plot.scene().addItem(self.frequency_trend_view)
+        self.frequency_trend_plot.getAxis("right").linkToView(self.frequency_trend_view)
+        self.frequency_trend_view.setXLink(self.frequency_trend_plot)
+        self.median_freq_curve = pg.PlotCurveItem(
+            pen=pg.mkPen("#7F718D", width=2.4, style=Qt.DashLine),
+            name="中位频率",
+        )
+        self.frequency_trend_view.addItem(self.median_freq_curve)
+        self.frequency_trend_plot.getViewBox().sigResized.connect(
+            self._sync_frequency_trend_view
+        )
+        self._sync_frequency_trend_view()
+
+        self.freq_trend_hint = QLabel(
+            "趋势线：棕=VLF，橙=LF，绿=HF，紫虚线=中位频率。"
+        )
+        self.freq_trend_hint.setObjectName("heroSub")
 
         self.psd_plot = pg.PlotWidget()
         self._style_plot(self.psd_plot)
+        self.psd_plot.setMinimumHeight(260)
         self.psd_plot.setLabel("left", "功率谱密度", units="ms²/Hz")
         self.psd_plot.setLabel("bottom", "频率", units="Hz")
         self.psd_curve = self.psd_plot.plot(
-            pen=pg.mkPen("#70869B", width=2)
+            pen=pg.mkPen("#70869B", width=2.4)
         )
         self.psd_plot.setXRange(0.0, 0.42)
+        self._add_frequency_zone_regions(self.psd_plot, horizontal=False)
+
+        self.psd_band_hint = QLabel(
+            "Welch 色带：灰=VLF慢变背景，橙=交感偏主，金=交感-副交感共调，绿=副交感偏主。"
+        )
+        self.psd_band_hint.setObjectName("heroSub")
 
         self.tf_plot = pg.PlotWidget()
         self._style_plot(self.tf_plot)
+        self.tf_plot.setMinimumHeight(280)
         self.tf_plot.setLabel("left", "频率", units="Hz")
         self.tf_plot.setLabel("bottom", "窗口时间", units="s")
         self.tf_image = pg.ImageItem()
         self.tf_plot.addItem(self.tf_image)
         self.tf_plot.setYRange(0.0, 0.42)
+        self._add_frequency_zone_regions(self.tf_plot, horizontal=True)
 
+        self.spwvd_hint = QLabel(
+            "SPWVD 色带：橙=交感偏主带，金=两神经共调带，绿=副交感偏主带；亮度表示该频率在该时段更活跃。"
+        )
+        self.spwvd_hint.setObjectName("heroSub")
+        self.spwvd_hint.setWordWrap(True)
+
+        layout.addWidget(QLabel("VLF / LF / HF / 中位频率趋势"))
+        layout.addWidget(self.frequency_trend_plot)
+        layout.addWidget(self.freq_trend_hint)
         layout.addWidget(QLabel("Welch 功率谱"))
-        layout.addWidget(self.psd_plot, 1)
+        layout.addWidget(self.psd_plot)
+        layout.addWidget(self.psd_band_hint)
         layout.addWidget(QLabel("平滑伪 Wigner-Ville 分布（SPWVD，仅观察时频结构）"))
-        layout.addWidget(self.tf_plot, 1)
+        layout.addWidget(self.tf_plot)
+        layout.addWidget(self.spwvd_hint)
         return page
+
+    def _add_frequency_zone_regions(
+        self,
+        plot: pg.PlotWidget,
+        *,
+        horizontal: bool,
+    ) -> None:
+        for band in frequency_zone_brushes():
+            item = pg.LinearRegionItem(
+                values=(band["low_hz"], band["high_hz"]),
+                orientation=(
+                    pg.LinearRegionItem.Horizontal
+                    if horizontal
+                    else pg.LinearRegionItem.Vertical
+                ),
+                movable=False,
+                brush=pg.mkBrush(*band["rgb"], 30),
+                pen=pg.mkPen(*band["rgb"], 90),
+            )
+            item.setZValue(-20)
+            plot.addItem(item)
+
+    def _colorize_spwvd(
+        self,
+        power: np.ndarray,
+        freqs_hz: np.ndarray,
+    ) -> np.ndarray:
+        display = np.log1p(power.T)
+        finite = display[np.isfinite(display)]
+
+        if finite.size:
+            low, high = np.percentile(finite, [2.0, 98.0])
+            if high <= low:
+                high = low + 1.0
+            normalized = np.clip((display - low) / (high - low), 0.0, 1.0)
+        else:
+            normalized = np.zeros_like(display, dtype=float)
+
+        rgb = np.zeros((display.shape[0], display.shape[1], 3), dtype=np.ubyte)
+        freqs = np.asarray(freqs_hz, dtype=float)
+
+        palette = [
+            {"low_hz": 0.0, "high_hz": 0.04, "rgb": (184, 176, 168)},
+            *AUTONOMIC_ZONES,
+        ]
+
+        for band in palette:
+            mask = (freqs >= band["low_hz"]) & (freqs < band["high_hz"])
+            if not np.any(mask):
+                continue
+
+            base = np.asarray(band["rgb"], dtype=float) / 255.0
+            rows = normalized[:, mask]
+            color = np.clip(rows[..., None] * base[None, None, :], 0.0, 1.0)
+            rgb[:, mask, :] = np.maximum(
+                rgb[:, mask, :],
+                np.asarray(np.round(color * 255.0), dtype=np.ubyte),
+            )
+
+        return rgb
 
     def _refresh_ports(self) -> None:
         current = self.port_combo.currentText()
@@ -1140,6 +1294,22 @@ class MainWindow(QMainWindow):
         # 频域：只有质量门通过才显示功率值和功率谱。
         # --------------------------------------------------------------
         freq = snapshot.frequency
+        freq_insight = describe_frequency_balance(freq)
+        self.freq_auto_label.setText(
+            freq_insight["headline"]
+            + "  "
+            + freq_insight["plain_text"]
+        )
+        self.spwvd_hint.setText(freq_insight["spwvd_text"])
+        self.psd_band_hint.setText(freq_insight["welch_text"])
+        self.freq_guide_label.setText(
+            " · ".join([
+                freq_insight["vlf_text"],
+                freq_insight["lf_text"],
+                freq_insight["hf_text"],
+                freq_insight["median_text"],
+            ])
+        )
 
         if freq.valid:
             frequency_label = (
@@ -1154,6 +1324,7 @@ class MainWindow(QMainWindow):
                 f"VLF {freq.vlf_ms2:.1f} ms²  ·  "
                 f"LF {freq.lf_ms2:.1f} ms²  ·  "
                 f"HF {freq.hf_ms2:.1f} ms²  ·  "
+                f"中位频率 {freq.median_frequency_hz * 1000.0:.1f} mHz  ·  "
                 f"LFnu {freq.lf_nu:.1f}%  ·  "
                 f"HFnu {freq.hf_nu:.1f}%  ·  "
                 f"LF/HF {freq.lf_hf:.2f}  ·  "
@@ -1176,6 +1347,66 @@ class MainWindow(QMainWindow):
                 + reason
             )
             self.psd_curve.setData([], [])
+
+        valid_frequency_history = [
+            item
+            for item in history
+            if (
+                item.get("frequency_status")
+                in {"VALID", "LIMITED"}
+                and np.isfinite(item.get("vlf_ms2", np.nan))
+                and np.isfinite(item.get("lf_ms2", np.nan))
+                and np.isfinite(item.get("hf_ms2", np.nan))
+                and np.isfinite(item.get("median_frequency_hz", np.nan))
+            )
+        ]
+
+        if valid_frequency_history:
+            t0 = valid_frequency_history[0]["t_us"]
+            tx = np.asarray(
+                [
+                    (item["t_us"] - t0) / 60e6
+                    for item in valid_frequency_history
+                ],
+                dtype=float,
+            )
+            self.vlf_trend_curve.setData(
+                tx,
+                np.asarray([item["vlf_ms2"] for item in valid_frequency_history], dtype=float),
+            )
+            self.lf_trend_curve.setData(
+                tx,
+                np.asarray([item["lf_ms2"] for item in valid_frequency_history], dtype=float),
+            )
+            self.hf_trend_curve.setData(
+                tx,
+                np.asarray([item["hf_ms2"] for item in valid_frequency_history], dtype=float),
+            )
+            self.median_freq_curve.setData(
+                tx,
+                np.asarray(
+                    [item["median_frequency_hz"] * 1000.0 for item in valid_frequency_history],
+                    dtype=float,
+                ),
+            )
+            max_power = max(
+                float(np.nanmax([item["vlf_ms2"] for item in valid_frequency_history])),
+                float(np.nanmax([item["lf_ms2"] for item in valid_frequency_history])),
+                float(np.nanmax([item["hf_ms2"] for item in valid_frequency_history])),
+                1.0,
+            )
+            self.frequency_trend_plot.setYRange(0.0, max_power * 1.12)
+            max_mhz = max(
+                float(np.nanmax([item["median_frequency_hz"] * 1000.0 for item in valid_frequency_history])),
+                1.0,
+            )
+            self.frequency_trend_view.setYRange(0.0, max_mhz * 1.12)
+            self._sync_frequency_trend_view()
+        else:
+            self.vlf_trend_curve.setData([], [])
+            self.lf_trend_curve.setData([], [])
+            self.hf_trend_curve.setData([], [])
+            self.median_freq_curve.setData([], [])
 
         # 会话级 VLF/LF/HF 统计。
         statistics = (
@@ -1212,14 +1443,21 @@ class MainWindow(QMainWindow):
                     else 0.0
                 )
 
+            median_freq = metrics['median_frequency_hz']['median']
+            median_freq_text = (
+                f"{median_freq * 1000.0:.1f} mHz"
+                if median_freq is not None
+                else "--"
+            )
+
             self.freq_stats_label.setText(
                 f"可计算频域窗口 {valid_count}/{total_count} "
                 f"（VALID {strict_count} · LIMITED {limited_count}）  |  "
                 f"VLF均值 {stat_mean('vlf_ms2'):.1f} ms²  ·  "
                 f"LF均值 {stat_mean('lf_ms2'):.1f} ms²  ·  "
                 f"HF均值 {stat_mean('hf_ms2'):.1f} ms²  ·  "
-                f"LF/HF中位数 "
-                f"{metrics['lf_hf']['median']:.2f}"
+                f"中位频率中位数 {median_freq_text}  ·  "
+                f"LF/HF中位数 {metrics['lf_hf']['median']:.2f}"
             )
         else:
             self.freq_stats_label.setText(
@@ -1243,31 +1481,14 @@ class MainWindow(QMainWindow):
             self._spwvd_result = None
 
             if result.valid and result.power.size:
-                display = np.log1p(
-                    result.power.T
+                colored = self._colorize_spwvd(
+                    result.power,
+                    result.freqs_hz,
                 )
-
-                # 使用稳健百分位避免少数极端能量把整幅图压成黑白条纹。
-                finite = display[
-                    np.isfinite(display)
-                ]
-                if finite.size:
-                    low, high = np.percentile(
-                        finite,
-                        [2.0, 98.0],
-                    )
-                    if high <= low:
-                        high = low + 1.0
-                    self.tf_image.setImage(
-                        display,
-                        autoLevels=False,
-                        levels=(low, high),
-                    )
-                else:
-                    self.tf_image.setImage(
-                        display,
-                        autoLevels=True,
-                    )
+                self.tf_image.setImage(
+                    colored,
+                    autoLevels=False,
+                )
 
                 if (
                     result.times_s.size > 1

@@ -6,6 +6,7 @@ from scipy import signal
 from scipy.interpolate import PchipInterpolator
 
 from .config import AnalysisConfig
+from .frequency_insights import compute_median_frequency_hz
 from .models import (
     INVALID,
     LIMITED,
@@ -951,6 +952,11 @@ def compute_frequency_domain(
         else 0.0
     )
 
+    median_frequency_hz = compute_median_frequency_hz(
+        freqs_use,
+        psd_use,
+    )
+
     # -------------------------------------------------------------------
     # 硬门：超过任一项都不正式输出。
     # -------------------------------------------------------------------
@@ -1232,6 +1238,7 @@ def compute_frequency_domain(
         hf_nu=hf_nu,
         lf_hf=lf_hf,
         hf_lf=hf_lf,
+        median_frequency_hz=median_frequency_hz,
         fiducial_quality_mean=fiducial_quality_mean,
         fiducial_uncertainty_p95_ms=(
             fiducial_uncertainty_p95_ms

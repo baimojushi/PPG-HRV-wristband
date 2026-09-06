@@ -307,6 +307,7 @@ class FrequencyDomainMetrics:
     hf_nu: float = 0.0
     lf_hf: float = 0.0
     hf_lf: float = 0.0
+    median_frequency_hz: float = 0.0
 
     # v0.3.4 频域窗口内的心搏时间标志点稳定度。
     fiducial_quality_mean: float = 1.0

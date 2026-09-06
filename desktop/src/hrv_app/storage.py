@@ -10,6 +10,7 @@ import threading
 
 from .annotation_analysis import build_annotation_context
 from .engine import AnalysisEngine
+from .frequency_insights import build_frequency_trend_rows, describe_frequency_balance
 from .models import (
     BeatFrame,
     DiagnosticFrame,
@@ -788,6 +789,9 @@ def export_engine_results(
     summary = engine.summary_dict(
         snapshot=snapshot
     )
+    summary["frequency_interpretation"] = _json_safe(
+        describe_frequency_balance(snapshot.frequency)
+    )
     (
         destination
         / "summary.json"
@@ -799,6 +803,51 @@ def export_engine_results(
         ),
         encoding="utf-8",
     )
+
+    frequency_trends = build_frequency_trend_rows(history)
+    (
+        destination
+        / "frequency_interpretation.json"
+    ).write_text(
+        json.dumps(
+            _json_safe(
+                describe_frequency_balance(snapshot.frequency)
+            ),
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with (
+        destination
+        / "frequency_trends.csv"
+    ).open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as handle:
+        if frequency_trends:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(frequency_trends[0].keys()),
+            )
+            writer.writeheader()
+            writer.writerows(frequency_trends)
+        else:
+            csv.writer(handle).writerow([
+                "t_us",
+                "elapsed_minutes",
+                "frequency_status",
+                "total_power_ms2",
+                "vlf_ms2",
+                "lf_ms2",
+                "hf_ms2",
+                "lf_hf",
+                "median_frequency_hz",
+                "median_frequency_mhz",
+            ])
 
     (
         destination
