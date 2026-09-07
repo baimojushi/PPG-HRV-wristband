@@ -1,0 +1,9 @@
+v0.3.3 robust frequency cross-validation
+
+- firmware unchanged from v0.3.2;
+- raw pointwise Welch/Lomb correlation becomes debug-only;
+- official cross-validation uses ~0.02 Hz smoothed spectral shape
+  plus normalized VLF/LF/HF band-distribution agreement;
+- Welch absolute power remains unchanged;
+- five alternative PPG fiducials were A/B tested and not adopted;
+- runtime Tiny 1D CNN remains NO-GO for current failure mode.

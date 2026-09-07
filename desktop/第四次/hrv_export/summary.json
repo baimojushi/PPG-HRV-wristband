@@ -1,0 +1,103 @@
+{
+  "snapshot_t_us": 2463940512,
+  "hr_bpm": 75.757,
+  "result_status": "INVALID",
+  "time_domain": {
+    "valid": false,
+    "status": "INVALID",
+    "validity_reason": "异常搏 6.7% > 5.0%；未解决异常 6.7% > 6.0%；心搏标志点质量 45% < 68%；不稳定标志点 63.3% > 15.0%",
+    "nn_count": 56,
+    "mean_nn_ms": null,
+    "mean_hr_bpm": null,
+    "rmssd_ms": null,
+    "rmssd_95ci_ms": null,
+    "sdnn_ms": null,
+    "pnn50_percent": null,
+    "candidate_rmssd_ms": 119.513,
+    "detected_artifact_ratio": 0.06667,
+    "corrected_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.06667,
+    "max_consecutive_artifacts": 1,
+    "fiducial_quality_mean": 0.4528,
+    "fiducial_uncertainty_p95_ms": 14.8,
+    "fiducial_shift_p95_ms": 0.0,
+    "fiducial_unstable_ratio": 0.63333
+  },
+  "frequency_domain": {
+    "valid": false,
+    "status": "INVALID",
+    "validity_reason": "心搏标志点质量 44% < 68%；不稳定标志点 66.9% > 15.0%；未解决异常 8.6% > 5.0%",
+    "progress": 1.0,
+    "duration_seconds": 299.59,
+    "total_power_ms2": null,
+    "vlf_ms2": null,
+    "lf_ms2": null,
+    "hf_ms2": null,
+    "lf_nu": null,
+    "hf_nu": null,
+    "lf_hf": null,
+    "hf_lf": null,
+    "spectral_agreement": 0.8636,
+    "spectral_agreement_raw": 0.8402,
+    "spectral_shape_agreement": 0.8357,
+    "band_power_agreement": 0.9288,
+    "interpolation_agreement": 0.997,
+    "max_consecutive_artifacts": 2,
+    "fiducial_quality_mean": 0.4414,
+    "fiducial_uncertainty_p95_ms": 23.9,
+    "fiducial_shift_p95_ms": 11.971,
+    "fiducial_unstable_ratio": 0.66851
+  },
+  "signal_quality": {
+    "sqi": 0.9994,
+    "status": "VALID",
+    "wear_ratio": 1.0,
+    "clip_low_ratio": 0.0,
+    "clip_high_ratio": 0.0,
+    "sequence_drop_ratio": 0.0,
+    "effective_sample_rate_hz": 125.0,
+    "timing_jitter_p95_ms": 0.003,
+    "timing_overrun_ratio": 0.0,
+    "protocol_error_ratio": 8e-05,
+    "reasons": [
+      "协议侧累计样本序号缺口 9"
+    ]
+  },
+  "timeline_quality": {
+    "raw_rr_count": 379,
+    "accepted_nn_count": 347,
+    "detected_artifact_ratio": 0.08443,
+    "corrected_interval_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.08443,
+    "valid_nn_ratio": 0.91557,
+    "max_consecutive_artifacts": 2,
+    "fiducial_quality_mean": 0.4413,
+    "fiducial_uncertainty_p95_ms": 24.0,
+    "fiducial_shift_p95_ms": 12.144,
+    "fiducial_unstable_ratio": 0.67018
+  },
+  "protocol_health": {
+    "mode": "framed",
+    "ok_frames": 39880,
+    "crc_errors": 2,
+    "format_errors": 1,
+    "resync_count": 3,
+    "sample_seq_gaps": 9,
+    "error_ratio": 7.5e-05
+  },
+  "quality": {
+    "sqi": 0.9994,
+    "status": "INVALID",
+    "time_status": "INVALID",
+    "frequency_status": "INVALID",
+    "reasons": [
+      "协议侧累计样本序号缺口 9",
+      "异常搏比例偏高",
+      "存在未解决 RR 异常",
+      "存在连续异常搏",
+      "心搏时间标志点稳定性偏低",
+      "异常搏 6.7% > 5.0%；未解决异常 6.7% > 6.0%；心搏标志点质量 45% < 68%；不稳定标志点 63.3% > 15.0%",
+      "心搏标志点质量 44% < 68%；不稳定标志点 66.9% > 15.0%；未解决异常 8.6% > 5.0%"
+    ]
+  }
+}

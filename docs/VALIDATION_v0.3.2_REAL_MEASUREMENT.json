@@ -1,0 +1,36 @@
+{
+  "source": "uploaded v0.3.1 hrv_export.zip",
+  "sample_count": 37060,
+  "sample_duration_s": 431.596522,
+  "target_sample_rate_hz": 125.0,
+  "effective_sample_rate_hz": 85.86491806808397,
+  "timing_jitter_p95_ms": 58.0901,
+  "timing_overrun_ratio": 0.06257589249575002,
+  "long_gap_median_ms": 66.266,
+  "long_gap_index_spacing_median_samples": 16.0,
+  "sequence_gaps": 9,
+  "sqi_v032_reclassification": 0.64,
+  "sqi_status_v032": "INVALID",
+  "rr_count": 580,
+  "overall_unresolved_ratio": 0.032758620689655175,
+  "last60_artifact_ratio": 0.08333333333333333,
+  "last60_unresolved_ratio": 0.05,
+  "current_data_gate": {
+    "time_status": "INVALID",
+    "time_reason": "异常搏 8.3% > 5.0%；SQI 64% < 70%；采样时基 p95 58.1 ms > 4.0 ms",
+    "frequency_status": "INVALID",
+    "frequency_reason": "SQI 64% < 75%；采样时基 p95 58.1 ms > 4.0 ms"
+  },
+  "same_rr_after_clock_fix": {
+    "time_status": "LIMITED",
+    "rmssd_ms": 112.97088120396336,
+    "frequency_status": "LIMITED",
+    "total_power_ms2": 3126.1380336574534,
+    "vlf_ms2": 1692.8083815269154,
+    "lf_ms2": 445.4610070014981,
+    "hf_ms2": 959.0787918585949,
+    "lf_hf": 0.4644675815823651,
+    "spectral_agreement": 0.8200408942731091,
+    "interpolation_agreement": 0.9994593354319053
+  }
+}

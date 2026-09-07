@@ -1,0 +1,9 @@
+[project]
+name = "ppg-hrv-desktop"
+version = "0.1.0"
+description = "PPG/HRV real-time analysis, confidence scoring and consumer-facing visualization."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["../tests"]

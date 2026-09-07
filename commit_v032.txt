@@ -1,0 +1,15 @@
+v0.3.2 sampling-timebase and HRV quality patch
+
+Real measurement root cause:
+- target 125 Hz;
+- effective ~85.86 Hz;
+- ~66 ms sampling gap every 16 processed samples;
+- v0.3.1 full autocorrelation scan also executed every 16 samples.
+
+Fix:
+- incremental autocorrelation: <=4 lags/update, <=96 pairs/lag;
+- hard SQI cap for gross timebase failure;
+- explicit effective sample rate / jitter / overrun diagnostics;
+- time-domain VALID/LIMITED/INVALID;
+- frequency-domain Welch(PCHIP) + Welch(linear) + Lomb cross-validation;
+- protocol remains v4.

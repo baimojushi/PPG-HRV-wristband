@@ -1,0 +1,84 @@
+{
+  "snapshot_t_us": 1062888155,
+  "hr_bpm": 87.1,
+  "result_status": "INVALID",
+  "time_domain": {
+    "valid": false,
+    "status": "INVALID",
+    "validity_reason": "异常搏 8.3% > 5.0%；未解决异常 5.0% > 2.0%；连续异常搏 2 > 1",
+    "nn_count": 55,
+    "mean_nn_ms": null,
+    "mean_hr_bpm": null,
+    "rmssd_ms": null,
+    "rmssd_95ci_ms": null,
+    "sdnn_ms": null,
+    "pnn50_percent": null,
+    "candidate_rmssd_ms": 112.971,
+    "detected_artifact_ratio": 0.08333,
+    "corrected_ratio": 0.03333,
+    "unresolved_suspect_ratio": 0.05,
+    "max_consecutive_artifacts": 2
+  },
+  "frequency_domain": {
+    "valid": false,
+    "status": "INVALID",
+    "validity_reason": "未解决异常 3.4% > 1.0%",
+    "progress": 1.0,
+    "duration_seconds": 299.88,
+    "total_power_ms2": null,
+    "vlf_ms2": null,
+    "lf_ms2": null,
+    "hf_ms2": null,
+    "lf_nu": null,
+    "hf_nu": null,
+    "lf_hf": null,
+    "hf_lf": null,
+    "spectral_agreement": null
+  },
+  "signal_quality": {
+    "sqi": 0.8486,
+    "status": "VALID",
+    "wear_ratio": 1.0,
+    "clip_low_ratio": 0.0004,
+    "clip_high_ratio": 0.0,
+    "sequence_drop_ratio": 0.0,
+    "timing_jitter_p95_ms": 58.101,
+    "protocol_error_ratio": 0.00011,
+    "reasons": [
+      "采样时基抖动偏高",
+      "协议侧累计样本序号缺口 9"
+    ]
+  },
+  "timeline_quality": {
+    "raw_rr_count": 580,
+    "accepted_nn_count": 559,
+    "detected_artifact_ratio": 0.03621,
+    "corrected_interval_ratio": 0.0071,
+    "unresolved_suspect_ratio": 0.03276,
+    "valid_nn_ratio": 0.96379,
+    "max_consecutive_artifacts": 2
+  },
+  "protocol_health": {
+    "mode": "framed",
+    "ok_frames": 37748,
+    "crc_errors": 1,
+    "format_errors": 3,
+    "resync_count": 4,
+    "sample_seq_gaps": 9,
+    "error_ratio": 0.000106
+  },
+  "quality": {
+    "sqi": 0.8486,
+    "status": "INVALID",
+    "time_status": "INVALID",
+    "frequency_status": "INVALID",
+    "reasons": [
+      "采样时基抖动偏高",
+      "协议侧累计样本序号缺口 9",
+      "存在未解决 RR 异常",
+      "存在连续异常搏",
+      "异常搏 8.3% > 5.0%；未解决异常 5.0% > 2.0%；连续异常搏 2 > 1",
+      "未解决异常 3.4% > 1.0%"
+    ]
+  }
+}

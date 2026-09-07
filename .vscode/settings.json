@@ -1,0 +1,9 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/desktop/src"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  }
+}

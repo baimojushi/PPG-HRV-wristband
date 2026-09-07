@@ -1,0 +1,224 @@
+{
+  "source": "v0.3.6 annotated hrv_export.zip",
+  "sample_count": 92051,
+  "annotation_count": 22,
+  "replay_elapsed_seconds": 31.121,
+  "old_v0_3_6": {
+    "firmware_beat_count": 904,
+    "timeline_artifact_ratio": 0.07309,
+    "timeline_unresolved_ratio": 0.04873,
+    "frequency_status": "INVALID",
+    "rmssd_ms": 36.161,
+    "annotation_windows_with_rr_artifact": 18
+  },
+  "rebuilt_v0_3_7": {
+    "formal_beat_count": 918,
+    "matched_firmware_count": 864,
+    "waveform_inserted_count": 54,
+    "firmware_unmatched_count": 40,
+    "rr_median_ms": 798.139,
+    "rr_p01_ms": 630.6936000000001,
+    "rr_p99_ms": 953.0531200000003,
+    "timeline_artifact_ratio": 0.0,
+    "timeline_unresolved_ratio": 0.0,
+    "time_status": "VALID",
+    "frequency_status": "VALID",
+    "rmssd_ms": 25.037300276499323,
+    "hr_bpm": 79.6332622827671,
+    "annotation_windows_with_rr_artifact": 0
+  },
+  "offline_visual_reference": {
+    "note": "simple whole-session find_peaks engineering reference; not ECG ground truth",
+    "peak_count": 919,
+    "formal_peak_count": 918,
+    "formal_to_reference_abs_offset_median_ms": 1.935,
+    "formal_to_reference_abs_offset_p95_ms": 4.0
+  },
+  "annotation_windows": [
+    {
+      "annotation_id": 1,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 2,
+      "label_type": "未分类",
+      "firmware_count_3s": 2,
+      "formal_count_3s": 3,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 3,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 3,
+      "old_artifact_count": 2,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 4,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 5,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 3,
+      "old_artifact_count": 0,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 6,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 7,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 3,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 8,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 9,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 3,
+      "old_artifact_count": 3,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 10,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 11,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 3,
+      "old_artifact_count": 2,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 12,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 2,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 13,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 4,
+      "old_artifact_count": 3,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 14,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 3,
+      "old_artifact_count": 2,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 15,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 16,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 4,
+      "old_artifact_count": 0,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 17,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 4,
+      "old_artifact_count": 0,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 18,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 3,
+      "old_artifact_count": 0,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 19,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 5,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 20,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 4,
+      "old_artifact_count": 2,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 21,
+      "label_type": "未分类",
+      "firmware_count_3s": 3,
+      "formal_count_3s": 4,
+      "old_artifact_count": 1,
+      "new_artifact_count": 0
+    },
+    {
+      "annotation_id": 22,
+      "label_type": "未分类",
+      "firmware_count_3s": 4,
+      "formal_count_3s": 3,
+      "old_artifact_count": 3,
+      "new_artifact_count": 0
+    }
+  ],
+  "replay_elapsed_seconds_latest": 24.514,
+  "automated_validation": {
+    "python_compileall": "passed",
+    "pytest": "72 passed",
+    "fixed_lag_specific_tests": "13 passed",
+    "variable_rr_hard_negative": "passed",
+    "smooth_hrv_hard_negative": "passed",
+    "firmware_byte_identical_to_uploaded_v0_3_6": true
+  }
+}

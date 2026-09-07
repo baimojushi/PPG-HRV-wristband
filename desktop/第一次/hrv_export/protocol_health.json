@@ -1,0 +1,10 @@
+{
+  "mode": "framed",
+  "ok_frames": 5686,
+  "crc_errors": 0,
+  "format_errors": 1,
+  "resync_count": 1,
+  "sample_seq_gaps": 0,
+  "legacy_frames": 0,
+  "error_ratio": 0.00017583963425356076
+}

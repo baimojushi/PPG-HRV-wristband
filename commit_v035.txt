@@ -1,0 +1,17 @@
+v0.3.5 same-polarity phase-branch stabilization
+
+Root cause from uploaded v0.3.4 session:
+- sampling is stable at 125 Hz;
+- two same-polarity local-max branches occur inside one physical pulse cycle;
+- branch transitions explain most RR outliers;
+- secondary branch has much lower morphology score;
+- v0.3.4 decides too early and overweights timing.
+
+Fix:
+- delay normal winner decision to phase >= 1.40;
+- morphology/timing = 0.90/0.10 for final winner;
+- robust high-score fiducial bootstrap;
+- rhythm-centered and source-wide template recovery;
+- large shifts require independent rhythm consistency;
+- export timing_recovered;
+- protocol remains v4.

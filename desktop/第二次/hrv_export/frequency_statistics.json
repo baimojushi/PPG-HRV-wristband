@@ -1,0 +1,87 @@
+{
+  "valid_window_count": 0,
+  "total_window_count": 22,
+  "valid_window_ratio": 0.0,
+  "metrics": {
+    "total_power_ms2": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "vlf_ms2": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "lf_ms2": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "hf_ms2": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "lf_nu": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "hf_nu": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "lf_hf": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    },
+    "hf_lf": {
+      "count": 0,
+      "mean": null,
+      "median": null,
+      "std": null,
+      "p25": null,
+      "p75": null,
+      "min": null,
+      "max": null
+    }
+  }
+}

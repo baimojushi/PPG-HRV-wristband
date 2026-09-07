@@ -1,0 +1,39 @@
+{
+  "source": "hrv_export.zip; replay limited to beats fully covered by samples_debug.csv",
+  "sample_rate_hz": 125.0,
+  "firmware_beats_in_ppg_window": 455,
+  "desktop_refined_beats": 455,
+  "applied_template_refinements": 438,
+  "rejected_ambiguous_refinements": 17,
+  "old_rmssd_ms": 20.736,
+  "refined_rmssd_ms": 19.642,
+  "refined_hr_bpm": 89.163,
+  "time_status": "VALID",
+  "fiducial_quality_mean": 0.9369000354,
+  "fiducial_uncertainty_p95_ms": 12.0,
+  "fiducial_applied_shift_p95_ms": 8.60623,
+  "fiducial_unstable_ratio": 0.0373626,
+  "timeline_detected_artifact_ratio": 0.00661,
+  "timeline_unresolved_ratio": 0.00661,
+  "timeline_valid_nn_ratio": 0.99339,
+  "max_consecutive_artifacts": 1,
+  "frequency_status": "VALID",
+  "frequency_robust_agreement": 0.9499,
+  "automated_synthetic_checks": {
+    "injected_firmware_fiducial_jitter_ms": [
+      -64,
+      48,
+      72,
+      -40,
+      0
+    ],
+    "template_refined_abs_error_p95_ms": "<8",
+    "wide_peak_same_polarity_candidates": "3 -> 1 Peak Complex representative",
+    "phase_tracker_previous_fiducial_late_ms": 110,
+    "phase_tracker_true_candidate_timing_score": ">0.99",
+    "single_late_fiducial_ms": 80,
+    "next_phase_target_extra_correction_ms": "<=10",
+    "low_quality_boundary_shift_ms": 120,
+    "low_quality_boundary_shift_action": "rejected; firmware timestamp retained"
+  }
+}

@@ -1,0 +1,11 @@
+v0.3.0 zeezPPG full rewrite: local lib, protocol v4, 27 tests, 3 CSV replays
+
+- zeezPPG local library (firmware/lib/zeezPPG) replaces external CheezPPG dependency
+- Protocol v4: @BODY*CRC16 with candidate/detector_score/expected_rr_ms debug fields
+- 27 tests passed + 2 skipped (cpp build opt-in)
+- 3 historical CSV replays (record.csv, 娟第一次冥想.csv, 状态不佳时读教科书.csv)
+- Algorithm: dynamic mean/std, autocorrelation rhythm prediction, multi-candidate competition, waveform rescue, harmonic guard
+- Protocol v4 backward compatible with v2/v3
+- 3 historical CSV replays with SQI/artifact metrics
+
+RAM: 16.0% (52KB), Flash: 85.0% (1.1MB)

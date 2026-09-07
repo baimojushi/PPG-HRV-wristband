@@ -1,0 +1,43 @@
+v0.4.0 research prototype + one-hour experience
+
+Base:
+- v0.3.9 responsive desktop release
+
+Firmware:
+- unchanged
+- protocol v4 unchanged
+
+Desktop:
+- literature_registry.py with 8 fact-detailed research sources
+- [n] clickable source references in Qt UI
+- research_prototypes.py
+- Q0-Q6 research state machine
+- 6 acute HRV research prototypes
+- session-personal robust median/MAD baseline
+- resonance-band / THM / LF peak research features
+- one-hour H0-H5 experience stages
+- one-hour state distribution, transition and duration analysis
+- research prototype score timeline plot
+- T0_TRAIT_UNKNOWN cross-day trait gate
+- quality failure pauses research interpretation
+
+Exports:
+- research_prototype_snapshot.json
+- hour_experience.json
+- research_prototype_table.json
+- literature_sources.json
+- research_state_timeline.csv
+
+Validation:
+- Python compileall PASS
+- pytest 90 passed
+
+Copy / source refinement pass:
+- added per-prototype user_narrative separated from test_state
+- main tab no longer exposes H*/Q*/lifecycle/match-score internals
+- hour narrative moved before charts; PPG/protocol/fiducial debug moved to professional analysis
+- literature facts now include concise subject identity/details where supported
+- source format is [n] clickable number + title + authors
+- main tab uses primary prototype sources; professional tab keeps all matched sources
+- added one-hour state_distribution names + hour_summary trajectory sentence
+- added narrative/source/disclaimer visual tiers and in-card research-shape disclaimer

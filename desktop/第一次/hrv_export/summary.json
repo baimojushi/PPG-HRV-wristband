@@ -1,0 +1,82 @@
+{
+  "snapshot_t_us": 636281057,
+  "hr_bpm": 164.8,
+  "result_status": "INVALID",
+  "time_domain": {
+    "valid": false,
+    "status": "INVALID",
+    "validity_reason": "未解决异常 3.3% > 2.0%",
+    "nn_count": 58,
+    "mean_nn_ms": null,
+    "mean_hr_bpm": null,
+    "rmssd_ms": null,
+    "rmssd_95ci_ms": null,
+    "sdnn_ms": null,
+    "pnn50_percent": null,
+    "candidate_rmssd_ms": 28.0,
+    "detected_artifact_ratio": 0.03333,
+    "corrected_ratio": 0.0,
+    "unresolved_suspect_ratio": 0.03333,
+    "max_consecutive_artifacts": 1
+  },
+  "frequency_domain": {
+    "valid": false,
+    "status": "LIMITED",
+    "validity_reason": "频域窗口积累中：64/300 秒",
+    "progress": 0.2127,
+    "duration_seconds": 63.8,
+    "total_power_ms2": null,
+    "vlf_ms2": null,
+    "lf_ms2": null,
+    "hf_ms2": null,
+    "lf_nu": null,
+    "hf_nu": null,
+    "lf_hf": null,
+    "hf_lf": null,
+    "spectral_agreement": null
+  },
+  "signal_quality": {
+    "sqi": 0.8491,
+    "status": "VALID",
+    "wear_ratio": 1.0,
+    "clip_low_ratio": 0.0,
+    "clip_high_ratio": 0.0,
+    "sequence_drop_ratio": 0.0,
+    "timing_jitter_p95_ms": 58.0414,
+    "protocol_error_ratio": 0.00018,
+    "reasons": [
+      "采样时基抖动偏高"
+    ]
+  },
+  "timeline_quality": {
+    "raw_rr_count": 177,
+    "accepted_nn_count": 155,
+    "detected_artifact_ratio": 0.12429,
+    "corrected_interval_ratio": 0.02516,
+    "unresolved_suspect_ratio": 0.11299,
+    "valid_nn_ratio": 0.87571,
+    "max_consecutive_artifacts": 2
+  },
+  "protocol_health": {
+    "mode": "framed",
+    "ok_frames": 5686,
+    "crc_errors": 0,
+    "format_errors": 1,
+    "resync_count": 1,
+    "sample_seq_gaps": 0,
+    "error_ratio": 0.000176
+  },
+  "quality": {
+    "sqi": 0.8491,
+    "status": "INVALID",
+    "time_status": "INVALID",
+    "frequency_status": "LIMITED",
+    "reasons": [
+      "采样时基抖动偏高",
+      "异常搏比例偏高",
+      "存在未解决 RR 异常",
+      "存在连续异常搏",
+      "未解决异常 3.3% > 2.0%"
+    ]
+  }
+}
