@@ -14,9 +14,15 @@ from .literature_registry import (
 from .models import AnalysisSnapshot, FrequencyDomainMetrics
 
 
+# 匹配门槛常量。
+# `_parse_no_match_reason` 会用到这个名字；只存一个引用，不改任何阈值。
+_MATCH_THRESHOLD_ACTIVE = 0.70
+_MATCH_THRESHOLD_CANDIDATE = 0.70
+
+
 PROTOTYPE_DEFINITIONS: dict[str, dict] = {
     "INWARD_QUIET": {
-        "name": "内向安静 / 高频增强型",
+        "name": "向内安静",
         "priority": 40,
         "source_ids": [1, 5],
         "test_state": (
@@ -24,12 +30,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "同时LF/HF谱形比下降。"
         ),
         "user_narrative": (
-            "这段节律与研究中的内向安静场景出现了相似组合："
-            "心率趋缓，RMSSD与HF相对个人近期基线增强，LF/HF谱形比下降。"
+            "这段时间，心跳整体稍慢，较快、常跟呼吸一起变化的起伏更明显，"
+            "较慢与较快起伏的相对比例也在下降。研究中，静坐并把注意力转向身体内部时出现过相似组合。"
         ),
     },
     "RESONANCE_0P1": {
-        "name": "0.1 Hz 共振样",
+        "name": "缓慢而规律",
         "priority": 100,
         "source_ids": [2, 6],
         "test_state": (
@@ -37,12 +43,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "连续窗口主峰频率稳定，表现为低频规则振荡结构。"
         ),
         "user_narrative": (
-            "心率波动正在约0.1 Hz附近形成窄而稳定的节律峰，"
-            "这种有组织的低频振荡在慢呼吸与部分冥想研究中出现过。"
+            "心跳起伏逐渐集中成一个缓慢而规律的节奏，大约每10秒完成一次起伏。"
+            "慢呼吸和部分冥想研究里出现过相似节律。"
         ),
     },
     "PHASED_VIPASSANA": {
-        "name": "分阶段频谱组织 / Vipassana样",
+        "name": "分阶段变化",
         "priority": 80,
         "source_ids": [4],
         "test_state": (
@@ -50,12 +56,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "中段LF与HF共同增强、后段再次回落。"
         ),
         "user_narrative": (
-            "过去十几分钟的频谱形成了分阶段的组织："
-            "前段较弱，中段LF与HF共同增强，随后再次回落。"
+            "过去十几分钟出现了明显的阶段变化：前段起伏收窄，"
+            "中段较慢和较快的起伏一起变明显，随后再次回落。"
         ),
     },
     "TRAINED_VIPASSANA_SHIFT": {
-        "name": "HF增强 + THM下降训练样",
+        "name": "呼吸起伏更明显",
         "priority": 55,
         "source_ids": [3],
         "test_state": (
@@ -63,12 +69,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "Traube–Hering–Mayer子带功率下降。"
         ),
         "user_narrative": (
-            "高频成分相对个人近期基线增强，同时0.06–0.10 Hz的慢低频成分减弱，"
-            "频谱内部正在重新分配。"
+            "与刚才相比，较快、常跟呼吸一起变化的起伏更明显，"
+            "同时一部分较慢起伏减弱，整个节律的重心正在移动。"
         ),
     },
     "AROUSAL_MEDITATION": {
-        "name": "高唤醒冥想样",
+        "name": "活跃而有序",
         "priority": 70,
         "source_ids": [5],
         "test_state": (
@@ -76,12 +82,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "形成与安静高频增强型不同的有组织状态。"
         ),
         "user_narrative": (
-            "HF相对个人近期基线下降，心率没有同步变慢，时频结构仍保持稳定；"
-            "这段形态更接近研究中的清醒、高唤醒冥想模式。"
+            "较快、常跟呼吸一起变化的起伏变弱，心率没有一起变慢，整体节律仍较有组织。"
+            "研究中的部分清醒、活跃冥想练习出现过相似组合。"
         ),
     },
     "SLOW_RECOVERY_VLF": {
-        "name": "VLF慢恢复尾迹",
+        "name": "缓慢恢复中",
         "priority": 50,
         "source_ids": [7],
         "test_state": (
@@ -89,8 +95,8 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
             "VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。"
         ),
         "user_narrative": (
-            "较快的HF与LF/HF已经接近个人近期基线，VLF仍保留更慢的偏离；"
-            "恢复正在不同时间尺度上分层发生。"
+            "较快的起伏已经接近你这次记录里的近期常态，最慢的背景变化还没有完全回来，"
+            "身体可能仍处在一个更慢的恢复过程里。"
         ),
     },
 }
@@ -101,8 +107,8 @@ def research_state_display_name(code: str) -> str:
         return str(definition["name"])
 
     return {
-        "STABLE_NEUTRAL": "稳定中性",
-        "DATA_UNSTABLE": "数据不足",
+        "STABLE_NEUTRAL": "暂无突出节律",
+        "DATA_UNSTABLE": "暂时看不清",
     }.get(str(code), str(code))
 
 
@@ -150,10 +156,10 @@ def _hour_trajectory_summary(
         )
         if unstable_minutes > stable_minutes:
             return (
-                f"{period_name}有效数据仍偏少，研究模式暂时不做连续解读。"
+                f"{period_name}里，能连续看清的时间还不够多，先不急着给变化下结论。"
             )
         return (
-            f"{period_name}还没有形成持续的高匹配研究模式，更多时间保持在稳定中性。"
+            f"{period_name}大部分时间没有出现特别突出的节律组合，整体变化较平缓。"
         )
 
     dominant_code, dominant_minutes = meaningful_distribution[0]
@@ -168,11 +174,11 @@ def _hour_trajectory_summary(
         )
         return (
             f"{period_name}里，{dominant_name}累计最久，约{dominant_minutes:.1f}分钟；"
-            f"最近一次明显转场是从{previous_name}到{current_name}。"
+            f"最近一次明显变化是从{previous_name}到{current_name}。"
         )
 
     return (
-        f"{period_name}里，{dominant_name}是最持续的研究相似模式，"
+        f"{period_name}里，{dominant_name}是最持续的相似节律，"
         f"累计约{dominant_minutes:.1f}分钟。"
     )
 
@@ -1914,6 +1920,35 @@ def evaluate_research_state(
             ),
         )
 
+        # ---- 观测：质量系数、乘质量前得分 —— 只读，不改逻辑 ----
+        quality_multiplier = float(_quality_multiplier(
+            snapshot
+        ))
+        provisional_score = (
+            float(current_score) /
+            max(quality_multiplier, 1e-9)
+        )
+        # 计算 NO_MATCH 原因的字段
+        no_match_reason = ""
+        if lifecycle in ("ACTIVE", "CANDIDATE", "EXITING"):
+            no_match_reason = ""
+        elif not baseline["ready"] and code != "RESONANCE_0P1":
+            no_match_reason = "NO_MATCH: BASELINE_NOT_READY"
+        elif quality_multiplier <= 0:
+            no_match_reason = (
+                "NO_MATCH: QUALITY_CEILING %.2f < %.2f"
+                % (quality_multiplier, _MATCH_THRESHOLD_ACTIVE)
+            )
+        elif "HF_MISSING" in str(latest_evidence):
+            no_match_reason = "NO_MATCH: HF_MISSING"
+        elif current_score < _MATCH_THRESHOLD_ACTIVE:
+            no_match_reason = (
+                "NO_MATCH: SCORE_BELOW_THRESHOLD %.2f < %.2f"
+                % (current_score, _MATCH_THRESHOLD_ACTIVE)
+            )
+        else:
+            no_match_reason = "NO_MATCH"
+
         matches.append({
             "code": code,
             "name": definition[
@@ -1926,6 +1961,10 @@ def evaluate_research_state(
             "evidence": (
                 latest_evidence
             ),
+            "quality_multiplier": quality_multiplier,
+            "score_before_quality": provisional_score,
+            "no_match_reason": no_match_reason,
+            "baseline_ready": bool(baseline["ready"]),
             "test_state": definition[
                 "test_state"
             ],
@@ -2125,7 +2164,7 @@ def _session_stage(
     if elapsed_minutes < 10.0:
         return (
             "H1_BASELINE",
-            "形成第一组频域与个人近期基线",
+            "了解你这次记录里的近期常态",
             10.0
             - elapsed_minutes,
         )
@@ -2133,7 +2172,7 @@ def _session_stage(
     if elapsed_minutes < 20.0:
         return (
             "H2_FIRST_PATTERN",
-            "识别可重复节律模式",
+            "寻找开始重复出现的节律",
             20.0
             - elapsed_minutes,
         )
@@ -2141,7 +2180,7 @@ def _session_stage(
     if elapsed_minutes < 40.0:
         return (
             "H3_TRAJECTORY",
-            "观察状态的持续与转场",
+            "观察这些变化能持续多久",
             40.0
             - elapsed_minutes,
         )
@@ -2149,14 +2188,14 @@ def _session_stage(
     if elapsed_minutes < 60.0:
         return (
             "H4_HOUR_SCALE",
-            "形成一小时节律脉络",
+            "把这一小时的变化连成一条脉络",
             60.0
             - elapsed_minutes,
         )
 
     return (
         "H5_EXTENDED",
-        "一小时节律脉络已完整",
+        "已经形成完整的一小时变化脉络",
         None,
     )
 
@@ -2560,8 +2599,8 @@ def build_hour_experience(
         "code": "T0_TRAIT_UNKNOWN",
         "enabled": False,
         "reason": (
-            "当前产品只建立单会话近期基线；"
-            "长期练习者/运动训练等身份参照需要跨天历史后再启用。"
+            "目前只根据这次记录了解你的近期变化；"
+            "是否存在长期习惯，需要多天记录后再观察。"
         ),
         "research_reference_source_ids": [
             6,

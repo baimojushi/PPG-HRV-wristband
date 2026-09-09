@@ -284,7 +284,16 @@ class AdaptivePPGDetector:
             legacy_peak_factor
         )
 
+        # 观测字段——由调用方赋值，reset() 不清这个。
+        # 记录上次 reset 触发的根本原因，供 beat_detector_state 日志。
+        self._last_reinit_reason: str = ""
+
     def reset(self) -> None:
+        """
+        重初始化检测器。观测日志需要在调用点把原因记到
+        `self._last_reinit_reason`（由调用方赋值），本方法只负责
+        彻底清空内部状态。
+        """
         factor = (
             11.0
             * self.score_threshold_scale
@@ -1526,6 +1535,8 @@ class AdaptivePPGDetector:
         wear: bool,
     ) -> AdaptiveEvent:
         if not wear:
+            # 观测：把 reset 原因写到字段里，再触发 reset。
+            self._last_reinit_reason = "wear_lost"
             self.reset()
             return AdaptiveEvent()
 

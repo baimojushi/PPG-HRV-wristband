@@ -235,6 +235,23 @@ def test_all_research_prototypes_have_separate_user_narrative():
     )
 
 
+def test_user_facing_research_copy_avoids_engineering_jargon():
+    forbidden = (
+        "RMSSD", "VLF", "LF/HF", "HF", "Welch", "SPWVD",
+        "频域", "频谱", "中位频率", "交感", "副交感",
+    )
+
+    for code, definition in PROTOTYPE_DEFINITIONS.items():
+        narrative = definition["user_narrative"]
+        for jargon in forbidden:
+            assert jargon not in narrative, (code, jargon)
+
+    for source in sources_to_dict():
+        public_fact = source["study_detail"] + source["finding_detail"]
+        for jargon in forbidden:
+            assert jargon not in public_fact, (source["source_id"], jargon)
+
+
 def test_extract_research_features_detects_narrow_0p1_hz_peak():
     freqs = np.linspace(
         0.0033,
@@ -529,15 +546,15 @@ def test_ui_contains_hour_research_layer_and_clickable_sources():
         encoding="utf-8"
     )
 
-    assert "过去一小时 · 节律脉络" in ui
-    assert "研究原型状态机" in ui
+    assert "过去一小时 · 身体节律" in ui
+    assert "解读进度：" in ui
     assert "prototype_score_plot" in ui
     assert "setOpenExternalLinks" in ui
     assert "TextBrowserInteraction" in ui
-    assert "T0_TRAIT_UNKNOWN" in ui
+    assert "T0_TRAIT_UNKNOWN" not in ui
     assert "narrativeText" in ui
     assert "primary_source_facts_html" in ui
-    assert "仅用于研究形态参照" in ui
+    assert "研究来源只说明曾有人出现过相似的心跳节律" in ui
     assert "匹配度 {float(primary" not in ui
     assert 'f"{stage_code} · {stage_name}' not in ui
 
@@ -559,7 +576,7 @@ def test_main_tab_prioritizes_hour_narrative_and_analysis_owns_ppg_debug():
 
     assert "layout.addWidget(\n            self.hour_experience_frame" in state_section
     assert 'layout.addWidget(QLabel("实时 PPG + 8秒整窗波形复核"))' not in state_section
-    assert 'layout.addWidget(QLabel("PPG + 8秒整窗波形复核"))' in analysis_section
+    assert 'layout.addWidget(QLabel("心跳波形（排查读数异常时查看）"))' in analysis_section
     assert "self.protocol_debug_label" in analysis_section
     assert "self.quality_debug_label" in analysis_section
 

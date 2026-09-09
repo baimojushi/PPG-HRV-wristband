@@ -338,6 +338,10 @@ class FrequencyDomainMetrics:
     # 用于判断频谱是否被某一种插值方式主导。
     interpolation_agreement: float = 0.0
 
+    # 观测字段——谱主峰位置（只写，不改任何决策）。
+    welch_peak_hz: float = 0.0   # Welch 各频带主峰的尖峰位置
+    lomb_peak_hz: float = 0.0    # Lomb-Scargle 各频带主峰的尖峰位置
+
     freqs_hz: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
     psd_ms2_hz: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
 

@@ -61,6 +61,13 @@ def test_describe_frequency_balance_uses_plain_language():
         )
     )
 
-    assert '自动解析' in insight['headline']
-    assert 'LF' in insight['lf_text']
-    assert '中位频率' in insight['median_text']
+    assert '较慢的心率起伏' in insight['headline']
+    assert '较慢的心率起伏' in insight['lf_text']
+    assert '整体快慢位置' in insight['median_text']
+
+    public_text = ' '.join(insight.values())
+    for jargon in [
+        'VLF', 'LF/HF', 'LF：', 'HF：', 'Welch', 'SPWVD',
+        '频域', '频谱', '中位频率', '交感', '副交感',
+    ]:
+        assert jargon not in public_text

@@ -709,9 +709,18 @@ def compute_frequency_domain(
         scaling="density",
     )
 
+    # ------------------------------------------------------------------
+    # 观测：只读派生 Welch 主峰位置，写入返回结构体供 provenance 使用。
+    # 逻辑不影响任何频带功率计算。
+    # ------------------------------------------------------------------
     analysis_mask = (
         (freqs >= cfg.vlf_low_hz)
         & (freqs <= cfg.hf_high_hz)
+    )
+    welch_peak_hz = (
+        float(freqs[analysis_mask][np.argmax(psd[analysis_mask])])
+        if np.sum(analysis_mask) > 0
+        else 0.0
     )
 
     freqs_use = (
@@ -876,6 +885,16 @@ def compute_frequency_domain(
             psd_use,
             lomb,
             cfg,
+        )
+
+        # ------------------------------------------------------------------
+        # 观测：Lomb 主峰位置（与 Welch 用同一频率轴），便于之后比对
+        # 两种谱估计各自主峰是否一致。只读，不改任何决策。
+        # ------------------------------------------------------------------
+        lomb_peak_hz = (
+            float(freqs_use[np.argmax(lomb)])
+            if lomb.size > 0 and freqs_use.size > 0
+            else 0.0
         )
 
     # -------------------------------------------------------------------
@@ -1269,6 +1288,8 @@ def compute_frequency_domain(
         interpolation_agreement=(
             interpolation_agreement
         ),
+        welch_peak_hz=welch_peak_hz,
+        lomb_peak_hz=lomb_peak_hz,
         freqs_hz=freqs_use,
         psd_ms2_hz=psd_use,
     )

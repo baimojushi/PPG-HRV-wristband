@@ -33,6 +33,19 @@ from .models import (
 from .rr_cleaner import BeatTimelineCleaner
 from .signal_quality import evaluate_signal_quality
 from .spwvd import compute_spwvd
+from .provenance import (
+    ProvenanceRecorder,
+    build_beat_provenance_row,
+    build_beat_detector_state_row,
+    build_causality_trace_row,
+    build_hrv_window_provenance_row,
+    build_prototype_score_trace_row,
+    build_spectrum_5min_trace_row,
+    build_ui_explanation_trace_row,
+    build_baseline_trace_row,
+    _MATCH_THRESHOLD_ACTIVE,
+    _MATCH_THRESHOLD_CANDIDATE,
+)
 
 
 class AnalysisEngine:
@@ -133,6 +146,24 @@ class AnalysisEngine:
         self._last_firmware_metric: FirmwareMetricFrame | None = None
         self._protocol_health = ProtocolHealth()
 
+        # 溯源日志：由 SessionRecorder 的 ProvenanceRecorder 共享；
+        # engine 只写，不创建/关闭，生命周期由 recorder 管理。
+        self._provenance: ProvenanceRecorder | None = None
+        # 上一次导出的 PersonalBaseline dict，用于 detect baseline version 变化。
+        self._provenance_prev_baseline: dict | None = None
+
+        # 检测器/波的采样间隔跟踪——配合 `metric_update_seconds`(20s) 对总间隔做节流。
+        self._last_detector_log_us = 0
+        self._detector_state_interval_s = 8.0  # 每 8s 记录一次 beat_detector_state，约两次采样周期一次。
+        # proposal 的最近一次记录，用作 beat_provenance 里上一心搏的 prior 参考。
+        self._last_proposal_ref_t_us = 0
+
+    def attach_provenance_recorder(
+        self, recorder: ProvenanceRecorder | None
+    ) -> None:
+        """由 UI 在创建 SessionRecorder 后注入。"""
+        self._provenance = recorder
+
     def reset(self) -> None:
         with self._lock:
             self._samples.clear()
@@ -159,6 +190,9 @@ class AnalysisEngine:
             self._last_diagnostic = None
             self._last_firmware_metric = None
             self._protocol_health = ProtocolHealth()
+            self._provenance_prev_baseline = None
+            self._last_detector_log_us = 0
+            self._last_proposal_ref_t_us = 0
 
     def ingest_sample(
         self,
@@ -876,6 +910,32 @@ class AnalysisEngine:
                 ),
             )
 
+            # ------------------------------------------------------------------
+            # 溯源日志：每颗新提交的心搏实时记录，不影响任何算法。
+            # ------------------------------------------------------------------
+            if self._provenance is not None:
+                try:
+                    fw_match: BeatFrame | None = None
+                    if matched_source_t_us > 0:
+                        fw_match = BeatFrame(
+                            seq=0,
+                            t_us=matched_source_t_us,
+                        )
+                    template_version = "v0.3.7"
+                    self._provenance.record_beat_provenance(
+                        build_beat_provenance_row(
+                            beat=refined,
+                            firmware_match=fw_match,
+                            proposal=proposal,
+                            prior_final_t_us=self._last_proposal_ref_t_us,
+                            template_version=template_version,
+                        )
+                    )
+                except Exception:
+                    pass
+
+            self._last_proposal_ref_t_us = refined_t_us
+
             self._raw_beats.append(
                 refined
             )
@@ -1058,6 +1118,211 @@ class AnalysisEngine:
             self._append_history_locked(
                 self._last_snapshot
             )
+
+        # ------------------------------------------------------------------
+        # 溯源日志——实时流式 CSV，随 metrics 刷新记录。
+        # 只写，不改算法；engine 负责把已有数据交给 ProvenanceRecorder。
+        # ------------------------------------------------------------------
+        self._log_provenance_locked(
+            now_us=now_us,
+            records=self._cleaned_records,
+            frequency_metrics=frequency_metrics,
+            time_metrics=time_metrics,
+            signal_quality=signal_quality,
+        )
+
+    # ----------------------------------------------------------------------
+    # 溯源日志：由 _update_metrics_locked 每 20 秒（record_history=True）调用。
+    # 按 metric_update_seconds 节流（不越过 20s 周期频率）。
+    # 20 秒内每个 beat 的 beat_provenance 已经在 _run_fixed_lag_correction_locked
+    # 里单独记录，这里不再重复。
+    # ----------------------------------------------------------------------
+    def _log_provenance_locked(
+        self,
+        now_us: int,
+        records: list,
+        frequency_metrics,
+        time_metrics,
+        signal_quality,
+    ) -> None:
+        if self._provenance is None:
+            return
+
+        # ----------------------------------------------------------
+        # ① detector 状态（每 8 秒写一次）
+        # ----------------------------------------------------------
+        if (
+            now_us - self._last_detector_log_us
+            >= self._detector_state_interval_s * 1_000_000
+        ):
+            try:
+                self._last_detector_log_us = now_us
+                state_row = build_beat_detector_state_row(
+                    detector=self._waveform_corrector,
+                    firmware_beats=list(self._firmware_beats),
+                    last_committed_t_us=self._last_refined_t_us,
+                    commit_until_t_us=self._current_time_us_locked(),
+                    reinit_reason=(
+                        getattr(
+                            self._waveform_corrector,
+                            "_last_reinit_reason",
+                            None,
+                        )
+                        or None
+                    ),
+                )
+                self._provenance.record_beat_detector_state(state_row)
+            except Exception:
+                pass
+
+        # ----------------------------------------------------------
+        # ② 20 秒窗口 HRV（与 metric_update_seconds 同节奏）
+        # ----------------------------------------------------------
+        window_days = self.config.metric_update_seconds * 1_000_000
+        if now_us - self._last_metric_us >= window_days:
+            try:
+                # 最近 20 秒所有 beat
+                recent_beats = [
+                    r for r in records
+                    if now_us - int(r.t_us) <= window_days
+                ]
+                # 所有固件 beats
+                firmware_beats = list(self._firmware_beats)
+                # 取前一个 20s 窗口末尾作为参考（offset 计算的 prior）
+                prior_final_t_us = self._last_proposal_ref_t_us
+                row = build_hrv_window_provenance_row(
+                    window_beats=recent_beats,
+                    prior_beats=[
+                        r for r in records
+                        if r.t_us <= self._last_proposal_ref_t_us
+                    ],
+                    firmware_beats=firmware_beats,
+                    window_t_us=now_us,
+                )
+                row["t_us"] = now_us
+                self._provenance.record_hrv_window_provenance(row)
+            except Exception:
+                pass
+
+        # ----------------------------------------------------------
+        # ③ 5 分钟频域
+        # ----------------------------------------------------------
+        try:
+            row = build_spectrum_5min_trace_row(
+                {
+                    "window_start_t_us": (
+                        now_us - self.config.frequency_window_seconds * 1e6
+                    ),
+                    "window_end_t_us": now_us,
+                    "rr_count": int(len(self._nn_intervals)),
+                    "vlf": frequency_metrics.vlf_ms2,
+                    "lf": frequency_metrics.lf_ms2,
+                    "hf": frequency_metrics.hf_ms2,
+                    "lf_hf": frequency_metrics.lf_hf,
+                    "lomb_vlf_ratio": getattr(
+                        frequency_metrics, "lomb_vlf_ratio", None
+                    ),
+                    "lomb_lf_ratio": getattr(
+                        frequency_metrics, "lomb_lf_ratio", None
+                    ),
+                    "lomb_hf_ratio": getattr(
+                        frequency_metrics, "lomb_hf_ratio", None
+                    ),
+                    "welch_peak_hz": getattr(
+                        frequency_metrics, "welch_peak_hz", 0.0
+                    ),
+                    "lomb_peak_hz": getattr(
+                        frequency_metrics, "lomb_peak_hz", 0.0
+                    ),
+                    "spectral_agreement": getattr(
+                        frequency_metrics, "spectral_agreement", 0.0
+                    ),
+                    "pchip_vs_linear_diff": getattr(
+                        frequency_metrics, "interpolation_agreement", 0.0
+                    ),
+                    "quality": frequency_metrics.status,
+                    "validity_reason": frequency_metrics.validity_reason,
+                },
+                window_t_us=now_us,
+                rejection_reason=(
+                    frequency_metrics.validity_reason
+                    if not frequency_metrics.valid
+                    else None
+                ),
+            )
+            self._provenance.record_spectrum_5min_trace(row)
+        except Exception:
+            pass
+
+        # ----------------------------------------------------------
+        # ④ baseline 变化（每次 evaluate_research_state 之后对比版本）
+        # ----------------------------------------------------------
+        try:
+            research_snapshot = self._research_cache.get("state", {})
+            baseline = research_snapshot.get("baseline", {})
+            if isinstance(baseline, dict) and baseline:
+                prev = self._provenance_prev_baseline
+                if prev is not None:
+                    prev_ver = int(prev.get("version", 0))
+                    curr_ver = int(baseline.get("version", 0))
+                    if prev_ver != curr_ver:
+                        self._provenance.record_baseline_trace(
+                            build_baseline_trace_row(
+                                baseline,
+                                prev,
+                                int(now_us),
+                                source=("VALID" if baseline.get("ready") else "LIMITED"),
+                            )
+                        )
+                self._provenance_prev_baseline = baseline
+        except Exception:
+            pass
+
+        # ----------------------------------------------------------
+        # ⑥ UI 文案（当用户看到的解释文字变化时记录）
+        # ----------------------------------------------------------
+        try:
+            primary = research_snapshot.get("primary_state", {})
+            if isinstance(primary, dict) and primary:
+                self._provenance.record_ui_explanation_trace(
+                    build_ui_explanation_trace_row(
+                        state_t_us=now_us,
+                        state_name=primary.get("state_machine_state", ""),
+                        match=primary,  # dict 包含 score、source_ids、user_narrative 等
+                        user_text=primary.get("user_narrative", ""),
+                        trigger=primary.get("trigger", "") or "state_change",
+                        reliability="high" if primary.get("state_machine_state") in ("Q5_STATE_ACTIVE", "Q4_STATE_CANDIDATE") else "low",
+                    )
+                )
+        except Exception:
+            pass
+
+        # ----------------------------------------------------------
+        # ⑤ prototype score（每次 record_history 都记录所有原型）
+        # ----------------------------------------------------------
+        try:
+            matches = research_snapshot.get("matches", [])
+            threshold_map = {
+                "ACTIVE": 0.70,
+                "CANDIDATE": 0.70,
+            }
+            for m in matches:
+                thr = threshold_map.get(m.get("lifecycle", ""), 0.0)
+                self._provenance.record_prototype_score_trace(
+                    build_prototype_score_trace_row(
+                        prototype_id=m["code"],
+                        row=m,
+                        baseline=research_snapshot.get("baseline", {}),
+                        score=m["score"],
+                        evidence=m.get("evidence", []),
+                        quality=m["quality_multiplier"],
+                        threshold=thr,
+                        baseline_ready=research_snapshot.get("baseline_ready", False),
+                        match=m if m["lifecycle"] == "ACTIVE" else None,
+                    )
+                )
+        except Exception:
+            pass
 
     def _history_row(
         self,
@@ -2145,6 +2410,20 @@ class AnalysisEngine:
                 "research_state_table": (
                     research_state_table()
                 ),
+                "prototype_match_records": [
+                    build_prototype_score_trace_row(
+                        m["code"],
+                        m,
+                        {"metrics": {}, "version": 0},
+                        m["score"],
+                        m.get("evidence", []),
+                        m.get("quality_multiplier", 1.0),
+                        _MATCH_THRESHOLD_ACTIVE,
+                        research_snapshot.get("baseline_ready", False),
+                        m if m["lifecycle"] == "ACTIVE" else None,
+                    )
+                    for m in research_snapshot["matches"]
+                ],
 
                 # v0.3.4：分析导出同时冻结最近约 5 分钟原始 Sample / 固件 Beat / HRV 细化 Beat。
                 "samples": copy.deepcopy(
@@ -2176,6 +2455,18 @@ class AnalysisEngine:
                     self._protocol_health
                 ),
             }
+
+        # --------------------------------------------------------------
+        # 溯源日志写入（实时流式落盘）。_provenance 为 None 时自动跳过。
+        # --------------------------------------------------------------
+        if self._provenance is not None:
+            self._write_provenance_locked(
+                snapshot=snapshot,
+                history=history,
+                research_snapshot=research_snapshot,
+            )
+
+        return result
 
     def summary_dict(
         self,

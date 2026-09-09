@@ -19,6 +19,7 @@ from .models import (
     SampleFrame,
     UserAnnotation,
 )
+from .provenance import ProvenanceRecorder
 
 
 def _json_safe(value):
@@ -147,6 +148,11 @@ class SessionRecorder:
                 "sample_queue_depth",
                 "sample_queue_high_water",
             ],
+        )
+
+        # 溯源日志：实时新增，和 samples/beats/firmware_metrics/diagnostics 并级。
+        self.provenance = ProvenanceRecorder(
+            str(self.session_dir)
         )
 
     def _open_csv(
@@ -293,6 +299,12 @@ class SessionRecorder:
 
             self._files.clear()
             self._writers.clear()
+
+        # 溯源日志也要关闭。
+        try:
+            self.provenance.close()
+        except Exception:
+            pass
 
 
 def _load_raw_session_samples(

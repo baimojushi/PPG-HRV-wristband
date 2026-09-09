@@ -27,6 +27,7 @@ class WaveformPeakProposal:
     timing_uncertainty_ms: float
     reference_rr_ms: float
     polarity: int
+    prominence: float = 0.0
 
     matched_firmware_t_us: int = 0
     matched_firmware_score: float = 0.0
@@ -526,6 +527,37 @@ class FixedLagWaveformCorrector:
                 + delta
                 * dt_us
             )
+        )
+
+    def _peak_prominence(
+        self,
+        values: np.ndarray,
+        index: int,
+    ) -> float:
+        """
+        只读派生：单个峰的突出度（prominence）。
+
+        定义与 scipy.signal.find_peaks 的 prominences 一致：
+        峰值减去两侧局部最小值中较高的那一个。
+        _select_waveform_peaks 内部用这个值做过 find_peaks 门槛，
+        但没有随 peak 一起返回；这里只读派生，写入 WaveformPeakProposal，
+        不改变任何检测逻辑。
+        """
+        if (
+            index <= 0
+            or index >= values.size - 1
+            or values.size < 3
+        ):
+            return 0.0
+        left_min = float(
+            np.min(values[: index + 1])
+        )
+        right_min = float(
+            np.min(values[index:])
+        )
+        return float(values[index]) - max(
+            left_min,
+            right_min,
         )
 
     def _select_waveform_peaks(
@@ -1326,6 +1358,17 @@ class FixedLagWaveformCorrector:
                 )
             )
 
+            # ------------------------------------------------------------------
+            # 只读派生：峰突出度。
+            # _select_waveform_peaks 内部算过 prominence（用于 find_peaks 门槛），
+            # 但没有随 peak 一起返回。这里在同一极性校正后的 smooth 信号上
+            # 就地再算一次，只写入 WaveformPeakProposal，不改变任何检测逻辑。
+            # ------------------------------------------------------------------
+            peak_prominence = self._peak_prominence(
+                smooth,
+                int(peak_index),
+            )
+
             if (
                 peak_t_us
                 > commit_until_t_us
@@ -1460,6 +1503,9 @@ class FixedLagWaveformCorrector:
                 ),
                 polarity=int(
                     polarity
+                ),
+                prominence=float(
+                    peak_prominence
                 ),
                 matched_firmware_t_us=(
                     matched_t_us

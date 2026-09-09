@@ -230,7 +230,7 @@ class MainWindow(QMainWindow):
         self._spwvd_loading = False
         self._spwvd_result: SPWVDResult | None = None
 
-        self.setWindowTitle("此刻 · HRV 身体节律")
+        self.setWindowTitle("此刻 · 身体节律")
         self.resize(1180, 820)
         self.setMinimumSize(520, 480)
         self.setStyleSheet(APP_STYLE)
@@ -390,7 +390,7 @@ class MainWindow(QMainWindow):
         self.hero_title.setObjectName("heroTitle")
 
         self.hero_compact_summary = QLabel(
-            "HR -- bpm · RMSSD -- ms · SQI --%"
+            "心率 -- 次/分 · 心跳起伏 -- 毫秒 · 当前信号 --%"
         )
         self.hero_compact_summary.setObjectName("heroSub")
         self.hero_compact_summary.setWordWrap(False)
@@ -412,9 +412,9 @@ class MainWindow(QMainWindow):
         self.card_row.setHorizontalSpacing(12)
         self.card_row.setVerticalSpacing(10)
 
-        self.hr_card = MetricCard("心率", "bpm")
-        self.rmssd_card = MetricCard("HRV · RMSSD", "ms")
-        self.conf_card = MetricCard("数据质量 · SQI", "%")
+        self.hr_card = MetricCard("心率", "次/分")
+        self.rmssd_card = MetricCard("心跳起伏", "毫秒")
+        self.conf_card = MetricCard("当前信号", "%")
 
         self._metric_cards = [
             self.hr_card,
@@ -472,11 +472,11 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(
             self.state_scroll,
-            "状态与趋势",
+            "此刻与趋势",
         )
         self.tabs.addTab(
             self.analysis_scroll,
-            "专业分析",
+            "更多细节",
         )
         self.tabs.currentChanged.connect(
             self._on_tab_changed
@@ -484,7 +484,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self.tabs, 1)
 
         self.disclaimer = QLabel(
-            "数据用于自我觉察、艺术疗愈交互与研究记录，不用于医疗诊断。"
+            "用于自我觉察和情绪疗愈互动，不用于医疗诊断。研究来源只说明曾出现过相似节律。"
         )
         self.disclaimer.setObjectName("disclaimerBanner")
         self.disclaimer.setWordWrap(True)
@@ -927,8 +927,8 @@ class MainWindow(QMainWindow):
             y=False,
         )
 
-        self.signal_plot.setLabel("left", "滤波 PPG")
-        self.signal_plot.setLabel("bottom", "最近时间", units="s")
+        self.signal_plot.setLabel("left", "腕带光学波形")
+        self.signal_plot.setLabel("bottom", "最近几秒")
         self.signal_curve = self.signal_plot.plot(
             pen=pg.mkPen("#7F718D", width=2)
         )
@@ -962,7 +962,7 @@ class MainWindow(QMainWindow):
         # 右侧独立 0/1 轴。
         # PPG 仍使用左侧物理幅值轴，心跳识别状态不会因为波形幅度变化而被压扁。
         self.signal_plot.showAxis("right")
-        self.signal_plot.getAxis("right").setLabel("心跳识别", units="0/1")
+        self.signal_plot.getAxis("right").setLabel("找到的心跳")
 
         self.signal_debug_view = pg.ViewBox()
         self.signal_plot.scene().addItem(
@@ -1004,15 +1004,15 @@ class MainWindow(QMainWindow):
         self._sync_signal_debug_view()
 
         self.signal_debug_label = QLabel(
-            "显示：紫=滤波PPG · 绿=8秒整窗纠错心搏 · 红色阴影=人工标注窗口"
+            "紫线是腕带波形，绿线表示软件找到的心跳；这张图只在排查读数异常时需要看。"
         )
         self.signal_debug_label.setObjectName("heroSub")
         self.signal_debug_label.setWordWrap(True)
 
         self.trend_plot = pg.PlotWidget()
         self._style_plot(self.trend_plot)
-        self.trend_plot.setLabel("left", "RMSSD", units="ms")
-        self.trend_plot.setLabel("bottom", "分析窗口", units="min")
+        self.trend_plot.setLabel("left", "心跳起伏", units="毫秒")
+        self.trend_plot.setLabel("bottom", "记录时间", units="分钟")
         self.trend_curve = self.trend_plot.plot(
             pen=pg.mkPen("#7C967D", width=2),
             symbol="o",
@@ -1036,7 +1036,7 @@ class MainWindow(QMainWindow):
         hour_layout.setSpacing(6)
 
         self.hour_title_label = QLabel(
-            "过去一小时 · 节律脉络"
+            "过去一小时 · 身体节律"
         )
         self.hour_title_label.setObjectName(
             "heroTitle"
@@ -1046,7 +1046,7 @@ class MainWindow(QMainWindow):
         )
 
         self.hour_stage_label = QLabel(
-            "会话阶段：正在建立基础观察"
+            "正在建立这次记录的基础观察"
         )
         self.hour_stage_label.setWordWrap(
             True
@@ -1056,7 +1056,7 @@ class MainWindow(QMainWindow):
         )
 
         self.hour_state_label = QLabel(
-            "正在等待足够的稳定数据形成节律观察"
+            "正在等待足够清晰、连续的心跳记录"
         )
         self.hour_state_label.setWordWrap(
             True
@@ -1066,7 +1066,7 @@ class MainWindow(QMainWindow):
         )
 
         self.hour_transition_label = QLabel(
-            "状态持续与转场：等待更多时间"
+            "这段变化还在逐渐形成"
         )
         self.hour_transition_label.setObjectName(
             "narrativeText"
@@ -1076,7 +1076,7 @@ class MainWindow(QMainWindow):
         )
 
         self.hour_sources_label = QLabel(
-            "研究参照：等待原型匹配"
+            "研究依据：等待出现可比较的节律"
         )
         self.hour_sources_label.setObjectName(
             "sourceText"
@@ -1095,7 +1095,7 @@ class MainWindow(QMainWindow):
         )
 
         self.hour_disclaimer_label = QLabel(
-            "仅用于研究形态参照，不判断冥想状态、练习身份或医疗结论。"
+            "研究来源只说明曾有人出现过相似的心跳节律，不代表你的情绪、身份或健康结论。"
         )
         self.hour_disclaimer_label.setObjectName(
             "sourceText"
@@ -1128,7 +1128,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(
             self.hour_experience_frame
         )
-        layout.addWidget(QLabel("HRV 趋势"))
+        layout.addWidget(QLabel("心跳起伏趋势"))
         layout.addWidget(self.trend_plot, 1)
         return page
 
@@ -1166,24 +1166,24 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         summary = QHBoxLayout()
-        self.freq_status = QLabel("频域：等待 5 分钟 NN 窗口")
+        self.freq_status = QLabel("最近5分钟：正在积累连续心跳")
         self.freq_status.setWordWrap(True)
 
-        self.freq_stats_label = QLabel("频带统计：尚无通过质量门的窗口")
+        self.freq_stats_label = QLabel("这次记录：还没有足够清晰的5分钟片段")
         self.freq_stats_label.setWordWrap(True)
         self.freq_stats_label.setObjectName("heroSub")
 
-        self.freq_auto_label = QLabel("自动解析：等待频域窗口。")
+        self.freq_auto_label = QLabel("身体节律：等待更多连续记录。")
         self.freq_auto_label.setWordWrap(True)
         self.freq_auto_label.setObjectName("heroSub")
 
         self.freq_guide_label = QLabel(
-            "说明：VLF=极慢变化背景；LF=低频调节；HF=呼吸相关快波动；中位频率=频谱能量重心。"
+            "读图方法：越靠左越慢，越靠右越快；线越高，说明那种节律越明显。"
         )
         self.freq_guide_label.setWordWrap(True)
         self.freq_guide_label.setObjectName("heroSub")
 
-        self.spwvd_button = QPushButton("更新 SPWVD 时频图")
+        self.spwvd_button = QPushButton("更新5分钟节律变化图")
         self.spwvd_button.clicked.connect(self._start_spwvd)
 
         summary.addWidget(self.freq_status, 1)
@@ -1194,21 +1194,21 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.freq_guide_label)
 
         self.protocol_debug_label = QLabel(
-            "设备诊断：等待协议状态"
+            "设备连接：等待数据"
         )
         self.protocol_debug_label.setWordWrap(True)
         self.protocol_debug_label.setObjectName("heroSub")
 
         self.quality_debug_label = QLabel(
-            "信号质量诊断：正在积累"
+            "信号观察：正在积累"
         )
         self.quality_debug_label.setWordWrap(True)
         self.quality_debug_label.setObjectName("heroSub")
 
-        layout.addWidget(QLabel("设备与信号诊断"))
+        layout.addWidget(QLabel("设备与信号"))
         layout.addWidget(self.protocol_debug_label)
         layout.addWidget(self.quality_debug_label)
-        layout.addWidget(QLabel("PPG + 8秒整窗波形复核"))
+        layout.addWidget(QLabel("心跳波形（排查读数异常时查看）"))
         layout.addWidget(self.signal_plot)
         layout.addWidget(self.signal_debug_label)
 
@@ -1229,14 +1229,14 @@ class MainWindow(QMainWindow):
         research_layout.setSpacing(6)
 
         self.research_machine_label = QLabel(
-            "研究原型状态机：Q0_BUFFERING"
+            "解读进度：正在积累可比较的记录"
         )
         self.research_machine_label.setWordWrap(
             True
         )
 
         self.research_match_label = QLabel(
-            "匹配证据：等待可分析窗口"
+            "研究中的相似记录：等待更多连续数据"
         )
         self.research_match_label.setWordWrap(
             True
@@ -1246,7 +1246,7 @@ class MainWindow(QMainWindow):
         )
 
         self.research_trait_label = QLabel(
-            "长期身份参照：T0_TRAIT_UNKNOWN"
+            "长期变化：需要多天记录后再观察"
         )
         self.research_trait_label.setWordWrap(
             True
@@ -1256,7 +1256,7 @@ class MainWindow(QMainWindow):
         )
 
         self.research_sources_label = QLabel(
-            "来源：等待原型匹配"
+            "研究依据：等待出现可比较的节律"
         )
         self.research_sources_label.setWordWrap(
             True
@@ -1299,7 +1299,7 @@ class MainWindow(QMainWindow):
         )
         self.prototype_score_plot.setLabel(
             "left",
-            "研究原型匹配度",
+            "相似程度",
         )
         self.prototype_score_plot.setLabel(
             "bottom",
@@ -1320,32 +1320,32 @@ class MainWindow(QMainWindow):
         prototype_specs = [
             (
                 "INWARD_QUIET",
-                "内向安静",
+                "向内安静",
                 "#609B7C",
             ),
             (
                 "RESONANCE_0P1",
-                "0.1Hz共振",
+                "缓慢而规律",
                 "#70869B",
             ),
             (
                 "PHASED_VIPASSANA",
-                "分阶段",
+                "分阶段变化",
                 "#7F718D",
             ),
             (
                 "TRAINED_VIPASSANA_SHIFT",
-                "HF/THM重组",
+                "呼吸起伏更明显",
                 "#A18B5B",
             ),
             (
                 "AROUSAL_MEDITATION",
-                "高唤醒",
+                "活跃而有序",
                 "#D67A56",
             ),
             (
                 "SLOW_RECOVERY_VLF",
-                "VLF慢恢复",
+                "缓慢恢复中",
                 "#9B7B62",
             ),
         ]
@@ -1370,23 +1370,23 @@ class MainWindow(QMainWindow):
         self.frequency_trend_plot = pg.PlotWidget()
         self._style_plot(self.frequency_trend_plot)
         self.frequency_trend_plot.setMinimumHeight(240)
-        self.frequency_trend_plot.setLabel("left", "频带功率", units="ms²")
-        self.frequency_trend_plot.setLabel("bottom", "窗口时间", units="min")
+        self.frequency_trend_plot.setLabel("left", "心跳起伏强度")
+        self.frequency_trend_plot.setLabel("bottom", "记录时间", units="分钟")
         self.frequency_trend_plot.showAxis("right")
-        self.frequency_trend_plot.getAxis("right").setLabel("中位频率", units="mHz")
+        self.frequency_trend_plot.getAxis("right").setLabel("整体快慢位置（越高越快）")
         self.frequency_trend_plot.addLegend(offset=(12, 10))
 
         self.vlf_trend_curve = self.frequency_trend_plot.plot(
             pen=pg.mkPen("#9B7B62", width=2.2),
-            name="VLF",
+            name="很慢的背景变化",
         )
         self.lf_trend_curve = self.frequency_trend_plot.plot(
             pen=pg.mkPen("#D67A56", width=2.2),
-            name="LF",
+            name="较慢的起伏",
         )
         self.hf_trend_curve = self.frequency_trend_plot.plot(
             pen=pg.mkPen("#609B7C", width=2.2),
-            name="HF",
+            name="呼吸相关快起伏",
         )
 
         self.frequency_trend_view = pg.ViewBox()
@@ -1395,7 +1395,7 @@ class MainWindow(QMainWindow):
         self.frequency_trend_view.setXLink(self.frequency_trend_plot)
         self.median_freq_curve = pg.PlotCurveItem(
             pen=pg.mkPen("#7F718D", width=2.4, style=Qt.DashLine),
-            name="中位频率",
+            name="整体快慢位置",
         )
         self.frequency_trend_view.addItem(self.median_freq_curve)
         self.frequency_trend_plot.getViewBox().sigResized.connect(
@@ -1404,15 +1404,15 @@ class MainWindow(QMainWindow):
         self._sync_frequency_trend_view()
 
         self.freq_trend_hint = QLabel(
-            "趋势线：棕=VLF，橙=LF，绿=HF，紫虚线=中位频率。"
+            "趋势线：棕色看很慢的背景变化，橙色看较慢起伏，绿色看呼吸相关快起伏，紫色虚线看整体偏慢还是偏快。"
         )
         self.freq_trend_hint.setObjectName("heroSub")
 
         self.psd_plot = pg.PlotWidget()
         self._style_plot(self.psd_plot)
         self.psd_plot.setMinimumHeight(260)
-        self.psd_plot.setLabel("left", "功率谱密度", units="ms²/Hz")
-        self.psd_plot.setLabel("bottom", "频率", units="Hz")
+        self.psd_plot.setLabel("left", "这种节律有多明显")
+        self.psd_plot.setLabel("bottom", "节律快慢（左慢右快）")
         self.psd_curve = self.psd_plot.plot(
             pen=pg.mkPen("#70869B", width=2.4)
         )
@@ -1420,41 +1420,41 @@ class MainWindow(QMainWindow):
         self._add_frequency_zone_regions(self.psd_plot, horizontal=False)
 
         self.psd_band_hint = QLabel(
-            "Welch 色带：灰=VLF慢变背景，橙=交感偏主，金=交感-副交感共调，绿=副交感偏主。"
+            "灰色表示很慢的背景变化，橙色到绿色从较慢起伏过渡到较快、常跟呼吸一起变化的起伏。"
         )
         self.psd_band_hint.setObjectName("heroSub")
 
         self.tf_plot = pg.PlotWidget()
         self._style_plot(self.tf_plot)
         self.tf_plot.setMinimumHeight(280)
-        self.tf_plot.setLabel("left", "频率", units="Hz")
-        self.tf_plot.setLabel("bottom", "窗口时间", units="s")
+        self.tf_plot.setLabel("left", "节律快慢（下慢上快）")
+        self.tf_plot.setLabel("bottom", "过去5分钟", units="秒")
         self.tf_image = pg.ImageItem()
         self.tf_plot.addItem(self.tf_image)
         self.tf_plot.setYRange(0.0, 0.42)
         self._add_frequency_zone_regions(self.tf_plot, horizontal=True)
 
         self.spwvd_hint = QLabel(
-            "SPWVD 色带：橙=交感偏主带，金=两神经共调带，绿=副交感偏主带；亮度表示该频率在该时段更活跃。"
+            "越亮的地方表示那种快慢节奏在那个时刻更明显；颜色只帮助区分快慢范围，不代表某种情绪或神经状态。"
         )
         self.spwvd_hint.setObjectName("heroSub")
         self.spwvd_hint.setWordWrap(True)
 
         layout.addWidget(
             QLabel(
-                "过去一小时 · 研究原型匹配轨迹"
+                "过去一小时 · 研究中相似节律的变化"
             )
         )
         layout.addWidget(
             self.prototype_score_plot
         )
-        layout.addWidget(QLabel("VLF / LF / HF / 中位频率趋势"))
+        layout.addWidget(QLabel("不同快慢的心跳起伏趋势"))
         layout.addWidget(self.frequency_trend_plot)
         layout.addWidget(self.freq_trend_hint)
-        layout.addWidget(QLabel("Welch 功率谱"))
+        layout.addWidget(QLabel("最近5分钟 · 哪些快慢节律更明显"))
         layout.addWidget(self.psd_plot)
         layout.addWidget(self.psd_band_hint)
-        layout.addWidget(QLabel("平滑伪 Wigner-Ville 分布（SPWVD，仅观察时频结构）"))
+        layout.addWidget(QLabel("最近5分钟 · 这些节律什么时候出现"))
         layout.addWidget(self.tf_plot)
         layout.addWidget(self.spwvd_hint)
         return page
@@ -1588,7 +1588,7 @@ class MainWindow(QMainWindow):
     def _open_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "打开历史 PPG CSV",
+            "打开历史记录",
             "",
             "CSV (*.csv)",
         )
@@ -1640,7 +1640,7 @@ class MainWindow(QMainWindow):
             or self._displayed_end_t_us <= 0
         ):
             self._worker_status = (
-                "人工标注未记录：需要连接实时设备并先收到 PPG。"
+                "异常标记未记录：请先连接腕带并等待出现实时波形。"
             )
             return
 
@@ -1764,33 +1764,44 @@ class MainWindow(QMainWindow):
         # --------------------------------------------------------------
         # C端只给连接结果；协议计数完整保留在专业分析页。
         # --------------------------------------------------------------
-        protocol_text = (
-            f"协议 {protocol.mode} · "
-            f"CRC {protocol.crc_errors} · "
-            f"格式 {protocol.format_errors} · "
-            f"序号缺口 {protocol.sample_seq_gaps}"
+        protocol_issue_count = int(
+            protocol.crc_errors
+            + protocol.format_errors
+            + protocol.sample_seq_gaps
         )
+        if self.receiver.running:
+            connection_text = (
+                "数据传输正常"
+                if protocol_issue_count == 0
+                else "正在接收，偶尔有短暂传输波动"
+            )
+        elif self._csv_loading:
+            connection_text = "正在读取历史记录"
+        elif self._worker_status.startswith("历史记录已完成"):
+            connection_text = "历史记录已载入"
+        else:
+            connection_text = "当前未连接腕带"
         self.protocol_debug_label.setText(
-            f"设备诊断：{self._worker_status}  |  {protocol_text}"
+            "设备连接：" + connection_text
         )
 
         if self.receiver.running:
             self.status_label.setText(
-                "信号连接稳定"
+                "腕带已连接，正在连续观察"
             )
         elif self._csv_loading:
             self.status_label.setText(
-                self._worker_status
+                "正在读取历史记录"
             )
         elif self._worker_status.startswith(
             "历史记录已完成"
         ):
             self.status_label.setText(
-                self._worker_status
+                "历史记录已载入"
             )
         else:
             self.status_label.setText(
-                "等待设备或历史记录"
+                "等待连接腕带或打开历史记录"
             )
 
         self.hr_card.value_label.setText(
@@ -1830,75 +1841,35 @@ class MainWindow(QMainWindow):
             if snapshot.time.valid
             else "--"
         )
-        frequency_compact = (
-            "频域有效"
+        five_minute_text = (
+            "5分钟观察清晰"
             if snapshot.frequency.status == "VALID"
             else (
-                "频域受限"
+                "5分钟观察可参考"
                 if snapshot.frequency.status == "LIMITED"
-                else "频域积累中"
+                else "5分钟观察积累中"
             )
         )
         self.hero_compact_summary.setText(
-            f"HR {hr_compact} bpm · "
-            f"RMSSD {rmssd_compact} ms · "
-            f"SQI {sqi_percent}% · "
-            f"{frequency_compact}"
+            f"心率 {hr_compact} 次/分 · "
+            f"心跳起伏 {rmssd_compact} 毫秒 · "
+            f"当前信号 {sqi_percent}% · "
+            f"{five_minute_text}"
         )
-
-        reasons = list(
-            snapshot.quality.reasons
-        )
-
-        if snapshot.time.valid:
-            prefix = (
-                "RMSSD 有效"
-                if snapshot.time.status == "VALID"
-                else "RMSSD 受限可用"
-            )
-
-            if (
-                snapshot.time.rmssd_ci_low_ms > 0
-                and snapshot.time.rmssd_ci_high_ms > 0
-            ):
-                reasons.insert(
-                    0,
-                    f"{prefix} · 近似95%区间 "
-                    f"{snapshot.time.rmssd_ci_low_ms:.1f}–"
-                    f"{snapshot.time.rmssd_ci_high_ms:.1f} ms"
-                )
-            else:
-                reasons.insert(
-                    0,
-                    prefix
-                )
-        elif snapshot.time.validity_reason:
-            reasons.insert(
-                0,
-                "时域已暂停："
-                + snapshot.time.validity_reason
-            )
 
         if (
-            snapshot.timeline_quality.raw_rr_count > 0
-            and snapshot.timeline_quality.fiducial_quality_mean < 0.999
+            snapshot.time.valid
+            and snapshot.signal_quality.sqi >= 0.85
         ):
-            reasons.insert(
-                1 if reasons else 0,
-                "心搏标志点质量 "
-                f"{snapshot.timeline_quality.fiducial_quality_mean * 100:.0f}% · "
-                "不确定度p95 "
-                f"{snapshot.timeline_quality.fiducial_uncertainty_p95_ms:.0f} ms"
-            )
-
-        quality_debug_text = (
-            " · ".join(reasons[:6])
-            if reasons
-            else "正在积累数据质量信息"
-        )
+            quality_detail = "最近一段信号清晰，适合连续观察心跳变化"
+        elif snapshot.signal_quality.sqi >= 0.65:
+            quality_detail = "最近一段信号基本可用，手腕放松时会更稳定"
+        elif snapshot.signal_quality.sqi > 0:
+            quality_detail = "最近一段容易受到动作或佩戴位置影响，稍微调整腕带会更好"
+        else:
+            quality_detail = "正在等待足够清晰的腕带信号"
         self.quality_debug_label.setText(
-            "信号质量诊断："
-            + quality_debug_text
+            "信号观察：" + quality_detail
         )
 
         if (
@@ -2114,36 +2085,20 @@ class MainWindow(QMainWindow):
 
         if last_annotation_age_s >= 0:
             self.annotation_hint.setText(
-                "最近人工标注 "
-                f"{last_annotation_age_s:.1f}s 前 · "
-                "红色区域=标注前3秒"
+                "最近一次异常标记在 "
+                f"{last_annotation_age_s:.1f} 秒前；"
+                "红色区域是标记前的几秒。"
             )
         else:
             self.annotation_hint.setText(
-                "屏幕显示约7.25秒成熟波形；看到问题后3秒内按F8。"
+                "如果你看到波形明显不对，可以在3秒内按F8留下标记。"
             )
 
         self.signal_debug_label.setText(
-            "显示：紫=PPG · 绿=8秒整窗纠错心搏 · 红色阴影=人工标注窗口  |  "
-            f"屏幕滞后 {display_lag_s:.2f}s · "
-            f"窗口 {duration:.1f}s · "
-            f"正式Beat {accepted_count}（≈{accepted_bpm:.0f} bpm） · "
-            f"固件Beat {firmware_count} · "
-            f"波形补搏 {correction_inserted} · "
-            f"匹配固件 {correction_matched} · "
-            f"波形RR {correction_rr:.0f} ms · "
-            f"自相关 {correction_autocorr:.2f} · "
-            f"Firmware Candidate {candidate_count} · "
-            f"固件Rescue {rescue_count} · "
-            f"人工标注 {annotation_count} · "
-            f"近窗 {recent_annotation_count} · "
-            f"HR {accepted_hr:.0f} bpm · "
-            f"波顶质量 {fiducial_quality * 100:.0f}% · "
-            f"不确定度p95 {fiducial_uncertainty:.0f} ms · "
-            f"固件↔波顶偏移p95 {fiducial_shift:.0f} ms · "
-            f"采样 {effective_hz:.1f} Hz · "
-            f"p95抖动 {timing_p95:.1f} ms · "
-            f"超时 {timing_overrun * 100:.1f}%"
+            f"近 {duration:.1f} 秒找到 {accepted_count} 次心跳，"
+            f"约 {accepted_bpm:.0f} 次/分。"
+            f"设备原始识别 {firmware_count} 次，软件根据波形补充 {correction_inserted} 次。"
+            "这一区域只用于排查漏算或多算，日常使用无需关注。"
         )
 
         # --------------------------------------------------------------
@@ -2226,16 +2181,17 @@ class MainWindow(QMainWindow):
             "next_milestone_minutes"
         )
 
+        coverage_text = (
+            f"其中约 {valid_coverage * 100:.0f}% 的时间可以连续观察"
+        )
         if next_minutes is None:
             self.hour_stage_label.setText(
-                f"{stage_name}，已经记录 {elapsed_minutes:.1f} 分钟，"
-                f"有效覆盖 {valid_coverage * 100:.0f}%。"
+                f"{stage_name}。已经记录 {elapsed_minutes:.1f} 分钟，{coverage_text}。"
             )
         else:
             self.hour_stage_label.setText(
-                f"正在{stage_name}，已经记录 {elapsed_minutes:.1f} 分钟，"
-                f"有效覆盖 {valid_coverage * 100:.0f}%，"
-                f"大约再过 {float(next_minutes):.1f} 分钟进入下一阶段。"
+                f"正在{stage_name}。已经记录 {elapsed_minutes:.1f} 分钟，{coverage_text}；"
+                f"再积累约 {float(next_minutes):.1f} 分钟，会得到更完整的观察。"
             )
 
         primary = research_state.get(
@@ -2250,31 +2206,28 @@ class MainWindow(QMainWindow):
 
         if quality_state == "Q1_DATA_UNSTABLE":
             self.hour_state_label.setText(
-                "这段数据还不够稳定，先继续积累；保持手腕稳定和腕带贴合，会更容易看到连续的节律变化。"
+                "这段记录还不够稳定。让手腕放松、腕带贴合一些，连续的身体节律会更容易看清。"
             )
         elif quality_state == "Q0_BUFFERING":
             self.hour_state_label.setText(
-                "正在积累第一段可解释的频域窗口，暂时不做研究形态类比。"
+                "还在积累第一段足够长的连续记录，先不急着解释身体节律。"
             )
         elif quality_state == "Q2_BASELINE_BUILDING":
             self.hour_state_label.setText(
-                "频域已经可用，正在建立你这一段会话自己的近期稳定基线。"
+                "已经能看见连续的心跳变化，正在了解你这次记录里的近期常态。"
             )
-        elif isinstance(
-            primary,
-            dict,
-        ):
+        elif isinstance(primary, dict):
             lifecycle_text = {
-                "CANDIDATE": "这个模式正在浮现。",
-                "ACTIVE": "这个模式已经持续了一段时间。",
-                "EXITING": "这个模式正在淡出。",
+                "CANDIDATE": "这种变化正在出现。",
+                "ACTIVE": "这种变化已经持续了一会儿。",
+                "EXITING": "这种变化正在慢慢淡下去。",
             }.get(
                 str(primary.get("lifecycle", "")),
                 "",
             )
             self.hour_state_label.setText(
-                f"{primary.get('name', '研究相似模式')}："
-                f"{primary.get('user_narrative', primary.get('test_state', ''))}"
+                f"{primary.get('name', '相似节律')}："
+                f"{primary.get('user_narrative', '')}"
                 + (
                     f" {lifecycle_text}"
                     if lifecycle_text
@@ -2283,36 +2236,17 @@ class MainWindow(QMainWindow):
             )
         else:
             self.hour_state_label.setText(
-                "这一段更接近稳定中性，暂时没有形成持续的高匹配研究模式。"
+                "这一段没有出现特别突出的节律组合，先把它当作较平缓的变化继续观察。"
             )
 
         hour_summary = str(
             hour_experience.get(
                 "hour_summary",
-                "这段记录还在形成节律脉络。",
+                "这段记录里的变化还在逐渐形成。",
             )
-        )
-        transition_count = int(
-            hour_experience.get(
-                "transition_count",
-                0,
-            )
-        )
-        longest_minutes = float(
-            hour_experience.get(
-                "longest_research_state_minutes",
-                0.0,
-            )
-        )
-        transition_detail = (
-            f" 共记录到 {transition_count} 次明显转场，"
-            f"最长连续段约 {longest_minutes:.1f} 分钟。"
-            if transition_count > 0
-            else ""
         )
         self.hour_transition_label.setText(
             hour_summary
-            + transition_detail
         )
 
         hour_sources_html = str(
@@ -2321,23 +2255,29 @@ class MainWindow(QMainWindow):
                 "",
             )
         )
-
         self.hour_sources_label.setText(
             (
-                "研究参照："
+                "研究依据："
                 + hour_sources_html
             )
             if hour_sources_html
-            else "研究参照：当前还没有形成可持续溯源的研究相似模式。"
+            else "研究依据：目前还没有出现足够清晰、可与研究记录比较的节律。"
         )
 
-        self.research_machine_label.setText(
-            "研究原型状态机："
-            f"{research_state.get('state_machine_state', 'Q0_BUFFERING')} · "
-            f"质量层 {research_state.get('quality_state', 'Q0_BUFFERING')} · "
-            f"个人基线 {'已建立' if research_state.get('baseline_ready') else '建立中'} · "
-            f"参照窗口 {int(research_state.get('baseline_reference_window_count', 0))}"
+        baseline_count = int(
+            research_state.get(
+                "baseline_reference_window_count",
+                0,
+            )
         )
+        if research_state.get("baseline_ready"):
+            self.research_machine_label.setText(
+                f"解读进度：已经了解了你这次记录里的近期常态，参考了 {baseline_count} 段较稳定的记录。"
+            )
+        else:
+            self.research_machine_label.setText(
+                f"解读进度：正在了解你这次记录里的近期常态，目前参考了 {baseline_count} 段记录。"
+            )
 
         visible_matches = [
             item
@@ -2346,69 +2286,62 @@ class MainWindow(QMainWindow):
                 [],
             )
             if (
-                item.get(
-                    "lifecycle"
-                )
+                item.get("lifecycle")
                 in {
                     "ACTIVE",
                     "CANDIDATE",
                     "EXITING",
                 }
-                or float(
-                    item.get(
-                        "score",
-                        0.0,
-                    )
-                )
-                >= 0.45
+                or float(item.get("score", 0.0)) >= 0.45
             )
         ][:3]
 
         if visible_matches:
-            active_or_candidate_count = sum(
-                1
-                for item in visible_matches
-                if item.get("lifecycle")
-                in {"ACTIVE", "CANDIDATE"}
-            )
-            match_lines = [
-                f"当前 {active_or_candidate_count} 个原型处于候选或持续状态；以下保留工程匹配度与证据。"
-            ]
+            match_lines = ["研究中出现过的相似节律："]
             for item in visible_matches:
-                evidence = " · ".join(
-                    item.get(
-                        "evidence",
-                        [],
-                    )[:4]
-                )
-                match_lines.append(
-                    f"{item.get('code')} "
-                    f"{float(item.get('score', 0.0)):.2f} "
-                    f"[{item.get('lifecycle')}]"
-                    + (
-                        f" | {evidence}"
-                        if evidence
-                        else ""
+                score = float(item.get("score", 0.0))
+                similarity = (
+                    "相似度较高"
+                    if score >= 0.80
+                    else (
+                        "有较明显相似"
+                        if score >= 0.65
+                        else "有一些相似"
                     )
                 )
-            self.research_match_label.setText(
-                "<br/>".join(
-                    match_lines
+                lifecycle = {
+                    "CANDIDATE": "正在出现",
+                    "ACTIVE": "已经持续一会儿",
+                    "EXITING": "正在淡下去",
+                }.get(str(item.get("lifecycle", "")), "")
+                suffix = (
+                    f"，{lifecycle}"
+                    if lifecycle
+                    else ""
                 )
+                match_lines.append(
+                    f"{item.get('name', '相似节律')}：{similarity}{suffix}。"
+                )
+            self.research_match_label.setText(
+                "<br/>".join(match_lines)
             )
         else:
             self.research_match_label.setText(
-                "匹配证据：当前没有达到候选门的研究原型"
+                "研究中的相似记录：这段暂时没有落入已收录的研究情形，继续观察即可。"
             )
 
         trait = hour_experience.get(
             "trait_reference_state",
             {},
         )
+        trait_reason = str(
+            trait.get(
+                "reason",
+                "目前记录时间还不足以观察长期变化。",
+            )
+        )
         self.research_trait_label.setText(
-            "长期身份参照："
-            f"{trait.get('code', 'T0_TRAIT_UNKNOWN')} · "
-            f"{trait.get('reason', '')}"
+            "长期变化：" + trait_reason
         )
 
         research_sources_html = str(
@@ -2419,11 +2352,11 @@ class MainWindow(QMainWindow):
         )
         self.research_sources_label.setText(
             (
-                "来源事实："
+                "研究依据："
                 + research_sources_html
             )
             if research_sources_html
-            else "来源事实：等待原型匹配"
+            else "研究依据：等待出现可与研究记录比较的节律"
         )
 
         research_timeline = hour_experience.get(
@@ -2493,39 +2426,32 @@ class MainWindow(QMainWindow):
         )
 
         if freq.valid:
-            frequency_label = (
-                "频域有效"
-                if freq.status == "VALID"
-                else "频域受限可用"
+            agreement = min(
+                float(freq.spectral_agreement),
+                float(freq.band_power_agreement),
             )
+            if agreement >= 0.85:
+                agreement_text = "两种计算方式看到的快慢节律很接近，结果比较稳定。"
+            elif agreement >= 0.65:
+                agreement_text = "两种计算方式大体一致，细节仍有一些差异。"
+            else:
+                agreement_text = "两种计算方式看到的细节差异较大，这5分钟只适合粗略参考。"
 
+            window_text = (
+                "这5分钟可以清楚观察快慢节律。"
+                if freq.status == "VALID"
+                else "这5分钟可以粗略观察快慢节律。"
+            )
             self.freq_status.setText(
-                f"{frequency_label}  |  "
-                f"Total {freq.total_power_ms2:.1f} ms²  ·  "
-                f"VLF {freq.vlf_ms2:.1f} ms²  ·  "
-                f"LF {freq.lf_ms2:.1f} ms²  ·  "
-                f"HF {freq.hf_ms2:.1f} ms²  ·  "
-                f"中位频率 {freq.median_frequency_hz * 1000.0:.1f} mHz  ·  "
-                f"LFnu {freq.lf_nu:.1f}%  ·  "
-                f"HFnu {freq.hf_nu:.1f}%  ·  "
-                f"LF/HF {freq.lf_hf:.2f}  ·  "
-                f"稳健Welch/Lomb {freq.spectral_agreement * 100:.0f}%  ·  "
-                f"原始逐点 {freq.spectral_agreement_raw * 100:.0f}%  ·  "
-                f"频带一致 {freq.band_power_agreement * 100:.0f}%  ·  "
-                f"插值一致 {freq.interpolation_agreement * 100:.0f}%"
+                window_text + " " + agreement_text
             )
             self.psd_curve.setData(
                 freq.freqs_hz,
                 freq.psd_ms2_hz,
             )
         else:
-            reason = (
-                freq.validity_reason
-                or "频域质量门未通过"
-            )
             self.freq_status.setText(
-                "频域暂不输出  |  "
-                + reason
+                "这5分钟还不适合解读快慢节律。继续保持手腕放松和腕带贴合，数据足够连续后会自动更新。"
             )
             self.psd_curve.setData([], [])
 
@@ -2614,35 +2540,13 @@ class MainWindow(QMainWindow):
         )
 
         if valid_count > 0:
-            metrics = statistics["metrics"]
-
-            def stat_mean(name: str) -> float:
-                value = metrics[name]["mean"]
-                return (
-                    float(value)
-                    if value is not None
-                    else 0.0
-                )
-
-            median_freq = metrics['median_frequency_hz']['median']
-            median_freq_text = (
-                f"{median_freq * 1000.0:.1f} mHz"
-                if median_freq is not None
-                else "--"
-            )
-
             self.freq_stats_label.setText(
-                f"可计算频域窗口 {valid_count}/{total_count} "
-                f"（VALID {strict_count} · LIMITED {limited_count}）  |  "
-                f"VLF均值 {stat_mean('vlf_ms2'):.1f} ms²  ·  "
-                f"LF均值 {stat_mean('lf_ms2'):.1f} ms²  ·  "
-                f"HF均值 {stat_mean('hf_ms2'):.1f} ms²  ·  "
-                f"中位频率中位数 {median_freq_text}  ·  "
-                f"LF/HF中位数 {metrics['lf_hf']['median']:.2f}"
+                f"这次记录里有 {valid_count}/{total_count} 段5分钟数据可以观察；"
+                f"其中 {strict_count} 段较清晰，{limited_count} 段只适合粗略参考。"
             )
         else:
             self.freq_stats_label.setText(
-                f"频带统计：0/{total_count} 个窗口通过质量门"
+                f"这次记录已有 {total_count} 段5分钟数据，暂时还没有一段足够清晰。"
             )
 
         # --------------------------------------------------------------
@@ -2654,7 +2558,7 @@ class MainWindow(QMainWindow):
         self.spwvd_button.setText(
             "正在计算…"
             if self._spwvd_loading
-            else "更新 SPWVD 时频图"
+            else "更新5分钟节律变化图"
         )
 
         if self._spwvd_result is not None:
@@ -2694,16 +2598,10 @@ class MainWindow(QMainWindow):
                         )
                     )
 
-                self._worker_status = (
-                    result.message
-                    or "SPWVD 已更新"
-                )
+                self._worker_status = "5分钟节律变化图已更新"
             else:
                 self.tf_image.clear()
-                self._worker_status = (
-                    result.message
-                    or "SPWVD 数据不足"
-                )
+                self._worker_status = "当前数据还不足以生成5分钟节律变化图"
 
     def _close_recorder(self) -> None:
         if self.recorder:

@@ -32,8 +32,8 @@ class LiteratureSource:
 
     def ui_fact_line(self) -> str:
         return (
-            f'{escape(self.study_detail)}；'
-            f'{escape(self.finding_detail)}。 '
+            f'研究对象：{escape(self.study_detail)}；'
+            f'研究中观察到：{escape(self.finding_detail)}。 '
             f'{self.ui_reference()}'
         )
 
@@ -53,8 +53,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "10名有Zen禅修经验者与10名无禅修经验对照，比较内向注意冥想与正常休息"
         ),
         finding_detail=(
-            "经验组冥想时LF/HF和LF标准化功率下降、HF标准化功率上升，"
-            "并观察到较规则的心率振荡"
+            "有经验组冥想时，较快、常跟呼吸一起变化的心率起伏增强，"
+            "较慢起伏所占的比重下降，并观察到更规则的心率起伏"
         ),
     ),
     LiteratureSource(
@@ -71,8 +71,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "10名有经验冥想者（4女6男，29–55岁，平均42岁）依次完成放松反应、火呼吸和分段呼吸"
         ),
         finding_detail=(
-            "放松反应与分段呼吸出现约0.05–0.10 Hz高振幅心率振荡且心率-呼吸相干增强；"
-            "火呼吸则平均心率升高、相干下降"
+            "放松反应与分段呼吸时，出现约每10–20秒一次的较强心率起伏，"
+            "心率与呼吸也更同步；火呼吸时平均心率升高，同步程度下降"
         ),
     ),
     LiteratureSource(
@@ -92,8 +92,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "36名首次参加10天S. N. Goenka传统Vipassana密集课程的参与者（16男20女，平均43.8岁）在训练前后各比较5分钟静息与5分钟冥想"
         ),
         finding_detail=(
-            "训练前冥想主要表现为lnHF增加；训练后冥想出现HF n.u.增加、"
-            "Traube–Hering–Mayer低频成分下降"
+            "训练前冥想时，较快、常跟呼吸一起变化的心率起伏增强；"
+            "训练后这类起伏仍增强，同时一部分约每10–17秒一次的较慢起伏减弱"
         ),
     ),
     LiteratureSource(
@@ -110,12 +110,12 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
         journal="International Journal of Psychophysiology",
         url="https://pubmed.ncbi.nlm.nih.gov/23892096/",
         study_detail=(
-            "10名男性Vipassana经验者（20–61岁，至少2年练习，平均7.5年、每周约15小时）完成30分钟结构化冥想；HRV分析因伪迹排除3人："
+            "10名男性Vipassana经验者（20–61岁，至少2年练习，平均7.5年、每周约15小时）完成30分钟结构化冥想；因信号干扰排除3人："
             "Anapana 10分钟、Vipassana 15分钟、Metta 5分钟"
         ),
         finding_detail=(
-            "LF和HF在Anapana阶段下降、Vipassana阶段上升、Metta阶段再次下降；"
-            "Vipassana阶段LF/HF的增加幅度更明显"
+            "前10分钟整体心率起伏减弱，中间15分钟较慢和较快的起伏一起增强，"
+            "最后5分钟再次回落；中间阶段的节律变化最明显"
         ),
     ),
     LiteratureSource(
@@ -132,8 +132,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "10名长期Theravada练习者（2女，平均41.4岁、8年经验，泰国Yannawa Temple）与9名长期Vajrayana练习者（1女，平均47.5岁、7.4年经验，尼泊尔Shechen Monastery）"
         ),
         finding_detail=(
-            "Theravada Vipassana相对静息HF增加且LF/HF下降；"
-            "Vajrayana的Deity与Rig-pa练习则出现HF下降的不同模式"
+            "Theravada Vipassana时，较快、常跟呼吸一起变化的起伏增强，"
+            "较慢与较快起伏的相对比例下降；Vajrayana的两种练习则出现较快起伏减弱"
         ),
     ),
     LiteratureSource(
@@ -150,7 +150,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "19名Soto-Zen坐禅练习者（7女12男，平均43.8岁，练习经验2个月–20年），其中4人同步记录呼吸"
         ),
         finding_detail=(
-            "研究同时使用频域分析和连续小波变换，观察到呼吸性心律调制随练习经验水平改变"
+            "研究同时比较不同快慢的心率起伏和它们随时间的变化，"
+            "观察到呼吸带来的心率起伏会随练习经验不同而变化"
         ),
     ),
     LiteratureSource(
@@ -167,7 +168,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "19名健康年轻受试者先静息10分钟，再完成20分钟Stroop任务，并继续静息恢复120分钟"
         ),
         finding_detail=(
-            "任务后HF和LF/HF很快回到基线，而VLF在恢复期持续低于静息水平，呈现更慢的恢复轨迹"
+            "任务结束后，较快、常跟呼吸一起变化的起伏和快慢起伏比例很快回到休息水平，"
+            "最慢的背景变化恢复得更慢"
         ),
     ),
     LiteratureSource(
@@ -181,8 +183,8 @@ LITERATURE_SOURCES: tuple[LiteratureSource, ...] = (
             "Heart Chan研究包含两次90分钟课程实验：第一组45名无冥想经验参与者；第二组27名长期练习者（5男22女、20–68岁），平均练习9年（1–27年）"
         ),
         finding_detail=(
-            "研究以课前/课后和一个月重复测量观察HR、HRV与频域指标，"
-            "为小时级课程和经验层差异提供纵向研究参照"
+            "研究在课程前后及一个月后重复观察心率与心跳起伏，"
+            "用来比较短期课程前后与长期练习者的变化轨迹"
         ),
     ),
 )
