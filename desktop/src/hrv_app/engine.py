@@ -156,6 +156,7 @@ class AnalysisEngine:
         # 检测器/波的采样间隔跟踪——配合 `metric_update_seconds`(20s) 对总间隔做节流。
         self._last_detector_log_us = 0
         self._last_signal_input_log_us = -1
+        self._last_metric_us = None
         self._detector_state_interval_s = 5.0
         # proposal 的最近一次记录，用作 beat_provenance 里上一心搏的 prior 参考。
         self._last_proposal_ref_t_us = 0
