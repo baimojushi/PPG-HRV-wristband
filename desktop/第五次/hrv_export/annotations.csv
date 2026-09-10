@@ -1,0 +1,1 @@
+﻿annotation_id,device_t_us,latest_sample_t_us,latest_sample_seq,label_start_us,label_end_us,host_monotonic_ns,label_type,note,source,ui_data_lag_ms,hr_bpm,expected_rr_ms,winner_score,timing_quality,timing_uncertainty_ms,fiducial_shift_ms,candidate_count_12s,rescue_count_12s,phase_recovery_count_12s,sqi,effective_sample_rate_hz,timing_jitter_p95_ms
