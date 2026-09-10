@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from .config import AnalysisConfig
+from .interval_quality import evaluate_interval_quality
 from .models import (
     INVALID,
     LIMITED,
@@ -93,6 +94,13 @@ def compute_time_domain(
             status=INVALID,
             validity_reason="RR 数据不足",
         )
+
+    interval_quality = evaluate_interval_quality(record_window)
+    transport_status = (
+        signal_quality.transport_status
+        if getattr(signal_quality, "transport_score", 0.0) > 0
+        else signal_quality.status
+    )
 
     start_us = record_window[0].t_us
     end_us = record_window[-1].t_us
@@ -435,14 +443,13 @@ def compute_time_domain(
             f"{cfg.fiducial_limited_max_unstable_ratio * 100:.1f}%"
         )
 
-    if (
-        signal_quality.sqi
-        < cfg.time_min_sqi
-    ):
-        hard_reasons.append(
-            f"SQI {signal_quality.sqi * 100:.0f}% < "
-            f"{cfg.time_min_sqi * 100:.0f}%"
-        )
+    # v0.4.1: global contact SQI no longer hard-gates RR. A clipped trough can
+    # coexist with an accurately timed systolic peak. Transport/timebase and
+    # beat-level consensus are the authoritative interval evidence.
+    if transport_status == INVALID:
+        hard_reasons.append("采样传输时基不可用")
+
+    hard_reasons.extend(interval_quality.hard_reasons(cfg))
 
     if (
         signal_quality.timing_jitter_p95_ms
@@ -566,6 +573,11 @@ def compute_time_domain(
             "不稳定标志点 "
             f"{fiducial_unstable_ratio * 100:.1f}%"
         )
+
+    strict_reasons.extend(interval_quality.strict_reasons(cfg))
+
+    if transport_status == LIMITED:
+        strict_reasons.append("采样传输时基仅可参考")
 
     if (
         signal_quality.timing_jitter_p95_ms

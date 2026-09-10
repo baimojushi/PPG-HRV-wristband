@@ -445,34 +445,31 @@ def _decimate_rows(
 def _valid_research_row(
     row: dict,
 ) -> bool:
+    """Whether the row has analyzable HRV evidence.
+
+    v0.4.1 intentionally stops using the clip-heavy legacy SQI as a second
+    hidden gate. Time/frequency statuses already encode transport integrity and
+    authoritative beat-timeline quality. Sensor-contact quality remains useful
+    context, but trough clipping alone must not erase otherwise stable intervals.
+    """
+    transport_status = str(
+        row.get("transport_status", "") or ""
+    )
+    transport_score = float(
+        row.get("transport_score", 0.0) or 0.0
+    )
+    # Legacy/history rows created before v0.4.1 have no separate transport
+    # evidence. Keep them backward compatible; once a transport score exists,
+    # its status is authoritative.
+    transport_ok = (
+        transport_status != "INVALID"
+        if transport_score > 0.0
+        else True
+    )
     return bool(
-        row.get(
-            "frequency_status"
-        )
-        in {
-            "VALID",
-            "LIMITED",
-        }
-        and row.get(
-            "time_status"
-        )
-        in {
-            "VALID",
-            "LIMITED",
-        }
-        and _finite(
-            row.get(
-                "sqi",
-                np.nan,
-            )
-        )
-        and float(
-            row.get(
-                "sqi",
-                0.0,
-            )
-        )
-        >= 0.55
+        row.get("frequency_status") in {"VALID", "LIMITED"}
+        and row.get("time_status") in {"VALID", "LIMITED"}
+        and transport_ok
     )
 
 
@@ -1681,6 +1678,27 @@ def _current_row_from_snapshot(
         ),
         "sqi": float(
             snapshot.signal_quality.sqi
+        ),
+        "transport_score": float(
+            getattr(snapshot.signal_quality, "transport_score", 0.0) or 0.0
+        ),
+        "transport_status": str(
+            getattr(snapshot.signal_quality, "transport_status", "") or ""
+        ),
+        "contact_score": float(
+            getattr(snapshot.signal_quality, "contact_score", 0.0) or 0.0
+        ),
+        "contact_status": str(
+            getattr(snapshot.signal_quality, "contact_status", "") or ""
+        ),
+        "dual_detector_ratio": float(
+            getattr(frequency, "dual_detector_ratio", 0.0) or 0.0
+        ),
+        "single_detector_ratio": float(
+            getattr(frequency, "single_detector_ratio", 0.0) or 0.0
+        ),
+        "firmware_unmatched_ratio": float(
+            getattr(frequency, "firmware_unmatched_ratio", 0.0) or 0.0
         ),
         "overall_status": (
             snapshot.quality.status

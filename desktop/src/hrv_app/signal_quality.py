@@ -22,14 +22,12 @@ def evaluate_signal_quality(
     """
     计算透明、可解释的数据质量指数 SQI。
 
-    SQI 采用明确权重的质量分量，不再称作“置信概率”：
-    - 削底/饱和：45%
-    - 佩戴：20%
-    - 采样时基：15%
-    - 样本序号连续性：10%
-    - 协议完整性：10%
+    v0.4.1 将质量拆成两层：
+    - contact_score：传感器接触 / ADC 动态范围；
+    - transport_score：设备时间戳、样本连续性、协议完整性。
 
-    任一分量都可以在 summary 中追溯，不存在 V0.2 的 1e-6 几何平均和 +0.15 截断。
+    `sqi` 继续保留旧 UI 的综合显示语义，但正式 HRV 不再因为“波谷削底”
+    直接判无效；HRV gate 使用 transport + BeatTimelineQuality。
     """
     cfg = config or AnalysisConfig()
     protocol = protocol_health or ProtocolHealth()
@@ -173,12 +171,40 @@ def evaluate_signal_quality(
             0.79,
         )
 
-    if sqi >= 0.80:
-        status = VALID
-    elif sqi >= 0.65:
-        status = LIMITED
-    else:
-        status = INVALID
+    contact_score = float(np.clip(
+        0.65 * clipping_score + 0.35 * wear_score,
+        0.0,
+        1.0,
+    ))
+    transport_score = float(np.clip(
+        0.45 * timing_score + 0.30 * sequence_score + 0.25 * protocol_score,
+        0.0,
+        1.0,
+    ))
+
+    # Effective-rate / long-overrun are transport hard evidence and must not be
+    # diluted by otherwise good packet counts.
+    if (
+        effective_rate_error > cfg.sqi_effective_rate_fail_ratio
+        or timing_overrun_ratio > cfg.sqi_timing_overrun_fail_ratio
+    ):
+        transport_score = min(transport_score, 0.64)
+    elif (
+        effective_rate_error > cfg.sqi_effective_rate_warn_ratio
+        or timing_overrun_ratio > cfg.sqi_timing_overrun_warn_ratio
+    ):
+        transport_score = min(transport_score, 0.79)
+
+    def _status(value: float) -> str:
+        if value >= 0.80:
+            return VALID
+        if value >= 0.65:
+            return LIMITED
+        return INVALID
+
+    contact_status = _status(contact_score)
+    transport_status = _status(transport_score)
+    status = _status(sqi)
 
     reasons: list[str] = []
     if wear_ratio < 0.90:
@@ -233,5 +259,9 @@ def evaluate_signal_quality(
         timing_overrun_ratio=timing_overrun_ratio,
         protocol_error_ratio=protocol_error_ratio,
         protocol_seq_gaps=protocol.sample_seq_gaps,
+        transport_score=transport_score,
+        transport_status=transport_status,
+        contact_score=contact_score,
+        contact_status=contact_status,
         reasons=reasons,
     )

@@ -187,7 +187,7 @@ def test_formal_timeline_exists_even_when_firmware_reports_no_beats():
 
     assert all(
         beat.correction_method
-        == "fixed_lag_waveform"
+        == "interval_core_consensus"
         for beat in formal
     )
 

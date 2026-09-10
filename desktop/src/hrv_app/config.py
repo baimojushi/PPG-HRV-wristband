@@ -3,7 +3,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """统一保存分析常量；v0.3.4 的 PPG 检测算法完整位于项目内 zeezPPG。"""
+    """统一保存分析常量。
+
+v0.4.1 正式 HRV Beat 由桌面 interval core 产生；固件 zeezPPG Beat
+保留为实时/诊断证据。
+"""
 
     sample_rate_hz: float = 125.0
 
@@ -65,6 +69,58 @@ class AnalysisConfig:
     # 找不到匹配也允许波形复核器独立补搏。
     waveform_firmware_match_rr_ratio: float = 0.45
     waveform_firmware_match_max_ms: float = 380.0
+
+    # ------------------------------------------------------------------
+    # v0.4.1 interval core：异构波形检测 + 共识 + fixed-lag sequence resolver
+    # ------------------------------------------------------------------
+    # Elgendi-style detector。
+    interval_elgendi_peak_window_s: float = 0.111
+    interval_elgendi_beat_window_s: float = 0.667
+    interval_elgendi_offset: float = 0.020
+
+    # Multi-scale persistence detector。它不是 MSPTDfast 的代码复制，而是保留
+    # “真实收缩峰在多个时间尺度都应保持局部极大”的设计原则。
+    interval_multiscale_min_scale_s: float = 0.016
+    interval_multiscale_max_scale_s: float = 0.180
+    interval_multiscale_base_prominence_ratio: float = 0.045
+    interval_multiscale_min_persistence: float = 0.62
+    interval_detector_min_delay_s: float = 0.300
+
+    # 两个独立波形检测器在这个时间窗内视为同一脉搏。125 Hz 下 64 ms=8 样本。
+    interval_consensus_tolerance_ms: float = 64.0
+    interval_local_refine_radius_ms: float = 48.0
+
+    # 单检测器峰默认不直接等于坏数据；只有在自身形态 + 邻域序列证据充分时才提交。
+    # sequence resolver 从不创建预测时间点，只能从真实波形候选中选择。
+    interval_single_detector_min_score: float = 0.68
+    interval_sequence_rescue_min_score: float = 0.68
+    interval_sequence_min_rr_ms: float = 300.0
+    interval_sequence_long_gap_ratio: float = 1.55
+    interval_single_detector_uncertainty_ms: float = 28.0
+    interval_max_timing_uncertainty_ms: float = 60.0
+
+    # 稳定 RR 先验只从“双检测器一致且窗口内部自洽”的波形间期更新。
+    # 低质量窗口保留上一稳定先验，不允许一轮坏峰把后续搜索尺度拖跑。
+    interval_reference_min_dual_ratio: float = 0.75
+    interval_reference_min_dual_intervals: int = 3
+    interval_reference_max_robust_cv: float = 0.20
+    interval_reference_max_jump_ratio: float = 0.30
+    interval_reference_strong_dual_ratio: float = 0.90
+    interval_reference_strong_max_robust_cv: float = 0.16
+    interval_reference_update_gain: float = 0.25
+
+    # BeatTimelineQuality 的正式门：这些证据直接来自两条独立波形检测链，
+    # 不再把 firmware 是否匹配当作 HRV 真值。
+    interval_strict_min_dual_detector_ratio: float = 0.82
+    interval_limited_min_dual_detector_ratio: float = 0.60
+    interval_strict_max_single_detector_ratio: float = 0.18
+    interval_limited_max_single_detector_ratio: float = 0.35
+    interval_strict_max_detector_spread_p95_ms: float = 28.0
+    interval_limited_max_detector_spread_p95_ms: float = 56.0
+    interval_strict_max_sequence_rescue_ratio: float = 0.08
+    interval_limited_max_sequence_rescue_ratio: float = 0.18
+    interval_strict_max_local_clip_ratio: float = 0.02
+    interval_limited_max_local_clip_ratio: float = 0.08
 
     # 原项目时域窗口继续使用最近 60 个 RR，至少 40 个可直接使用的 NN。
     time_window_rr_count: int = 60
@@ -138,15 +194,14 @@ class AnalysisConfig:
     frequency_limited_max_unresolved_ratio: float = 0.05
     frequency_limited_max_consecutive_artifacts: int = 2
 
-    # v0.4.0：把“桌面端重建了多少心搏”纳入 5 分钟频域质量门。
-    # inserted/recovered 是重建负担；timing_shift_delta_p95_ms 表示
-    # 相邻心搏的时间修正是否剧烈跳变。恒定整体偏移不会被这一项误杀。
-    frequency_strict_max_waveform_inserted_ratio: float = 0.08
-    frequency_limited_max_waveform_inserted_ratio: float = 0.15
-    frequency_strict_max_timing_recovered_ratio: float = 0.12
-    frequency_limited_max_timing_recovered_ratio: float = 0.25
-    frequency_strict_max_timing_shift_delta_p95_ms: float = 80.0
-    frequency_limited_max_timing_shift_delta_p95_ms: float = 180.0
+    # v0.4.1：以下三个旧字段只保留导出兼容，不再进入频域 hard gate。
+    # 旧版把“firmware 未匹配”误当成桌面波形补搏，导致参考源倒置。
+    frequency_strict_max_waveform_inserted_ratio: float = 1.0
+    frequency_limited_max_waveform_inserted_ratio: float = 1.0
+    frequency_strict_max_timing_recovered_ratio: float = 1.0
+    frequency_limited_max_timing_recovered_ratio: float = 1.0
+    frequency_strict_max_timing_shift_delta_p95_ms: float = 1e9
+    frequency_limited_max_timing_shift_delta_p95_ms: float = 1e9
 
     # 两条独立计算路径必须有足够形状一致性。
     # v0.3.3：正式门使用多尺度稳健一致性。

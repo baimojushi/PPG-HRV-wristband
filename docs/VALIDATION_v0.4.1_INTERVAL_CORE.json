@@ -1,0 +1,56 @@
+{
+  "validation": "v0.4.1 interval core latest static-wear replay",
+  "input": {
+    "samples": 155146,
+    "duration_seconds": 1241.224,
+    "firmware_beats": 1527
+  },
+  "baseline": {
+    "formal_beats": 1586,
+    "final_time_status": "INVALID",
+    "final_frequency_status": "INVALID",
+    "final_reason": "SQI 56% < 75%",
+    "complete_5min_windows": {
+      "VALID": 0,
+      "LIMITED": 23,
+      "INVALID": 23
+    }
+  },
+  "v0_4_1": {
+    "formal_beats": 1585,
+    "rr_median_ms": 784.0,
+    "rr_min_ms": 552.002,
+    "rr_max_ms": 1136.0,
+    "adjacent_rr_delta_p95_ms": 64.0,
+    "timeline": {
+      "raw_rr_count": 1584,
+      "accepted_nn_count": 1583,
+      "unresolved_suspect_ratio": 0.0006313131,
+      "dual_detector_ratio": 1.0,
+      "single_detector_ratio": 0.0,
+      "detector_time_spread_p95_ms": 0.0,
+      "sequence_rescue_ratio": 0.0,
+      "local_clip_ratio": 0.0,
+      "firmware_unmatched_ratio": 0.122475
+    },
+    "transport": {
+      "score": 0.9988611,
+      "status": "VALID"
+    },
+    "contact": {
+      "score": 0.5165289,
+      "status": "INVALID",
+      "legacy_sqi": 0.6648937,
+      "clip_low_ratio": 0.1487603
+    },
+    "final_time_status": "VALID",
+    "final_frequency_status": "LIMITED",
+    "final_frequency_reason": "Welch/Lomb robust agreement 89%; band distribution agreement 83%",
+    "complete_5min_windows": {
+      "VALID": 22,
+      "LIMITED": 24,
+      "INVALID": 0
+    }
+  },
+  "automated_tests": "105 passed"
+}

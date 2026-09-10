@@ -7,6 +7,7 @@ from scipy.interpolate import PchipInterpolator
 
 from .config import AnalysisConfig
 from .frequency_insights import compute_median_frequency_hz
+from .interval_quality import evaluate_interval_quality
 from .models import (
     INVALID,
     LIMITED,
@@ -571,6 +572,13 @@ def compute_frequency_domain(
         <= latest_us
     ]
 
+    interval_quality = evaluate_interval_quality(record_window)
+    transport_status = (
+        signal_quality.transport_status
+        if getattr(signal_quality, "transport_score", 0.0) > 0
+        else signal_quality.status
+    )
+
     total_records = max(
         len(record_window),
         1,
@@ -1067,14 +1075,12 @@ def compute_frequency_domain(
             f"{cfg.fiducial_limited_max_unstable_ratio * 100:.1f}%"
         )
 
-    if (
-        signal_quality.sqi
-        < cfg.frequency_min_sqi
-    ):
-        hard_reasons.append(
-            f"SQI {signal_quality.sqi * 100:.0f}% < "
-            f"{cfg.frequency_min_sqi * 100:.0f}%"
-        )
+    # v0.4.1: global contact SQI is not a frequency hard gate. Frequency validity
+    # depends on transport/timebase + authoritative BeatTimelineQuality.
+    if transport_status == INVALID:
+        hard_reasons.append("采样传输时基不可用")
+
+    hard_reasons.extend(interval_quality.hard_reasons(cfg))
 
     if (
         signal_quality.timing_jitter_p95_ms
@@ -1114,72 +1120,12 @@ def compute_frequency_domain(
         )
 
     if (
-        waveform_inserted_ratio
-        > cfg.frequency_limited_max_waveform_inserted_ratio
-    ):
-        hard_reasons.append(
-            "波形补搏比例 "
-            f"{waveform_inserted_ratio * 100:.1f}% > "
-            f"{cfg.frequency_limited_max_waveform_inserted_ratio * 100:.1f}%"
-        )
-
-    if (
-        timing_recovered_ratio
-        > cfg.frequency_limited_max_timing_recovered_ratio
-    ):
-        hard_reasons.append(
-            "心搏时间恢复比例 "
-            f"{timing_recovered_ratio * 100:.1f}% > "
-            f"{cfg.frequency_limited_max_timing_recovered_ratio * 100:.1f}%"
-        )
-
-    if (
-        timing_shift_delta_p95_ms
-        > cfg.frequency_limited_max_timing_shift_delta_p95_ms
-    ):
-        hard_reasons.append(
-            "相邻心搏时间修正跳变 p95 "
-            f"{timing_shift_delta_p95_ms:.1f} ms > "
-            f"{cfg.frequency_limited_max_timing_shift_delta_p95_ms:.1f} ms"
-        )
-
-    if (
         protocol_health.error_ratio
         > cfg.protocol_max_error_ratio
     ):
         hard_reasons.append(
             f"协议错误 {protocol_health.error_ratio * 100:.2f}% > "
             f"{cfg.protocol_max_error_ratio * 100:.2f}%"
-        )
-
-    if (
-        spectral_agreement
-        < cfg.frequency_min_spectral_agreement
-    ):
-        hard_reasons.append(
-            "Welch/Lomb 稳健一致性 "
-            f"{spectral_agreement * 100:.0f}% < "
-            f"{cfg.frequency_min_spectral_agreement * 100:.0f}%"
-        )
-
-    if (
-        band_power_agreement
-        < cfg.frequency_min_band_power_agreement
-    ):
-        hard_reasons.append(
-            "VLF/LF/HF 频带一致性 "
-            f"{band_power_agreement * 100:.0f}% < "
-            f"{cfg.frequency_min_band_power_agreement * 100:.0f}%"
-        )
-
-    if (
-        interpolation_agreement
-        < cfg.frequency_min_interpolation_agreement
-    ):
-        hard_reasons.append(
-            "插值谱形一致性 "
-            f"{interpolation_agreement * 100:.0f}% < "
-            f"{cfg.frequency_min_interpolation_agreement * 100:.0f}%"
         )
 
     if hard_reasons:
@@ -1209,6 +1155,13 @@ def compute_frequency_domain(
             waveform_inserted_ratio=waveform_inserted_ratio,
             timing_recovered_ratio=timing_recovered_ratio,
             timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,
+            dual_detector_ratio=interval_quality.dual_detector_ratio,
+            single_detector_ratio=interval_quality.single_detector_ratio,
+            detector_consensus_mean=interval_quality.detector_consensus_mean,
+            detector_time_spread_p95_ms=interval_quality.detector_time_spread_p95_ms,
+            sequence_rescue_ratio=interval_quality.sequence_rescue_ratio,
+            local_clip_ratio=interval_quality.local_clip_ratio,
+            firmware_unmatched_ratio=interval_quality.firmware_unmatched_ratio,
             spectral_agreement=(
                 spectral_agreement
             ),
@@ -1288,30 +1241,9 @@ def compute_frequency_domain(
             f"连续异常 {max_consecutive}"
         )
 
-    if (
-        waveform_inserted_ratio
-        > cfg.frequency_strict_max_waveform_inserted_ratio
-    ):
-        strict_reasons.append(
-            f"波形补搏 {waveform_inserted_ratio * 100:.1f}%"
-        )
-
-    if (
-        timing_recovered_ratio
-        > cfg.frequency_strict_max_timing_recovered_ratio
-    ):
-        strict_reasons.append(
-            f"时间恢复 {timing_recovered_ratio * 100:.1f}%"
-        )
-
-    if (
-        timing_shift_delta_p95_ms
-        > cfg.frequency_strict_max_timing_shift_delta_p95_ms
-    ):
-        strict_reasons.append(
-            "相邻时间修正跳变 p95 "
-            f"{timing_shift_delta_p95_ms:.1f} ms"
-        )
+    strict_reasons.extend(interval_quality.strict_reasons(cfg))
+    if transport_status == LIMITED:
+        strict_reasons.append("采样传输时基仅可参考")
 
     if (
         spectral_agreement
@@ -1339,6 +1271,23 @@ def compute_frequency_domain(
             "插值一致性 "
             f"{interpolation_agreement * 100:.0f}%"
         )
+
+    # Method disagreement is spectral uncertainty, not proof that the RR timeline
+    # is wrong. Keep the spectrum available as LIMITED instead of erasing it.
+    if spectral_agreement < cfg.frequency_min_spectral_agreement:
+        strict_reasons.append(
+            f"两种频率算法差异较大 {spectral_agreement * 100:.0f}%"
+        )
+    if band_power_agreement < cfg.frequency_min_band_power_agreement:
+        strict_reasons.append(
+            f"快慢节律分布算法差异较大 {band_power_agreement * 100:.0f}%"
+        )
+    if interpolation_agreement < cfg.frequency_min_interpolation_agreement:
+        strict_reasons.append(
+            f"频率插值敏感 {interpolation_agreement * 100:.0f}%"
+        )
+
+    strict_reasons = list(dict.fromkeys(strict_reasons))
 
     status = (
         VALID
@@ -1390,6 +1339,13 @@ def compute_frequency_domain(
         waveform_inserted_ratio=waveform_inserted_ratio,
         timing_recovered_ratio=timing_recovered_ratio,
         timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,
+        dual_detector_ratio=interval_quality.dual_detector_ratio,
+        single_detector_ratio=interval_quality.single_detector_ratio,
+        detector_consensus_mean=interval_quality.detector_consensus_mean,
+        detector_time_spread_p95_ms=interval_quality.detector_time_spread_p95_ms,
+        sequence_rescue_ratio=interval_quality.sequence_rescue_ratio,
+        local_clip_ratio=interval_quality.local_clip_ratio,
+        firmware_unmatched_ratio=interval_quality.firmware_unmatched_ratio,
         spectral_agreement=(
             spectral_agreement
         ),

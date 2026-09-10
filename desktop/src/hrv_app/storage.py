@@ -335,6 +335,13 @@ class SessionRecorder:
                 except Exception:
                     pass
 
+        # Provenance files use their own file handles. Flush them together with
+        # the raw session so exported snapshots cannot contain zero-byte traces.
+        try:
+            self.provenance.flush()
+        except Exception:
+            pass
+
     def close(self) -> None:
         with self._lock:
             for handle in self._files.values():
@@ -669,6 +676,14 @@ def export_engine_results(
             "matched_firmware_t_us",
             "inserted_by_smoother",
             "low_prominence_rescue",
+            "detector_support_count",
+            "detector_names",
+            "detector_consensus",
+            "detector_time_spread_ms",
+            "single_detector",
+            "sequence_rescued",
+            "firmware_unmatched",
+            "local_clipped",
             "flags",
         ])
 
@@ -691,6 +706,14 @@ def export_engine_results(
                 beat.matched_firmware_t_us,
                 int(beat.inserted_by_smoother),
                 int(beat.low_prominence_rescue),
+                int(getattr(beat, "detector_support_count", 0) or 0),
+                str(getattr(beat, "detector_names", "") or ""),
+                float(getattr(beat, "detector_consensus", 0.0) or 0.0),
+                float(getattr(beat, "detector_time_spread_ms", 0.0) or 0.0),
+                int(bool(getattr(beat, "single_detector", False))),
+                int(bool(getattr(beat, "sequence_rescued", False))),
+                int(bool(getattr(beat, "firmware_unmatched", False))),
+                int(bool(getattr(beat, "local_clipped", False))),
                 beat.flags,
             ])
 

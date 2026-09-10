@@ -15,7 +15,7 @@ from .research_prototypes import (
     extract_research_frequency_features,
     research_state_table,
 )
-from .fixed_lag_corrector import FixedLagWaveformCorrector
+from .interval_core import IntervalCore
 from .hrv_frequency import compute_frequency_domain
 from .hrv_time import compute_time_domain
 from .models import (
@@ -53,13 +53,12 @@ class AnalysisEngine:
     """
     线程安全分析引擎。
 
-    v0.3.7 关键变化：
-    - `_firmware_beats` 保存固件实时 Accepted，只作为诊断证据；
-    - `_raw_beats` 改为 7.25 s 固定滞后整窗 PPG 复核后的正式心搏；
-    - 正式心搏可以在固件漏检时直接由波形补回；
-    - 固件多检 / 次级峰不会自动进入正式 HRV 时间线；
-    - BeatTimelineCleaner 再对正式时间线做未来感知的 NN 质量审计；
-    - 导出通过 export_bundle() 冻结同一个 snapshot，避免 CSV/JSON 不同步。
+    v0.4.1 interval-core：
+    - `_firmware_beats` 只保留为诊断/实时 HR 证据，不再参与 HRV hard gate；
+    - 正式心搏由 multiscale + Elgendi-style 两条独立波形检测链共同产生；
+    - fixed-lag resolver 只能从真实波形候选中消歧，不能凭 expected RR 造时间点；
+    - BeatTimelineCleaner 对正式时间线做独立 NN 伪迹分类；
+    - 传感器接触质量、传输时基质量、BeatTimelineQuality 与频谱可靠性分层。
     """
 
     def __init__(
@@ -103,10 +102,11 @@ class AnalysisEngine:
             maxlen=5000
         )
 
-        self._waveform_corrector = (
-            FixedLagWaveformCorrector(
-                self.config
-            )
+        # v0.4.1 authoritative interval core:
+        # two independent waveform detectors -> consensus -> fixed-lag resolver.
+        # Firmware beats remain diagnostic only.
+        self._waveform_corrector = IntervalCore(
+            self.config
         )
 
         # 正式时间线自己的 RR 历史。
@@ -577,7 +577,7 @@ class AnalysisEngine:
         - 给导出和未来模型训练提供证据；
         - 与整窗波形解析出的正式主波做匹配审计。
 
-        正式 HR / RR / HRV 只由固定滞后波形复核器提交。
+        正式 HR / RR / HRV 只由 interval-core 波形共识时间线提交。
         """
         with self._lock:
             firmware_frame = copy.deepcopy(
@@ -896,17 +896,17 @@ class AnalysisEngine:
                 timing_uncertainty_ms=float(
                     proposal.timing_uncertainty_ms
                 ),
+                # v0.4.1: recovery means waveform/sequence evidence needed rescue.
+                # Firmware phase disagreement is diagnostic and must not mark an
+                # otherwise well-supported waveform beat as "recovered".
                 timing_recovered=bool(
-                    proposal.inserted_by_smoother
+                    getattr(proposal, "sequence_rescued", False)
+                    or getattr(proposal, "single_detector", False)
                     or proposal.low_prominence_rescue
-                    or abs(
-                        timing_shift_ms
-                    )
-                    > self.config.fiducial_max_applied_shift_ms
                 ),
                 refined=True,
                 correction_method=(
-                    "fixed_lag_waveform"
+                    "interval_core_consensus"
                 ),
                 waveform_score=(
                     waveform_score
@@ -922,6 +922,30 @@ class AnalysisEngine:
                 ),
                 low_prominence_rescue=bool(
                     proposal.low_prominence_rescue
+                ),
+                detector_support_count=int(
+                    getattr(proposal, "detector_support_count", 0) or 0
+                ),
+                detector_names=str(
+                    getattr(proposal, "detector_names", "") or ""
+                ),
+                detector_consensus=float(
+                    getattr(proposal, "detector_consensus", waveform_score) or waveform_score
+                ),
+                detector_time_spread_ms=float(
+                    getattr(proposal, "detector_time_spread_ms", 0.0) or 0.0
+                ),
+                single_detector=bool(
+                    getattr(proposal, "single_detector", False)
+                ),
+                sequence_rescued=bool(
+                    getattr(proposal, "sequence_rescued", False)
+                ),
+                firmware_unmatched=bool(
+                    getattr(proposal, "firmware_unmatched", matched_source_t_us == 0)
+                ),
+                local_clipped=bool(
+                    getattr(proposal, "local_clipped", False)
                 ),
             )
 
@@ -940,7 +964,7 @@ class AnalysisEngine:
                             ),
                             None,
                         )
-                    template_version = "v0.4.0-fixed-lag"
+                    template_version = "v0.4.1-interval-core"
                     self._provenance.record_beat_provenance(
                         build_beat_provenance_row(
                             beat=refined,
@@ -1323,6 +1347,33 @@ class AnalysisEngine:
                     "timing_shift_delta_p95_ms": getattr(
                         frequency_metrics, "timing_shift_delta_p95_ms", 0.0
                     ),
+                    "dual_detector_ratio": getattr(
+                        frequency_metrics, "dual_detector_ratio", 0.0
+                    ),
+                    "single_detector_ratio": getattr(
+                        frequency_metrics, "single_detector_ratio", 0.0
+                    ),
+                    "detector_consensus_mean": getattr(
+                        frequency_metrics, "detector_consensus_mean", 0.0
+                    ),
+                    "detector_time_spread_p95_ms": getattr(
+                        frequency_metrics, "detector_time_spread_p95_ms", 0.0
+                    ),
+                    "sequence_rescue_ratio": getattr(
+                        frequency_metrics, "sequence_rescue_ratio", 0.0
+                    ),
+                    "local_clip_ratio": getattr(
+                        frequency_metrics, "local_clip_ratio", 0.0
+                    ),
+                    "firmware_unmatched_ratio": getattr(
+                        frequency_metrics, "firmware_unmatched_ratio", 0.0
+                    ),
+                    "transport_status": getattr(
+                        self._last_snapshot.signal_quality, "transport_status", ""
+                    ),
+                    "contact_status": getattr(
+                        self._last_snapshot.signal_quality, "contact_status", ""
+                    ),
                     "quality": frequency_metrics.status,
                     "validity_reason": frequency_metrics.validity_reason,
                 },
@@ -1611,8 +1662,33 @@ class AnalysisEngine:
             "frequency_timing_shift_delta_p95_ms": (
                 frequency.timing_shift_delta_p95_ms
             ),
+            "dual_detector_ratio": (
+                frequency.dual_detector_ratio
+            ),
+            "single_detector_ratio": (
+                frequency.single_detector_ratio
+            ),
+            "detector_consensus_mean": (
+                frequency.detector_consensus_mean
+            ),
+            "detector_time_spread_p95_ms": (
+                frequency.detector_time_spread_p95_ms
+            ),
+            "sequence_rescue_ratio": (
+                frequency.sequence_rescue_ratio
+            ),
+            "local_clip_ratio": (
+                frequency.local_clip_ratio
+            ),
+            "firmware_unmatched_ratio": (
+                frequency.firmware_unmatched_ratio
+            ),
 
             "sqi": snapshot.signal_quality.sqi,
+            "transport_score": snapshot.signal_quality.transport_score,
+            "transport_status": snapshot.signal_quality.transport_status,
+            "contact_score": snapshot.signal_quality.contact_score,
+            "contact_status": snapshot.signal_quality.contact_status,
             "overall_status": snapshot.quality.status,
             "detected_artifact_ratio": (
                 time_metrics.detected_artifact_ratio
@@ -2851,6 +2927,34 @@ class AnalysisEngine:
                     frequency.timing_shift_delta_p95_ms,
                     3,
                 ),
+                "dual_detector_ratio": round(
+                    frequency.dual_detector_ratio,
+                    5,
+                ),
+                "single_detector_ratio": round(
+                    frequency.single_detector_ratio,
+                    5,
+                ),
+                "detector_consensus_mean": round(
+                    frequency.detector_consensus_mean,
+                    5,
+                ),
+                "detector_time_spread_p95_ms": round(
+                    frequency.detector_time_spread_p95_ms,
+                    3,
+                ),
+                "sequence_rescue_ratio": round(
+                    frequency.sequence_rescue_ratio,
+                    5,
+                ),
+                "local_clip_ratio": round(
+                    frequency.local_clip_ratio,
+                    5,
+                ),
+                "firmware_unmatched_ratio": round(
+                    frequency.firmware_unmatched_ratio,
+                    5,
+                ),
                 "fiducial_quality_mean": round(
                     frequency.fiducial_quality_mean,
                     4,
@@ -2876,6 +2980,20 @@ class AnalysisEngine:
                 ),
                 "status": (
                     snapshot.signal_quality.status
+                ),
+                "transport_score": round(
+                    snapshot.signal_quality.transport_score,
+                    4,
+                ),
+                "transport_status": (
+                    snapshot.signal_quality.transport_status
+                ),
+                "contact_score": round(
+                    snapshot.signal_quality.contact_score,
+                    4,
+                ),
+                "contact_status": (
+                    snapshot.signal_quality.contact_status
                 ),
                 "wear_ratio": round(
                     snapshot.signal_quality.wear_ratio,
@@ -2954,6 +3072,34 @@ class AnalysisEngine:
                 ),
                 "fiducial_unstable_ratio": round(
                     snapshot.timeline_quality.fiducial_unstable_ratio,
+                    5,
+                ),
+                "dual_detector_ratio": round(
+                    snapshot.timeline_quality.dual_detector_ratio,
+                    5,
+                ),
+                "single_detector_ratio": round(
+                    snapshot.timeline_quality.single_detector_ratio,
+                    5,
+                ),
+                "detector_consensus_mean": round(
+                    snapshot.timeline_quality.detector_consensus_mean,
+                    5,
+                ),
+                "detector_time_spread_p95_ms": round(
+                    snapshot.timeline_quality.detector_time_spread_p95_ms,
+                    3,
+                ),
+                "sequence_rescue_ratio": round(
+                    snapshot.timeline_quality.sequence_rescue_ratio,
+                    5,
+                ),
+                "local_clip_ratio": round(
+                    snapshot.timeline_quality.local_clip_ratio,
+                    5,
+                ),
+                "firmware_unmatched_ratio": round(
+                    snapshot.timeline_quality.firmware_unmatched_ratio,
                     5,
                 ),
             },

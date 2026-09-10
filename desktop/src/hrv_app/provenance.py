@@ -206,7 +206,7 @@ def build_beat_provenance_row(
     low_prominence_rescue = bool(beat.low_prominence_rescue)
     recovery_flags: list[str] = []
     if inserted_by_smoother:
-        recovery_flags.append("waveform_inserted")
+        recovery_flags.append("sequence_rescued")
     if timing_recovered:
         recovery_flags.append("timing_recovered")
     if low_prominence_rescue:
@@ -227,6 +227,30 @@ def build_beat_provenance_row(
         "inserted_by_smoother": int(inserted_by_smoother),
         "timing_recovered": int(timing_recovered),
         "low_prominence_rescue": int(low_prominence_rescue),
+        "detector_support_count": int(
+            getattr(beat, "detector_support_count", 0) or 0
+        ),
+        "detector_names": str(
+            getattr(beat, "detector_names", "") or ""
+        ),
+        "detector_consensus": float(
+            getattr(beat, "detector_consensus", 0.0) or 0.0
+        ),
+        "detector_time_spread_ms": float(
+            getattr(beat, "detector_time_spread_ms", 0.0) or 0.0
+        ),
+        "single_detector": int(
+            bool(getattr(beat, "single_detector", False))
+        ),
+        "sequence_rescued": int(
+            bool(getattr(beat, "sequence_rescued", False))
+        ),
+        "firmware_unmatched": int(
+            bool(getattr(beat, "firmware_unmatched", not firmware_match))
+        ),
+        "local_clipped": int(
+            bool(getattr(beat, "local_clipped", False))
+        ),
         "waveform_score": (
             float(proposal.waveform_score)
             if proposal
@@ -262,7 +286,7 @@ def build_beat_detector_state_row(
 ) -> dict[str, Any]:
     """记录桌面 fixed-lag 波形检测器此刻的内部状态。
 
-    FixedLagWaveformCorrector 把实时状态放在 ``last_diagnostics`` 中；
+    IntervalCore / legacy corrector 都把实时状态放在 ``last_diagnostics`` 中；
     旧日志直接从 detector 本体读属性，因此大部分字段长期为 0。
     这里优先读取 last_diagnostics，并同时保留最近固件 RR 作为对照。
     """
@@ -312,6 +336,36 @@ def build_beat_detector_state_row(
         "firmware_matched_count": int(
             getattr(diag, "firmware_matched_count", 0) or 0
         ),
+        "multiscale_peak_count": int(
+            getattr(diag, "primary_count", 0) or 0
+        ),
+        "elgendi_peak_count": int(
+            getattr(diag, "secondary_count", 0) or 0
+        ),
+        "dual_detector_peak_count": int(
+            getattr(diag, "dual_detector_count", 0) or 0
+        ),
+        "single_detector_peak_count": int(
+            getattr(diag, "single_detector_count", 0) or 0
+        ),
+        "detector_consensus_ratio": float(
+            getattr(diag, "detector_consensus_ratio", 0.0) or 0.0
+        ),
+        "detector_time_spread_p95_ms": float(
+            getattr(diag, "detector_time_spread_p95_ms", 0.0) or 0.0
+        ),
+        "stable_reference_rr_ms": float(
+            getattr(diag, "stable_reference_rr_ms", 0.0) or 0.0
+        ),
+        "local_dual_rr_ms": float(
+            getattr(diag, "local_dual_rr_ms", 0.0) or 0.0
+        ),
+        "local_dual_rr_robust_cv": float(
+            getattr(diag, "local_dual_rr_robust_cv", 0.0) or 0.0
+        ),
+        "reference_update_reason": str(
+            getattr(diag, "reference_update_reason", "") or ""
+        ),
         "waveform_amplitude": float(
             getattr(diag, "waveform_amplitude", 0.0) or 0.0
         ),
@@ -340,7 +394,7 @@ def build_signal_input_trace_row(
     该日志专门区分三类退化：
     1. 原始 ADC 工作点/削底/佩戴状态变化；
     2. 设备时基或协议/队列异常；
-    3. fixed-lag 自相关与匹配器自身退化。
+    3. interval core 双检测器共识 / RR 参考先验自身退化。
     """
     import numpy as np
 
@@ -450,6 +504,18 @@ def build_signal_input_trace_row(
         "sqi_wear_ratio": float(signal_quality.wear_ratio),
         "sqi_clip_low_ratio": float(signal_quality.clip_low_ratio),
         "sqi_clip_high_ratio": float(signal_quality.clip_high_ratio),
+        "transport_score": float(
+            getattr(signal_quality, "transport_score", 0.0) or 0.0
+        ),
+        "transport_status": str(
+            getattr(signal_quality, "transport_status", "") or ""
+        ),
+        "contact_score": float(
+            getattr(signal_quality, "contact_score", 0.0) or 0.0
+        ),
+        "contact_status": str(
+            getattr(signal_quality, "contact_status", "") or ""
+        ),
         "protocol_error_ratio": float(protocol_health.error_ratio),
         "protocol_seq_gaps": int(protocol_health.sample_seq_gaps),
         "sample_drop_count": int(
@@ -479,6 +545,36 @@ def build_signal_input_trace_row(
         ),
         "corrector_firmware_matched_count": int(
             getattr(diag, "firmware_matched_count", 0) or 0
+        ),
+        "multiscale_peak_count": int(
+            getattr(diag, "primary_count", 0) or 0
+        ),
+        "elgendi_peak_count": int(
+            getattr(diag, "secondary_count", 0) or 0
+        ),
+        "dual_detector_peak_count": int(
+            getattr(diag, "dual_detector_count", 0) or 0
+        ),
+        "single_detector_peak_count": int(
+            getattr(diag, "single_detector_count", 0) or 0
+        ),
+        "detector_consensus_ratio": float(
+            getattr(diag, "detector_consensus_ratio", 0.0) or 0.0
+        ),
+        "detector_time_spread_p95_ms": float(
+            getattr(diag, "detector_time_spread_p95_ms", 0.0) or 0.0
+        ),
+        "stable_reference_rr_ms": float(
+            getattr(diag, "stable_reference_rr_ms", 0.0) or 0.0
+        ),
+        "local_dual_rr_ms": float(
+            getattr(diag, "local_dual_rr_ms", 0.0) or 0.0
+        ),
+        "local_dual_rr_robust_cv": float(
+            getattr(diag, "local_dual_rr_robust_cv", 0.0) or 0.0
+        ),
+        "reference_update_reason": str(
+            getattr(diag, "reference_update_reason", "") or ""
         ),
     }
 
@@ -534,6 +630,13 @@ def build_hrv_window_provenance_row(
             "firmware_beat_count": 0,
             "insertion_ratio": 0.0,
             "recovery_ratio": 0.0,
+            "dual_detector_ratio": 0.0,
+            "single_detector_ratio": 0.0,
+            "detector_consensus_mean": 0.0,
+            "detector_time_spread_p95_ms": 0.0,
+            "sequence_rescue_ratio": 0.0,
+            "local_clip_ratio": 0.0,
+            "firmware_unmatched_ratio": 0.0,
             "offset_p50_ms": 0.0,
             "offset_p95_ms": 0.0,
             "offset_signed_p50_ms": 0.0,
@@ -567,6 +670,49 @@ def build_hrv_window_provenance_row(
         sum(1 for b in window_beats if bool(b.timing_recovered))
         / max(1, len(window_beats))
     )
+    interval_evidence = [
+        b for b in window_beats
+        if int(getattr(b, "detector_support_count", 0) or 0) > 0
+    ]
+    evidence_count = max(1, len(interval_evidence))
+    dual_detector_ratio = (
+        sum(int(getattr(b, "detector_support_count", 0) or 0) >= 2 for b in interval_evidence)
+        / evidence_count
+        if interval_evidence else 0.0
+    )
+    single_detector_ratio = (
+        sum(
+            bool(getattr(b, "single_detector", False))
+            or int(getattr(b, "detector_support_count", 0) or 0) == 1
+            for b in interval_evidence
+        )
+        / evidence_count
+        if interval_evidence else 0.0
+    )
+    consensus_values = [
+        float(getattr(b, "detector_consensus", 0.0) or 0.0)
+        for b in interval_evidence
+    ]
+    spread_values = [
+        float(getattr(b, "detector_time_spread_ms", 0.0) or 0.0)
+        for b in interval_evidence
+        if int(getattr(b, "detector_support_count", 0) or 0) >= 2
+    ]
+    sequence_rescue_ratio = (
+        sum(bool(getattr(b, "sequence_rescued", False)) for b in interval_evidence)
+        / evidence_count
+        if interval_evidence else 0.0
+    )
+    local_clip_ratio = (
+        sum(bool(getattr(b, "local_clipped", False)) for b in interval_evidence)
+        / evidence_count
+        if interval_evidence else 0.0
+    )
+    firmware_unmatched_ratio = (
+        sum(bool(getattr(b, "firmware_unmatched", False)) for b in interval_evidence)
+        / evidence_count
+        if interval_evidence else 0.0
+    )
     offsets_signed = [
         float(b.timing_shift_ms)
         for b in window_beats
@@ -588,7 +734,17 @@ def build_hrv_window_provenance_row(
         "firmware_beat_count": len(firmware_window),
         "insertion_ratio": float(insertion_ratio),
         "recovery_ratio": float(recovery_ratio),
-        # 兼容旧列名：offset_p50/p95 继续表示绝对偏移；另存 signed 中位数。
+        "dual_detector_ratio": float(dual_detector_ratio),
+        "single_detector_ratio": float(single_detector_ratio),
+        "detector_consensus_mean": (
+            float(sum(consensus_values) / len(consensus_values))
+            if consensus_values else 0.0
+        ),
+        "detector_time_spread_p95_ms": _percentile(spread_values, 95),
+        "sequence_rescue_ratio": float(sequence_rescue_ratio),
+        "local_clip_ratio": float(local_clip_ratio),
+        "firmware_unmatched_ratio": float(firmware_unmatched_ratio),
+        # 兼容旧列名：offset_p50/p95 继续表示固件相位诊断；不再作为 HRV hard gate。
         "offset_p50_ms": _percentile(offsets_abs, 50),
         "offset_p95_ms": _percentile(offsets_abs, 95),
         "offset_signed_p50_ms": _percentile(offsets_signed, 50),
@@ -678,6 +834,29 @@ def build_spectrum_5min_trace_row(
         "timing_shift_delta_p95_ms": float(
             stats.get("timing_shift_delta_p95_ms", 0.0) or 0.0
         ),
+        "dual_detector_ratio": float(
+            stats.get("dual_detector_ratio", 0.0) or 0.0
+        ),
+        "single_detector_ratio": float(
+            stats.get("single_detector_ratio", 0.0) or 0.0
+        ),
+        "detector_consensus_mean": float(
+            stats.get("detector_consensus_mean", 0.0) or 0.0
+        ),
+        "detector_time_spread_p95_ms": float(
+            stats.get("detector_time_spread_p95_ms", 0.0) or 0.0
+        ),
+        "sequence_rescue_ratio": float(
+            stats.get("sequence_rescue_ratio", 0.0) or 0.0
+        ),
+        "local_clip_ratio": float(
+            stats.get("local_clip_ratio", 0.0) or 0.0
+        ),
+        "firmware_unmatched_ratio": float(
+            stats.get("firmware_unmatched_ratio", 0.0) or 0.0
+        ),
+        "transport_status": str(stats.get("transport_status", "") or ""),
+        "contact_status": str(stats.get("contact_status", "") or ""),
         "quality": str(stats.get("quality", "") or ""),
         "rejection_reason": rejection_reason or "",
     }

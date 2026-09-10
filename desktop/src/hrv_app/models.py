@@ -101,13 +101,26 @@ class BeatFrame:
     # v0.3.7 固定滞后整窗波形复核证据。
     # ------------------------------------------------------------------
     # 正式 HRV Beat 现在可以完全由 PPG 波形产生，
-    # 因此 source_t_us=0 也是合法情况，表示固件漏检后由整窗复核补回。
+    # 因此 source_t_us=0 是合法情况：只表示没有匹配到 Firmware Beat。
+    # 这不是“补造心搏”，也不再进入正式 HRV 质量门。
     correction_method: str = ""
     waveform_score: float = 0.0
     reference_rr_ms: float = 0.0
     matched_firmware_t_us: int = 0
+    # v0.4.1 起：仅表示真实波形候选经过 sequence resolver 救回；
+    # 不再表示“Firmware 没有匹配”。
     inserted_by_smoother: bool = False
     low_prominence_rescue: bool = False
+
+    # v0.4.1 interval-core evidence. Firmware match is diagnostic only.
+    detector_support_count: int = 0
+    detector_names: str = ""
+    detector_consensus: float = 0.0
+    detector_time_spread_ms: float = 0.0
+    single_detector: bool = False
+    sequence_rescued: bool = False
+    firmware_unmatched: bool = False
+    local_clipped: bool = False
 
 
 @dataclass(slots=True)
@@ -201,6 +214,16 @@ class BeatRecord:
     inserted_by_smoother: bool = False
     low_prominence_rescue: bool = False
 
+    # v0.4.1 interval-core evidence copied from BeatFrame.
+    detector_support_count: int = 0
+    detector_names: str = ""
+    detector_consensus: float = 0.0
+    detector_time_spread_ms: float = 0.0
+    single_detector: bool = False
+    sequence_rescued: bool = False
+    firmware_unmatched: bool = False
+    local_clipped: bool = False
+
     status: str = "accepted"
     metric_eligible: bool = True
 
@@ -236,6 +259,15 @@ class TimelineQuality:
     fiducial_shift_p95_ms: float = 0.0
     fiducial_unstable_ratio: float = 0.0
 
+    # v0.4.1 authoritative interval quality: independent waveform evidence.
+    dual_detector_ratio: float = 0.0
+    single_detector_ratio: float = 0.0
+    detector_consensus_mean: float = 0.0
+    detector_time_spread_p95_ms: float = 0.0
+    sequence_rescue_ratio: float = 0.0
+    local_clip_ratio: float = 0.0
+    firmware_unmatched_ratio: float = 0.0
+
     reasons: list[str] = field(default_factory=list)
 
 
@@ -260,6 +292,14 @@ class SignalQuality:
 
     protocol_error_ratio: float = 0.0
     protocol_seq_gaps: int = 0
+
+    # v0.4.1 separates transport/timebase from sensor contact.
+    # `sqi` remains the user-facing contact/overall indicator for compatibility,
+    # but HRV gates use transport_status + interval evidence instead of clip-heavy SQI.
+    transport_score: float = 0.0
+    transport_status: str = INVALID
+    contact_score: float = 0.0
+    contact_status: str = INVALID
     reasons: list[str] = field(default_factory=list)
 
 
@@ -325,6 +365,15 @@ class FrequencyDomainMetrics:
     waveform_inserted_ratio: float = 0.0
     timing_recovered_ratio: float = 0.0
     timing_shift_delta_p95_ms: float = 0.0
+
+    # v0.4.1 interval-core window evidence.
+    dual_detector_ratio: float = 0.0
+    single_detector_ratio: float = 0.0
+    detector_consensus_mean: float = 0.0
+    detector_time_spread_p95_ms: float = 0.0
+    sequence_rescue_ratio: float = 0.0
+    local_clip_ratio: float = 0.0
+    firmware_unmatched_ratio: float = 0.0
 
     # v0.3.3：
     # spectral_agreement 是“稳健 Welch/Lomb 一致性”，

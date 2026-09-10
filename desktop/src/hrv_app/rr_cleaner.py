@@ -62,7 +62,6 @@ class BeatTimelineCleaner:
                 rescued=bool(b.flags & 0x10),
                 source_t_us=int(
                     getattr(b, "source_t_us", 0)
-                    or b.t_us
                 ),
                 timing_shift_ms=float(
                     getattr(b, "timing_shift_ms", 0.0)
@@ -121,6 +120,14 @@ class BeatTimelineCleaner:
                         False,
                     )
                 ),
+                detector_support_count=int(getattr(b, "detector_support_count", 0) or 0),
+                detector_names=str(getattr(b, "detector_names", "") or ""),
+                detector_consensus=float(getattr(b, "detector_consensus", 0.0) or 0.0),
+                detector_time_spread_ms=float(getattr(b, "detector_time_spread_ms", 0.0) or 0.0),
+                single_detector=bool(getattr(b, "single_detector", False)),
+                sequence_rescued=bool(getattr(b, "sequence_rescued", False)),
+                firmware_unmatched=bool(getattr(b, "firmware_unmatched", False)),
+                local_clipped=bool(getattr(b, "local_clipped", False)),
                 status="unresolved",
                 metric_eligible=False,
             )
@@ -657,6 +664,56 @@ class BeatTimelineCleaner:
             else 0.0
         )
 
+        interval_evidence = [
+            record for record in records
+            if int(getattr(record, "detector_support_count", 0) or 0) > 0
+        ]
+        if interval_evidence:
+            evidence_count = max(len(interval_evidence), 1)
+            dual_detector_ratio = sum(
+                int(record.detector_support_count) >= 2 for record in interval_evidence
+            ) / evidence_count
+            single_detector_ratio = sum(
+                bool(record.single_detector) or int(record.detector_support_count) == 1
+                for record in interval_evidence
+            ) / evidence_count
+            consensus_values = np.asarray([
+                float(record.detector_consensus)
+                for record in interval_evidence
+                if np.isfinite(record.detector_consensus)
+            ], dtype=float)
+            spread_values = np.asarray([
+                float(record.detector_time_spread_ms)
+                for record in interval_evidence
+                if int(record.detector_support_count) >= 2
+                and np.isfinite(record.detector_time_spread_ms)
+            ], dtype=float)
+            detector_consensus_mean = (
+                float(np.mean(consensus_values)) if consensus_values.size else 0.0
+            )
+            detector_time_spread_p95_ms = (
+                float(np.percentile(spread_values, 95)) if spread_values.size else 0.0
+            )
+            sequence_rescue_ratio = sum(
+                bool(record.sequence_rescued) for record in interval_evidence
+            ) / evidence_count
+            local_clip_ratio = sum(
+                bool(record.local_clipped) for record in interval_evidence
+            ) / evidence_count
+            firmware_unmatched_ratio = sum(
+                bool(record.firmware_unmatched) for record in interval_evidence
+            ) / evidence_count
+        else:
+            # Historical/unit-test BeatFrames have no interval-core evidence.
+            # Preserve backward compatibility instead of treating "not recorded" as bad quality.
+            dual_detector_ratio = 1.0
+            single_detector_ratio = 0.0
+            detector_consensus_mean = 1.0
+            detector_time_spread_p95_ms = 0.0
+            sequence_rescue_ratio = 0.0
+            local_clip_ratio = 0.0
+            firmware_unmatched_ratio = 0.0
+
         reasons: list[str] = []
         if detected / total > 0.05:
             reasons.append("异常搏比例偏高")
@@ -679,6 +736,13 @@ class BeatTimelineCleaner:
             fiducial_uncertainty_p95_ms=fiducial_uncertainty_p95_ms,
             fiducial_shift_p95_ms=fiducial_shift_p95_ms,
             fiducial_unstable_ratio=fiducial_unstable_ratio,
+            dual_detector_ratio=float(dual_detector_ratio),
+            single_detector_ratio=float(single_detector_ratio),
+            detector_consensus_mean=float(detector_consensus_mean),
+            detector_time_spread_p95_ms=float(detector_time_spread_p95_ms),
+            sequence_rescue_ratio=float(sequence_rescue_ratio),
+            local_clip_ratio=float(local_clip_ratio),
+            firmware_unmatched_ratio=float(firmware_unmatched_ratio),
             reasons=reasons,
         )
 

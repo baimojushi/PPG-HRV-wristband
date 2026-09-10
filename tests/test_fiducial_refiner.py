@@ -280,15 +280,23 @@ def test_engine_keeps_firmware_evidence_but_formal_timeline_follows_waveform():
         95,
     ) < 8.0
 
-    # Firmware 没有报告最早和部分边界主波，正式时间线仍可独立补回。
+    # Firmware 没有报告最早和部分边界主波，正式时间线仍可独立建立。
+    # v0.4.1 明确区分：
+    # - firmware_unmatched = 固件没有对应事件（只作诊断）；
+    # - inserted_by_smoother = 序列解析器真正救回单检测器候选。
     assert any(
+        beat.firmware_unmatched
+        for beat in formal
+    )
+    assert not any(
         beat.inserted_by_smoother
         for beat in formal
+        if beat.detector_support_count >= 2
     )
 
     assert all(
         beat.correction_method
-        == "fixed_lag_waveform"
+        == "interval_core_consensus"
         for beat in formal
     )
 
@@ -510,6 +518,8 @@ def test_engine_can_restore_a_beat_without_any_firmware_source():
         - 1_856_000
     ) < 8_000
     assert restored.matched_firmware_t_us == 0
-    assert restored.inserted_by_smoother
+    assert restored.firmware_unmatched
+    assert restored.detector_support_count >= 2
+    assert not restored.inserted_by_smoother
     assert restored.refined
 

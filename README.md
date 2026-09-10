@@ -1,40 +1,58 @@
-# PPG / HRV 实时分析系统 v0.4.0
+# PPG / HRV 实时分析系统 v0.4.1
 
-v0.4.0 从 **v0.3.9 响应式桌面版**建立。
+v0.4.1 从 **v0.4.0** 建立。本次冻结研究原型与普通用户 UI，集中重写
+`PPG → Beat → RR → quality` 的正式间期核心。
 
-本版不改 ESP32 固件、不改协议、不改正式 PPG / RR / HRV 算法。
+ESP32 固件和串口协议保持不变；桌面端正式心搏时间线不再把 Firmware
+Accepted Beat 当作参考真值。
 
-新增的是：
-
-```text
-研究原型匹配层
-+
-过去一小时会话体验层
-+
-研究来源可追溯 UI
-```
-
-## 1. 主分析链保持 v0.3.9
+## 1. v0.4.1 间期核心
 
 ```text
-ESP32 zeezPPG
+PPG filtered waveform
         ↓
-实时 Sample + Firmware Beat
+0.5–8 Hz 稳健预处理
         ↓
-PC 保存原始证据
+┌──────────────────┬──────────────────┐
+│ 多尺度峰持续性检测 │ 自适应窗口峰检测   │
+│ MSPTD-style       │ Elgendi-style    │
+└──────────────────┴──────────────────┘
         ↓
-7.25 s 固定滞后整窗 PPG 复核
+异构检测器共识
         ↓
-正式心搏时间线
+7.25 s fixed-lag sequence resolver
+（只在真实波形候选中消歧，不凭预计 RR 创造心搏）
         ↓
-未来感知 RR 清洗
+正式 Beat / RR 时间线
+        ↓
+RR 异常分类与清洗
         ↓
 HR / RMSSD / Welch / Lomb / SPWVD
 ```
 
-研究层位于这些正式结果之后。
+Firmware Beat 继续保留用于实时 HR、诊断和相位对照，但
+`firmware_unmatched`、Firmware↔waveform 相位差不再进入 HRV hard gate。
 
-## 2. 研究原型状态机
+质量模型拆为：
+
+```text
+TransportQuality       数据有没有丢、设备时间轴是否可靠
+SensorContactQuality   佩戴、原始 ADC 削底/饱和
+BeatTimelineQuality    两个独立波形检测器是否逐搏一致
+SpectralReliability    5 分钟内不同频率估计方法是否一致
+```
+
+低端削底若没有发生在正式心搏标志点附近，只降低接触质量，不自动否决 RR。
+Welch/Lomb 等方法不一致表示“频率解释受限”，不再反向证明 RR 时间线错误。
+
+本版设计参考了 PPG-beats / MSPTDfast、Elgendi-style detector 与 pyPPG
+Aboy++ 的公开设计原则；实现为项目内独立代码，没有复制第三方实现。
+
+## 2. v0.4.0 研究层（保留）
+
+研究原型、一小时体验和来源可追溯 UI 继续位于正式 HRV 结果之后。
+
+## 3. 研究原型状态机
 
 当前急性原型：
 
@@ -61,7 +79,7 @@ Q6_STATE_EXITING
 
 个人基线使用当前会话的稳健 median / MAD，不使用固定人群常模。
 
-## 3. 文献事实注册表
+## 4. 文献事实注册表
 
 每个原型包含：
 
@@ -87,7 +105,7 @@ UI 采用：
 
 作者和文献名直接显示在编号后。
 
-## 4. 一小时级体验
+## 5. 一小时级体验
 
 过去一小时分成：
 
@@ -120,7 +138,7 @@ H5  >60 min      扩展会话
 
 专业页新增 6 条研究原型匹配轨迹。
 
-## 5. 长期身份层
+## 6. 长期身份层
 
 v0.4.0 固定：
 
@@ -139,7 +157,7 @@ T0_TRAIT_UNKNOWN
 
 后续需要跨天本地历史后再启用长期层。
 
-## 6. 数据质量
+## 7. 数据质量
 
 当正式数据质量门失败：
 
@@ -157,7 +175,7 @@ UI 提示：
 继续积累稳定窗口
 ```
 
-## 7. 新增导出
+## 8. 导出
 
 ```text
 research_prototype_snapshot.json
@@ -169,16 +187,23 @@ research_state_timeline.csv
 
 `summary.json` 同步包含研究原型与一小时体验。
 
-## 8. 自动验收
+## 9. 自动验收
 
 ```text
 Python compileall    PASS
-pytest               90 passed
+pytest               105 passed
+最新静止实测回放  PASS
 ```
 
-## 9. 固件
+同一份约 20.7 分钟静止实测，在 v0.4.0 gate 逻辑下完整 5 分钟窗口为
+`0 VALID / 23 LIMITED / 23 INVALID`；v0.4.1 回放为
+`22 VALID / 24 LIMITED / 0 INVALID`。最终 RR 中位数 784 ms，
+相邻 RR 变化 p95 64 ms；末段原始接触质量虽受低端削底影响，
+TransportQuality 仍为 VALID，BeatTimeline 双检测器一致率为 100%。
 
-v0.4.0 的 `firmware/` 与 v0.3.9 保持不变。
+## 10. 固件
+
+v0.4.1 的 `firmware/` 与 v0.4.0 保持不变。
 
 协议：
 
@@ -188,7 +213,7 @@ v4
 
 **无需重新烧录 ESP32。**
 
-## 10. 文档
+## 11. 文档
 
 ```text
 docs/RESEARCH_PROTOTYPE_STATE_MACHINE_v0.4.0.md
@@ -196,4 +221,7 @@ docs/HOUR_EXPERIENCE_v0.4.0.md
 docs/COPY_AND_SOURCE_REFINEMENT_v0.4.0.md
 docs/PATCH_v0.4.0_RESEARCH_HOUR.md
 docs/VALIDATION_v0.4.0_RESEARCH_STATE.md
+docs/INTERVAL_CORE_REWRITE_v0.4.1.md
+docs/VALIDATION_v0.4.1_INTERVAL_CORE.md
+docs/VALIDATION_v0.4.1_INTERVAL_CORE.json
 ```
