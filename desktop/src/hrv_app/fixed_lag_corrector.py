@@ -71,9 +71,15 @@ class FixedLagWaveformCorrector:
     ):
         self.config = config or AnalysisConfig()
         self.last_diagnostics = CorrectorDiagnostics()
+        # Firmware Accepted 允许跨多次 fixed-lag propose() 参与匹配，
+        # 但同一颗 firmware beat 只能被一个正式波形主峰消费一次。
+        # 旧实现的 used_firmware 只在单次 propose() 内有效，
+        # 相位歧义时同一固件事件可能在后续调用里再次被匹配。
+        self._consumed_firmware_t_us: set[int] = set()
 
     def reset(self) -> None:
         self.last_diagnostics = CorrectorDiagnostics()
+        self._consumed_firmware_t_us.clear()
 
     @staticmethod
     def _triangular_smooth(
@@ -1331,6 +1337,13 @@ class FixedLagWaveformCorrector:
             )
         ]
 
+        # 丢弃已经永远离开上下文窗口的消费记录，避免长会话集合无限增长。
+        self._consumed_firmware_t_us = {
+            t_us
+            for t_us in self._consumed_firmware_t_us
+            if t_us >= history_start_t_us
+        }
+
         used_firmware: set[int] = set()
         proposals: list[
             WaveformPeakProposal
@@ -1418,6 +1431,8 @@ class FixedLagWaveformCorrector:
                 if (
                     index
                     not in used_firmware
+                    and int(beat.t_us)
+                    not in self._consumed_firmware_t_us
                     and abs(
                         int(
                             beat.t_us
@@ -1447,6 +1462,9 @@ class FixedLagWaveformCorrector:
 
                 matched_t_us = int(
                     match.t_us
+                )
+                self._consumed_firmware_t_us.add(
+                    matched_t_us
                 )
                 matched_score = float(
                     match.score

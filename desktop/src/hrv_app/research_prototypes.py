@@ -2112,6 +2112,8 @@ def evaluate_research_state(
                 "ready"
             ]
         ),
+        # 工程溯源使用；UI 不直接展示该内部结构。
+        "baseline": baseline,
         "baseline_reason": baseline[
             "reason"
         ],
@@ -2235,40 +2237,48 @@ def _timeline_score_rows(
     timeline: list[dict] = []
 
     for row in rows:
+        quality = _row_quality_multiplier(
+            row
+        )
         scores: dict[
             str,
             float,
         ] = {}
 
-        for code in PROTOTYPE_DEFINITIONS:
-            score, _ = _score_row(
-                code,
-                row,
-                baseline,
-                rows,
-            )
-            scores[
-                code
-            ] = float(
-                score
-            )
+        if quality <= 0:
+            # “当前无法评价”不是“与所有原型相似度都等于 0”。
+            # 用 NaN 保留时间点，让 UI 画成缺口而不是误导性的坠零尖峰。
+            scores = {
+                code: float("nan")
+                for code in PROTOTYPE_DEFINITIONS
+            }
+            ranked: list[tuple[str, float]] = []
+        else:
+            for code in PROTOTYPE_DEFINITIONS:
+                score, _ = _score_row(
+                    code,
+                    row,
+                    baseline,
+                    rows,
+                )
+                scores[
+                    code
+                ] = float(
+                    score
+                )
 
-        quality = _row_quality_multiplier(
-            row
-        )
-
-        ranked = sorted(
-            scores.items(),
-            key=lambda item: (
-                item[1],
-                PROTOTYPE_DEFINITIONS[
-                    item[0]
-                ][
-                    "priority"
-                ],
-            ),
-            reverse=True,
-        )
+            ranked = sorted(
+                scores.items(),
+                key=lambda item: (
+                    item[1],
+                    PROTOTYPE_DEFINITIONS[
+                        item[0]
+                    ][
+                        "priority"
+                    ],
+                ),
+                reverse=True,
+            )
 
         if (
             quality <= 0

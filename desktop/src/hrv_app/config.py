@@ -138,6 +138,16 @@ class AnalysisConfig:
     frequency_limited_max_unresolved_ratio: float = 0.05
     frequency_limited_max_consecutive_artifacts: int = 2
 
+    # v0.4.0：把“桌面端重建了多少心搏”纳入 5 分钟频域质量门。
+    # inserted/recovered 是重建负担；timing_shift_delta_p95_ms 表示
+    # 相邻心搏的时间修正是否剧烈跳变。恒定整体偏移不会被这一项误杀。
+    frequency_strict_max_waveform_inserted_ratio: float = 0.08
+    frequency_limited_max_waveform_inserted_ratio: float = 0.15
+    frequency_strict_max_timing_recovered_ratio: float = 0.12
+    frequency_limited_max_timing_recovered_ratio: float = 0.25
+    frequency_strict_max_timing_shift_delta_p95_ms: float = 80.0
+    frequency_limited_max_timing_shift_delta_p95_ms: float = 180.0
+
     # 两条独立计算路径必须有足够形状一致性。
     # v0.3.3：正式门使用多尺度稳健一致性。
     # 旧版逐频点 Pearson 会被 1~2 个频率 bin 的小偏移显著拉低。

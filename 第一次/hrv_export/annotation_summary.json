@@ -1,0 +1,53 @@
+{
+  "annotation_count": 0,
+  "label_semantics": "user observed a problem within the 3 seconds before the software mark",
+  "timestamp_semantics": "device_t_us is the right edge of the UI data actually visible when F8/button was pressed",
+  "context_before_seconds": 120.0,
+  "context_after_seconds": 5.0,
+  "bin_seconds": 1.0,
+  "annotations": [],
+  "aggregate_far_vs_near": {
+    "filtered_baseline_median": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "filtered_amplitude_p90_p10": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "detector_score_mean": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "candidate_rate_hz": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "expected_rr_median_ms": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "firmware_score_mean": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    },
+    "timing_quality_mean": {
+      "count": 0,
+      "mean_delta": null,
+      "median_delta": null,
+      "positive_fraction": null
+    }
+  }
+}

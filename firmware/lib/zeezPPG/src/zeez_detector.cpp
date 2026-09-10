@@ -292,11 +292,16 @@ ZeezAdaptiveDetector::ZeezAdaptiveDetector(
     reset();
 }
 
-void ZeezAdaptiveDetector::reset() {
+void ZeezAdaptiveDetector::resetTransientState(
+    bool preserve_rhythm_prior
+) {
     signal_stats_.clear();
     slope_stats_.clear();
     signal_ring_.clear();
-    rr_ring_.clear();
+
+    if (!preserve_rhythm_prior) {
+        rr_ring_.clear();
+    }
 
     candidate_pool_count_ = 0;
 
@@ -306,15 +311,19 @@ void ZeezAdaptiveDetector::reset() {
     previous_seq_ = 0;
     previous_t_us_ = 0;
 
+    // 无论短断还是长断，都不能让 RR 跨无佩戴区间直接相减。
+    // 恢复后的第一搏重新作为 first 建立相位锚点。
     last_accepted_t_us_ = 0;
     last_accepted_seq_ = 0;
     predicted_beat_t_us_ = 0;
     last_phase_error_ms_ = 0.0f;
     locked_polarity_ = 0;
 
-    expected_rr_ms_ = 0.0f;
-    autocorr_rr_ms_ = 0.0f;
-    autocorr_confidence_ = 0.0f;
+    if (!preserve_rhythm_prior) {
+        expected_rr_ms_ = 0.0f;
+        autocorr_rr_ms_ = 0.0f;
+        autocorr_confidence_ = 0.0f;
+    }
 
     autocorr_scan_min_lag_ = 0;
     autocorr_scan_max_lag_ = 0;
@@ -330,11 +339,22 @@ void ZeezAdaptiveDetector::reset() {
         autocorr_scan_valid_[i] = false;
     }
 
+    // 无佩戴时 UI 不继续显示上一段 HR；但短断仍保留 RR ring，
+    // 以便恢复后更快回到此前的周期尺度。
     current_hr_bpm_ = 0.0f;
 
-    candidate_count_total_ = 0;
-    accepted_count_total_ = 0;
-    rescue_count_total_ = 0;
+    if (!preserve_rhythm_prior) {
+        candidate_count_total_ = 0;
+        accepted_count_total_ = 0;
+        rescue_count_total_ = 0;
+    }
+}
+
+void ZeezAdaptiveDetector::reset() {
+    resetTransientState(false);
+    wear_gap_active_ = false;
+    wear_gap_hard_reset_ = false;
+    wear_gap_start_t_us_ = 0;
 
     // reset 不改变用户已经设置的兼容灵敏度。
 }
@@ -1621,9 +1641,32 @@ ZeezDetectorEvent ZeezAdaptiveDetector::update(
     ZeezDetectorEvent output;
 
     if (!wear) {
-        // 佩戴断开后，节律相位不能跨区间继承。
-        reset();
+        if (!wear_gap_active_) {
+            wear_gap_active_ = true;
+            wear_gap_hard_reset_ = false;
+            wear_gap_start_t_us_ = t_us;
+
+            // 短时掉线：停止输出并清空当前波形/相位，但保留
+            // RR 周期先验，避免 0.25~1 s 的接触抖动触发冷启动。
+            resetTransientState(true);
+        } else if (
+            !wear_gap_hard_reset_
+            && t_us - wear_gap_start_t_us_
+                >= WEAR_GAP_HARD_RESET_US
+        ) {
+            // 真正持续脱腕才丢弃旧周期先验。只执行一次，
+            // 避免每个 no-wear sample 都重复 full reset。
+            resetTransientState(false);
+            wear_gap_hard_reset_ = true;
+        }
+
         return output;
+    }
+
+    if (wear_gap_active_) {
+        wear_gap_active_ = false;
+        wear_gap_hard_reset_ = false;
+        wear_gap_start_t_us_ = 0;
     }
 
     const float slope =

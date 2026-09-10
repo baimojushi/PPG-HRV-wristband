@@ -1,0 +1,156 @@
+[
+  {
+    "code": "INWARD_QUIET",
+    "name": "内向安静 / 高频增强型",
+    "priority": 40,
+    "test_state": "静止、注意向内时，心率趋缓，RMSSD与HF相对个人近期稳定基线增强，同时LF/HF谱形比下降。",
+    "user_narrative": "这段节律与研究中的内向安静场景出现了相似组合：心率趋缓，RMSSD与HF相对个人近期基线增强，LF/HF谱形比下降。",
+    "source_ids": [
+      1,
+      5
+    ],
+    "sources": [
+      {
+        "source_id": 1,
+        "authors": "Shr-Da Wu, Pei-Chen Lo",
+        "title": "Inward-attention meditation increases parasympathetic activity: a study based on heart rate variability",
+        "year": 2008,
+        "journal": "Biomedical Research",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18997439/",
+        "study_detail": "10名有Zen禅修经验者与10名无禅修经验对照，比较内向注意冥想与正常休息",
+        "finding_detail": "经验组冥想时LF/HF和LF标准化功率下降、HF标准化功率上升，并观察到较规则的心率振荡"
+      },
+      {
+        "source_id": 5,
+        "authors": "Ido Amihai, Maria Kozhevnikov",
+        "title": "Arousal vs. Relaxation: A Comparison of the Neurophysiological and Cognitive Correlates of Vajrayana and Theravada Meditative Practices",
+        "year": 2014,
+        "journal": "PLOS ONE",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0102990",
+        "study_detail": "10名长期Theravada练习者（2女，平均41.4岁、8年经验，泰国Yannawa Temple）与9名长期Vajrayana练习者（1女，平均47.5岁、7.4年经验，尼泊尔Shechen Monastery）",
+        "finding_detail": "Theravada Vipassana相对静息HF增加且LF/HF下降；Vajrayana的Deity与Rig-pa练习则出现HF下降的不同模式"
+      }
+    ]
+  },
+  {
+    "code": "RESONANCE_0P1",
+    "name": "0.1 Hz 共振样",
+    "priority": 100,
+    "test_state": "Welch在约0.075–0.11 Hz形成窄而突出的主峰，连续窗口主峰频率稳定，表现为低频规则振荡结构。",
+    "user_narrative": "心率波动正在约0.1 Hz附近形成窄而稳定的节律峰，这种有组织的低频振荡在慢呼吸与部分冥想研究中出现过。",
+    "source_ids": [
+      2,
+      6
+    ],
+    "sources": [
+      {
+        "source_id": 2,
+        "authors": "C-K Peng, Isaac C Henry, Joseph E Mietus, Jeffrey M Hausdorff, Gurucharan Khalsa, Herbert Benson, Ary L Goldberger",
+        "title": "Heart rate dynamics during three forms of meditation",
+        "year": 2004,
+        "journal": "International Journal of Cardiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15159033/",
+        "study_detail": "10名有经验冥想者（4女6男，29–55岁，平均42岁）依次完成放松反应、火呼吸和分段呼吸",
+        "finding_detail": "放松反应与分段呼吸出现约0.05–0.10 Hz高振幅心率振荡且心率-呼吸相干增强；火呼吸则平均心率升高、相干下降"
+      },
+      {
+        "source_id": 6,
+        "authors": "Caroline Peressutti, Juan M Martín-González, Juan M García-Manso, Denkô Mesa",
+        "title": "Heart rate dynamics in different levels of Zen meditation",
+        "year": 2010,
+        "journal": "International Journal of Cardiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19631997/",
+        "study_detail": "19名Soto-Zen坐禅练习者（7女12男，平均43.8岁，练习经验2个月–20年），其中4人同步记录呼吸",
+        "finding_detail": "研究同时使用频域分析和连续小波变换，观察到呼吸性心律调制随练习经验水平改变"
+      }
+    ]
+  },
+  {
+    "code": "PHASED_VIPASSANA",
+    "name": "分阶段频谱组织 / Vipassana样",
+    "priority": 80,
+    "test_state": "十几到几十分钟内出现可重复的阶段结构：早段频带能量下降、中段LF与HF共同增强、后段再次回落。",
+    "user_narrative": "过去十几分钟的频谱形成了分阶段的组织：前段较弱，中段LF与HF共同增强，随后再次回落。",
+    "source_ids": [
+      4
+    ],
+    "sources": [
+      {
+        "source_id": 4,
+        "authors": "Luis Carlos Delgado-Pastor, Pandelis Perakakis, Pailoor Subramanya, Shirley Telles, Jaime Vila",
+        "title": "Mindfulness (Vipassana) meditation: effects on P3b event-related potential and heart rate variability",
+        "year": 2013,
+        "journal": "International Journal of Psychophysiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23892096/",
+        "study_detail": "10名男性Vipassana经验者（20–61岁，至少2年练习，平均7.5年、每周约15小时）完成30分钟结构化冥想；HRV分析因伪迹排除3人：Anapana 10分钟、Vipassana 15分钟、Metta 5分钟",
+        "finding_detail": "LF和HF在Anapana阶段下降、Vipassana阶段上升、Metta阶段再次下降；Vipassana阶段LF/HF的增加幅度更明显"
+      }
+    ]
+  },
+  {
+    "code": "TRAINED_VIPASSANA_SHIFT",
+    "name": "HF增强 + THM下降训练样",
+    "priority": 55,
+    "test_state": "HF标准化贡献相对近期基线增加，同时0.06–0.10 Hz Traube–Hering–Mayer子带功率下降。",
+    "user_narrative": "高频成分相对个人近期基线增强，同时0.06–0.10 Hz的慢低频成分减弱，频谱内部正在重新分配。",
+    "source_ids": [
+      3
+    ],
+    "sources": [
+      {
+        "source_id": 3,
+        "authors": "Jonathan R Krygier, James A J Heathers, Sara Shahrestani, Maree Abbott, James J Gross, Andrew H Kemp",
+        "title": "Mindfulness meditation, well-being, and heart rate variability: a preliminary investigation into the impact of intensive Vipassana meditation",
+        "year": 2013,
+        "journal": "International Journal of Psychophysiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23797150/",
+        "study_detail": "36名首次参加10天S. N. Goenka传统Vipassana密集课程的参与者（16男20女，平均43.8岁）在训练前后各比较5分钟静息与5分钟冥想",
+        "finding_detail": "训练前冥想主要表现为lnHF增加；训练后冥想出现HF n.u.增加、Traube–Hering–Mayer低频成分下降"
+      }
+    ]
+  },
+  {
+    "code": "AROUSAL_MEDITATION",
+    "name": "高唤醒冥想样",
+    "priority": 70,
+    "test_state": "数据稳定时HF相对个人基线下降，心率没有同步减慢，形成与安静高频增强型不同的有组织状态。",
+    "user_narrative": "HF相对个人近期基线下降，心率没有同步变慢，时频结构仍保持稳定；这段形态更接近研究中的清醒、高唤醒冥想模式。",
+    "source_ids": [
+      5
+    ],
+    "sources": [
+      {
+        "source_id": 5,
+        "authors": "Ido Amihai, Maria Kozhevnikov",
+        "title": "Arousal vs. Relaxation: A Comparison of the Neurophysiological and Cognitive Correlates of Vajrayana and Theravada Meditative Practices",
+        "year": 2014,
+        "journal": "PLOS ONE",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0102990",
+        "study_detail": "10名长期Theravada练习者（2女，平均41.4岁、8年经验，泰国Yannawa Temple）与9名长期Vajrayana练习者（1女，平均47.5岁、7.4年经验，尼泊尔Shechen Monastery）",
+        "finding_detail": "Theravada Vipassana相对静息HF增加且LF/HF下降；Vajrayana的Deity与Rig-pa练习则出现HF下降的不同模式"
+      }
+    ]
+  },
+  {
+    "code": "SLOW_RECOVERY_VLF",
+    "name": "VLF慢恢复尾迹",
+    "priority": 50,
+    "test_state": "较快的HF和LF/HF已回到个人基线附近，VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。",
+    "user_narrative": "较快的HF与LF/HF已经接近个人近期基线，VLF仍保留更慢的偏离；恢复正在不同时间尺度上分层发生。",
+    "source_ids": [
+      7
+    ],
+    "sources": [
+      {
+        "source_id": 7,
+        "authors": "Harunobu Usui, Yusuke Nishida",
+        "title": "The very low-frequency band of heart rate variability represents the slow recovery component after a mental stress task",
+        "year": 2017,
+        "journal": "PLOS ONE",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28806776/",
+        "study_detail": "19名健康年轻受试者先静息10分钟，再完成20分钟Stroop任务，并继续静息恢复120分钟",
+        "finding_detail": "任务后HF和LF/HF很快回到基线，而VLF在恢复期持续低于静息水平，呈现更慢的恢复轨迹"
+      }
+    ]
+  }
+]

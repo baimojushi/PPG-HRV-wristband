@@ -40,6 +40,7 @@ from .provenance import (
     build_causality_trace_row,
     build_hrv_window_provenance_row,
     build_prototype_score_trace_row,
+    build_signal_input_trace_row,
     build_spectrum_5min_trace_row,
     build_ui_explanation_trace_row,
     build_baseline_trace_row,
@@ -154,7 +155,8 @@ class AnalysisEngine:
 
         # 检测器/波的采样间隔跟踪——配合 `metric_update_seconds`(20s) 对总间隔做节流。
         self._last_detector_log_us = 0
-        self._detector_state_interval_s = 8.0  # 每 8s 记录一次 beat_detector_state，约两次采样周期一次。
+        self._last_signal_input_log_us = -1
+        self._detector_state_interval_s = 5.0
         # proposal 的最近一次记录，用作 beat_provenance 里上一心搏的 prior 参考。
         self._last_proposal_ref_t_us = 0
 
@@ -192,6 +194,7 @@ class AnalysisEngine:
             self._protocol_health = ProtocolHealth()
             self._provenance_prev_baseline = None
             self._last_detector_log_us = 0
+            self._last_signal_input_log_us = -1
             self._last_proposal_ref_t_us = 0
 
     def ingest_sample(
@@ -213,6 +216,11 @@ class AnalysisEngine:
 
             self._run_fixed_lag_correction_locked(
                 force=False
+            )
+            # 输入链日志不依赖 7.25 s fixed-lag 是否已经成熟；
+            # 从会话开始就每约 5 秒留下原始 ADC / wear / I/O 对照。
+            self._log_fast_provenance_locked(
+                int(frame.t_us)
             )
 
     def add_user_annotation(
@@ -736,6 +744,12 @@ class AnalysisEngine:
             )
         )
 
+        # 即使这一轮没有得到 proposal，也要把输入/检测器状态落盘。
+        # 这正是区分“传感器掉线”和“检测器没有产出”的第一现场。
+        self._log_fast_provenance_locked(
+            latest_sample_t_us
+        )
+
         if not proposals:
             return
 
@@ -917,11 +931,15 @@ class AnalysisEngine:
                 try:
                     fw_match: BeatFrame | None = None
                     if matched_source_t_us > 0:
-                        fw_match = BeatFrame(
-                            seq=0,
-                            t_us=matched_source_t_us,
+                        fw_match = next(
+                            (
+                                item
+                                for item in reversed(self._firmware_beats)
+                                if int(item.t_us) == matched_source_t_us
+                            ),
+                            None,
                         )
-                    template_version = "v0.3.7"
+                    template_version = "v0.4.0-fixed-lag"
                     self._provenance.record_beat_provenance(
                         build_beat_provenance_row(
                             beat=refined,
@@ -1131,6 +1149,63 @@ class AnalysisEngine:
             signal_quality=signal_quality,
         )
 
+    def _log_fast_provenance_locked(
+        self,
+        now_us: int,
+    ) -> None:
+        if self._provenance is None:
+            return
+
+        interval_us = int(
+            round(self._detector_state_interval_s * 1e6)
+        )
+        if (
+            self._last_signal_input_log_us >= 0
+            and now_us - self._last_signal_input_log_us < interval_us
+        ):
+            return
+
+        self._last_signal_input_log_us = int(now_us)
+        self._last_detector_log_us = int(now_us)
+
+        try:
+            recent_samples = [
+                sample
+                for sample in self._samples
+                if sample.t_us >= now_us - 5_000_000
+            ]
+            fast_quality = evaluate_signal_quality(
+                recent_samples,
+                self._protocol_health,
+                self.config,
+            )
+            self._provenance.record_signal_input_trace(
+                build_signal_input_trace_row(
+                    samples=recent_samples,
+                    detector=self._waveform_corrector,
+                    signal_quality=fast_quality,
+                    protocol_health=self._protocol_health,
+                    diagnostic=self._last_diagnostic,
+                    window_t_us=int(now_us),
+                    adc_low=self.config.adc_low,
+                    adc_high=self.config.adc_high,
+                )
+            )
+        except Exception:
+            pass
+
+        try:
+            self._provenance.record_beat_detector_state(
+                build_beat_detector_state_row(
+                    detector=self._waveform_corrector,
+                    firmware_beats=list(self._firmware_beats),
+                    last_committed_t_us=self._last_refined_t_us,
+                    commit_until_t_us=int(now_us),
+                )
+            )
+        except Exception:
+            pass
+
     # ----------------------------------------------------------------------
     # 溯源日志：由 _update_metrics_locked 每 20 秒（record_history=True）调用。
     # 按 metric_update_seconds 节流（不越过 20s 周期频率）。
@@ -1147,33 +1222,6 @@ class AnalysisEngine:
     ) -> None:
         if self._provenance is None:
             return
-
-        # ----------------------------------------------------------
-        # ① detector 状态（每 8 秒写一次）
-        # ----------------------------------------------------------
-        if (
-            now_us - self._last_detector_log_us
-            >= self._detector_state_interval_s * 1_000_000
-        ):
-            try:
-                self._last_detector_log_us = now_us
-                state_row = build_beat_detector_state_row(
-                    detector=self._waveform_corrector,
-                    firmware_beats=list(self._firmware_beats),
-                    last_committed_t_us=self._last_refined_t_us,
-                    commit_until_t_us=self._current_time_us_locked(),
-                    reinit_reason=(
-                        getattr(
-                            self._waveform_corrector,
-                            "_last_reinit_reason",
-                            None,
-                        )
-                        or None
-                    ),
-                )
-                self._provenance.record_beat_detector_state(state_row)
-            except Exception:
-                pass
 
         # ----------------------------------------------------------
         # ② 20 秒窗口 HRV（与 metric_update_seconds 同节奏）
@@ -1200,6 +1248,10 @@ class AnalysisEngine:
                     window_t_us=now_us,
                 )
                 row["t_us"] = now_us
+                row["clipping_ratio"] = float(
+                    signal_quality.clip_low_ratio
+                    + signal_quality.clip_high_ratio
+                )
                 self._provenance.record_hrv_window_provenance(row)
             except Exception:
                 pass
@@ -1214,7 +1266,17 @@ class AnalysisEngine:
                         now_us - self.config.frequency_window_seconds * 1e6
                     ),
                     "window_end_t_us": now_us,
-                    "rr_count": int(len(self._nn_intervals)),
+                    "rr_count": int(
+                        sum(
+                            1
+                            for interval in self._nn_intervals
+                            if (
+                                now_us
+                                - int(interval.t_us)
+                                <= self.config.frequency_window_seconds * 1e6
+                            )
+                        )
+                    ),
                     "vlf": frequency_metrics.vlf_ms2,
                     "lf": frequency_metrics.lf_ms2,
                     "hf": frequency_metrics.hf_ms2,
@@ -1237,8 +1299,28 @@ class AnalysisEngine:
                     "spectral_agreement": getattr(
                         frequency_metrics, "spectral_agreement", 0.0
                     ),
-                    "pchip_vs_linear_diff": getattr(
+                    "band_power_agreement": getattr(
+                        frequency_metrics, "band_power_agreement", 0.0
+                    ),
+                    "interpolation_agreement": getattr(
                         frequency_metrics, "interpolation_agreement", 0.0
+                    ),
+                    "pchip_vs_linear_diff": (
+                        1.0
+                        - getattr(
+                            frequency_metrics,
+                            "interpolation_agreement",
+                            0.0,
+                        )
+                    ),
+                    "waveform_inserted_ratio": getattr(
+                        frequency_metrics, "waveform_inserted_ratio", 0.0
+                    ),
+                    "timing_recovered_ratio": getattr(
+                        frequency_metrics, "timing_recovered_ratio", 0.0
+                    ),
+                    "timing_shift_delta_p95_ms": getattr(
+                        frequency_metrics, "timing_shift_delta_p95_ms", 0.0
                     ),
                     "quality": frequency_metrics.status,
                     "validity_reason": frequency_metrics.validity_reason,
@@ -1258,23 +1340,34 @@ class AnalysisEngine:
         # ④ baseline 变化（每次 evaluate_research_state 之后对比版本）
         # ----------------------------------------------------------
         try:
-            research_snapshot = self._research_cache.get("state", {})
+            research_snapshot = evaluate_research_state(
+                copy.deepcopy(self._last_snapshot),
+                copy.deepcopy(list(self._metric_history)),
+                self.config,
+            )
             baseline = research_snapshot.get("baseline", {})
             if isinstance(baseline, dict) and baseline:
                 prev = self._provenance_prev_baseline
-                if prev is not None:
-                    prev_ver = int(prev.get("version", 0))
-                    curr_ver = int(baseline.get("version", 0))
-                    if prev_ver != curr_ver:
-                        self._provenance.record_baseline_trace(
-                            build_baseline_trace_row(
-                                baseline,
-                                prev,
-                                int(now_us),
-                                source=("VALID" if baseline.get("ready") else "LIMITED"),
-                            )
+                current_key = tuple(
+                    int(row.get("t_us", 0))
+                    for row in baseline.get("rows", [])
+                )
+                previous_key = tuple(
+                    int(row.get("t_us", 0))
+                    for row in (prev or {}).get("rows", [])
+                )
+                if prev is None or current_key != previous_key:
+                    self._provenance.record_baseline_trace(
+                        build_baseline_trace_row(
+                            baseline,
+                            prev,
+                            int(now_us),
+                            source=str(
+                                self._last_snapshot.frequency.status
+                            ),
                         )
-                self._provenance_prev_baseline = baseline
+                    )
+                self._provenance_prev_baseline = copy.deepcopy(baseline)
         except Exception:
             pass
 
@@ -1282,18 +1375,32 @@ class AnalysisEngine:
         # ⑥ UI 文案（当用户看到的解释文字变化时记录）
         # ----------------------------------------------------------
         try:
-            primary = research_snapshot.get("primary_state", {})
-            if isinstance(primary, dict) and primary:
-                self._provenance.record_ui_explanation_trace(
-                    build_ui_explanation_trace_row(
-                        state_t_us=now_us,
-                        state_name=primary.get("state_machine_state", ""),
-                        match=primary,  # dict 包含 score、source_ids、user_narrative 等
-                        user_text=primary.get("user_narrative", ""),
-                        trigger=primary.get("trigger", "") or "state_change",
-                        reliability="high" if primary.get("state_machine_state") in ("Q5_STATE_ACTIVE", "Q4_STATE_CANDIDATE") else "low",
-                    )
+            primary = research_snapshot.get("primary_state")
+            state_name = str(
+                research_snapshot.get("state_machine_state", "")
+            )
+            self._provenance.record_ui_explanation_trace(
+                build_ui_explanation_trace_row(
+                    state_t_us=now_us,
+                    state_name=state_name,
+                    match=primary if isinstance(primary, dict) else None,
+                    user_text=(
+                        primary.get("user_narrative", "")
+                        if isinstance(primary, dict)
+                        else ""
+                    ),
+                    trigger="state_refresh",
+                    reliability=(
+                        "high"
+                        if state_name in (
+                            "Q5_STATE_ACTIVE",
+                            "Q4_STATE_CANDIDATE",
+                            "Q3_ANALYZABLE",
+                        )
+                        else "low"
+                    ),
                 )
+            )
         except Exception:
             pass
 
@@ -1302,23 +1409,45 @@ class AnalysisEngine:
         # ----------------------------------------------------------
         try:
             matches = research_snapshot.get("matches", [])
-            threshold_map = {
-                "ACTIVE": 0.70,
-                "CANDIDATE": 0.70,
-            }
+            current_row = self._history_row(self._last_snapshot)
             for m in matches:
-                thr = threshold_map.get(m.get("lifecycle", ""), 0.0)
                 self._provenance.record_prototype_score_trace(
                     build_prototype_score_trace_row(
                         prototype_id=m["code"],
-                        row=m,
+                        row=current_row,
                         baseline=research_snapshot.get("baseline", {}),
                         score=m["score"],
                         evidence=m.get("evidence", []),
                         quality=m["quality_multiplier"],
-                        threshold=thr,
+                        threshold=_MATCH_THRESHOLD_ACTIVE,
                         baseline_ready=research_snapshot.get("baseline_ready", False),
-                        match=m if m["lifecycle"] == "ACTIVE" else None,
+                        match=(
+                            m
+                            if m["lifecycle"] in {"ACTIVE", "CANDIDATE"}
+                            else None
+                        ),
+                    )
+                )
+        except Exception:
+            pass
+
+        # 当前实现会用“此刻已经拥有的历史”重绘过去一小时。
+        # causality_trace 把这一事实显式写出来，便于下一轮继续收敛历史因果性。
+        try:
+            hour = build_hour_experience(
+                copy.deepcopy(self._last_snapshot),
+                copy.deepcopy(list(self._metric_history)),
+            )
+            baseline = research_snapshot.get("baseline", {})
+            baseline_version = int(
+                (baseline.get("rows") or [{}])[-1].get("t_us", 0)
+            )
+            for item in hour.get("timeline", []):
+                self._provenance.record_causality_trace(
+                    build_causality_trace_row(
+                        score_t_us=int(item.get("t_us", 0)),
+                        latest_data_t_us=int(now_us),
+                        baseline_version=baseline_version,
                     )
                 )
         except Exception:
@@ -1471,6 +1600,15 @@ class AnalysisEngine:
             ),
             "interpolation_agreement": (
                 frequency.interpolation_agreement
+            ),
+            "frequency_waveform_inserted_ratio": (
+                frequency.waveform_inserted_ratio
+            ),
+            "frequency_timing_recovered_ratio": (
+                frequency.timing_recovered_ratio
+            ),
+            "frequency_timing_shift_delta_p95_ms": (
+                frequency.timing_shift_delta_p95_ms
             ),
 
             "sqi": snapshot.signal_quality.sqi,
@@ -2412,15 +2550,21 @@ class AnalysisEngine:
                 ),
                 "prototype_match_records": [
                     build_prototype_score_trace_row(
-                        m["code"],
-                        m,
-                        {"metrics": {}, "version": 0},
-                        m["score"],
-                        m.get("evidence", []),
-                        m.get("quality_multiplier", 1.0),
-                        _MATCH_THRESHOLD_ACTIVE,
-                        research_snapshot.get("baseline_ready", False),
-                        m if m["lifecycle"] == "ACTIVE" else None,
+                        prototype_id=m["code"],
+                        row=current_row,
+                        baseline=research_snapshot.get("baseline", {}),
+                        score=m["score"],
+                        evidence=m.get("evidence", []),
+                        quality=m.get("quality_multiplier", 1.0),
+                        threshold=_MATCH_THRESHOLD_ACTIVE,
+                        baseline_ready=research_snapshot.get(
+                            "baseline_ready", False
+                        ),
+                        match=(
+                            m
+                            if m["lifecycle"] in {"ACTIVE", "CANDIDATE"}
+                            else None
+                        ),
                     )
                     for m in research_snapshot["matches"]
                 ],
@@ -2456,17 +2600,6 @@ class AnalysisEngine:
                 ),
             }
 
-        # --------------------------------------------------------------
-        # 溯源日志写入（实时流式落盘）。_provenance 为 None 时自动跳过。
-        # --------------------------------------------------------------
-        if self._provenance is not None:
-            self._write_provenance_locked(
-                snapshot=snapshot,
-                history=history,
-                research_snapshot=research_snapshot,
-            )
-
-        return result
 
     def summary_dict(
         self,
@@ -2704,6 +2837,18 @@ class AnalysisEngine:
                 ),
                 "max_consecutive_artifacts": (
                     frequency.max_consecutive_artifacts
+                ),
+                "waveform_inserted_ratio": round(
+                    frequency.waveform_inserted_ratio,
+                    5,
+                ),
+                "timing_recovered_ratio": round(
+                    frequency.timing_recovered_ratio,
+                    5,
+                ),
+                "timing_shift_delta_p95_ms": round(
+                    frequency.timing_shift_delta_p95_ms,
+                    3,
                 ),
                 "fiducial_quality_mean": round(
                     frequency.fiducial_quality_mean,

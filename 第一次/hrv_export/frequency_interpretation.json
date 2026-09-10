@@ -1,0 +1,10 @@
+{
+  "headline": "自动解析：当前还不能可靠解释频域分布。",
+  "plain_text": "Welch/Lomb 稳健一致性 65% < 80%；VLF/LF/HF 频带一致性 72% < 82%",
+  "vlf_text": "VLF：等待有效频域窗口。",
+  "lf_text": "LF：等待有效频域窗口。",
+  "hf_text": "HF：等待有效频域窗口。",
+  "median_text": "中位频率：等待有效频域窗口。",
+  "welch_text": "Welch 功率谱：质量门通过后再解释频带能量。",
+  "spwvd_text": "SPWVD：质量门通过后再观察时频结构。"
+}

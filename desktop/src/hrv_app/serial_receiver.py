@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Callable
 
 import serial
 
-from .models import ProtocolHealth
+from .models import ProtocolHealth, SampleFrame
 from .protocol import ProtocolStreamDecoder
 
 
@@ -22,6 +23,7 @@ class SerialReceiver:
         on_message: Callable[[object], None],
         on_status: Callable[[str], None] | None = None,
         on_protocol_health: Callable[[ProtocolHealth], None] | None = None,
+        on_io_trace: Callable[[dict], None] | None = None,
     ):
         self.on_message = on_message
         self.on_status = on_status or (lambda text: None)
@@ -29,6 +31,7 @@ class SerialReceiver:
             on_protocol_health
             or (lambda health: None)
         )
+        self.on_io_trace = on_io_trace or (lambda row: None)
 
         self._decoder = ProtocolStreamDecoder()
         self._serial: serial.Serial | None = None
@@ -93,7 +96,11 @@ class SerialReceiver:
         while not self._stop_event.is_set():
             try:
                 # read() 允许一次拿到多帧，也允许帧跨多次读取。
+                # 记录 host monotonic 时钟与批量大小，下一次实测可以直接
+                # 区分“设备 t_us 正常但 PC 端成批晚到”的 I/O 堵塞。
+                read_start_ns = time.monotonic_ns()
                 raw = self._serial.read(4096)
+                read_end_ns = time.monotonic_ns()
 
                 if not raw:
                     continue
@@ -105,6 +112,30 @@ class SerialReceiver:
 
                 health = self._decoder.health()
                 self.on_protocol_health(health)
+
+                sample_messages = [
+                    message
+                    for message in messages
+                    if isinstance(message, SampleFrame)
+                ]
+                self.on_io_trace({
+                    "host_read_start_ns": int(read_start_ns),
+                    "host_read_end_ns": int(read_end_ns),
+                    "read_duration_ms": (read_end_ns - read_start_ns) / 1e6,
+                    "bytes_read": int(len(raw)),
+                    "decoded_message_count": int(len(messages)),
+                    "sample_count": int(len(sample_messages)),
+                    "first_sample_seq": int(sample_messages[0].seq) if sample_messages else -1,
+                    "last_sample_seq": int(sample_messages[-1].seq) if sample_messages else -1,
+                    "first_sample_t_us": int(sample_messages[0].t_us) if sample_messages else 0,
+                    "last_sample_t_us": int(sample_messages[-1].t_us) if sample_messages else 0,
+                    "serial_in_waiting": int(getattr(self._serial, "in_waiting", 0) or 0),
+                    "protocol_ok_frames": int(health.ok_frames),
+                    "crc_errors": int(health.crc_errors),
+                    "format_errors": int(health.format_errors),
+                    "resync_count": int(health.resync_count),
+                    "sample_seq_gaps": int(health.sample_seq_gaps),
+                })
 
                 # 避免每个坏帧都刷 UI，只在累计错误跨越 10 的整数段时提示。
                 error_total = (

@@ -1,0 +1,95 @@
+{
+  "state_machine_state": "Q1_DATA_UNSTABLE",
+  "quality_state": "Q1_DATA_UNSTABLE",
+  "session_elapsed_minutes": 25.21807555,
+  "baseline_ready": true,
+  "baseline_reason": "",
+  "baseline_reference_window_count": 12,
+  "primary_state": null,
+  "matches": [
+    {
+      "code": "RESONANCE_0P1",
+      "name": "0.1 Hz 共振样",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "Welch在约0.075–0.11 Hz形成窄而突出的主峰，连续窗口主峰频率稳定，表现为低频规则振荡结构。",
+      "user_narrative": "心率波动正在约0.1 Hz附近形成窄而稳定的节律峰，这种有组织的低频振荡在慢呼吸与部分冥想研究中出现过。",
+      "source_ids": [
+        2,
+        6
+      ],
+      "priority": 100
+    },
+    {
+      "code": "PHASED_VIPASSANA",
+      "name": "分阶段频谱组织 / Vipassana样",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "十几到几十分钟内出现可重复的阶段结构：早段频带能量下降、中段LF与HF共同增强、后段再次回落。",
+      "user_narrative": "过去十几分钟的频谱形成了分阶段的组织：前段较弱，中段LF与HF共同增强，随后再次回落。",
+      "source_ids": [
+        4
+      ],
+      "priority": 80
+    },
+    {
+      "code": "AROUSAL_MEDITATION",
+      "name": "高唤醒冥想样",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "数据稳定时HF相对个人基线下降，心率没有同步减慢，形成与安静高频增强型不同的有组织状态。",
+      "user_narrative": "HF相对个人近期基线下降，心率没有同步变慢，时频结构仍保持稳定；这段形态更接近研究中的清醒、高唤醒冥想模式。",
+      "source_ids": [
+        5
+      ],
+      "priority": 70
+    },
+    {
+      "code": "TRAINED_VIPASSANA_SHIFT",
+      "name": "HF增强 + THM下降训练样",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "HF标准化贡献相对近期基线增加，同时0.06–0.10 Hz Traube–Hering–Mayer子带功率下降。",
+      "user_narrative": "高频成分相对个人近期基线增强，同时0.06–0.10 Hz的慢低频成分减弱，频谱内部正在重新分配。",
+      "source_ids": [
+        3
+      ],
+      "priority": 55
+    },
+    {
+      "code": "SLOW_RECOVERY_VLF",
+      "name": "VLF慢恢复尾迹",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "较快的HF和LF/HF已回到个人基线附近，VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。",
+      "user_narrative": "较快的HF与LF/HF已经接近个人近期基线，VLF仍保留更慢的偏离；恢复正在不同时间尺度上分层发生。",
+      "source_ids": [
+        7
+      ],
+      "priority": 50
+    },
+    {
+      "code": "INWARD_QUIET",
+      "name": "内向安静 / 高频增强型",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "test_state": "静止、注意向内时，心率趋缓，RMSSD与HF相对个人近期稳定基线增强，同时LF/HF谱形比下降。",
+      "user_narrative": "这段节律与研究中的内向安静场景出现了相似组合：心率趋缓，RMSSD与HF相对个人近期基线增强，LF/HF谱形比下降。",
+      "source_ids": [
+        1,
+        5
+      ],
+      "priority": 40
+    }
+  ],
+  "source_ids": [],
+  "source_facts_html": "",
+  "primary_source_ids": [],
+  "primary_source_facts_html": ""
+}

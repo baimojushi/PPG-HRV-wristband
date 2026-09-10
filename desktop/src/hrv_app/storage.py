@@ -149,6 +149,27 @@ class SessionRecorder:
                 "sample_queue_high_water",
             ],
         )
+        self._open_csv(
+            "transport_io",
+            [
+                "host_read_start_ns",
+                "host_read_end_ns",
+                "read_duration_ms",
+                "bytes_read",
+                "decoded_message_count",
+                "sample_count",
+                "first_sample_seq",
+                "last_sample_seq",
+                "first_sample_t_us",
+                "last_sample_t_us",
+                "serial_in_waiting",
+                "protocol_ok_frames",
+                "crc_errors",
+                "format_errors",
+                "resync_count",
+                "sample_seq_gaps",
+            ],
+        )
 
         # 溯源日志：实时新增，和 samples/beats/firmware_metrics/diagnostics 并级。
         self.provenance = ProvenanceRecorder(
@@ -173,6 +194,32 @@ class SessionRecorder:
 
         self._files[name] = handle
         self._writers[name] = writer
+
+    def record_transport_io(self, row: dict) -> None:
+        if not row:
+            return
+        with self._lock:
+            writer = self._writers.get("transport_io")
+            if writer is None:
+                return
+            writer.writerow([
+                row.get("host_read_start_ns", 0),
+                row.get("host_read_end_ns", 0),
+                row.get("read_duration_ms", 0.0),
+                row.get("bytes_read", 0),
+                row.get("decoded_message_count", 0),
+                row.get("sample_count", 0),
+                row.get("first_sample_seq", -1),
+                row.get("last_sample_seq", -1),
+                row.get("first_sample_t_us", 0),
+                row.get("last_sample_t_us", 0),
+                row.get("serial_in_waiting", 0),
+                row.get("protocol_ok_frames", 0),
+                row.get("crc_errors", 0),
+                row.get("format_errors", 0),
+                row.get("resync_count", 0),
+                row.get("sample_seq_gaps", 0),
+            ])
 
     def record(
         self,

@@ -622,6 +622,62 @@ def compute_frequency_domain(
         )
     )
 
+    # -------------------------------------------------------------------
+    # v0.4.0 重建负担。
+    #
+    # 绝对 timing_shift 很大但每搏几乎相同，只会整体平移时间轴，
+    # 不会明显改变 RR。真正危险的是相邻心搏的修正量来回跳变。
+    # 因此频域硬门使用 signed shift 的相邻差分 p95。
+    # -------------------------------------------------------------------
+    waveform_inserted_ratio = (
+        float(
+            np.mean(
+                [
+                    bool(record.inserted_by_smoother)
+                    for record in record_window
+                ]
+            )
+        )
+        if record_window
+        else 0.0
+    )
+
+    timing_recovered_ratio = (
+        float(
+            np.mean(
+                [
+                    bool(record.timing_recovered)
+                    for record in record_window
+                ]
+            )
+        )
+        if record_window
+        else 0.0
+    )
+
+    matched_shifts = np.asarray(
+        [
+            float(record.timing_shift_ms)
+            for record in record_window
+            if (
+                record.matched_firmware_t_us > 0
+                and np.isfinite(record.timing_shift_ms)
+            )
+        ],
+        dtype=float,
+    )
+
+    timing_shift_delta_p95_ms = (
+        float(
+            np.percentile(
+                np.abs(np.diff(matched_shifts)),
+                95,
+            )
+        )
+        if matched_shifts.size >= 2
+        else 0.0
+    )
+
     # source_t_us>0 表示该 Beat 已经进入 v0.3.4 fiducial 评估。
     # 即使低质量对齐被拒绝、refined=False，质量证据也必须保留。
     refined_records = [
@@ -1058,6 +1114,36 @@ def compute_frequency_domain(
         )
 
     if (
+        waveform_inserted_ratio
+        > cfg.frequency_limited_max_waveform_inserted_ratio
+    ):
+        hard_reasons.append(
+            "波形补搏比例 "
+            f"{waveform_inserted_ratio * 100:.1f}% > "
+            f"{cfg.frequency_limited_max_waveform_inserted_ratio * 100:.1f}%"
+        )
+
+    if (
+        timing_recovered_ratio
+        > cfg.frequency_limited_max_timing_recovered_ratio
+    ):
+        hard_reasons.append(
+            "心搏时间恢复比例 "
+            f"{timing_recovered_ratio * 100:.1f}% > "
+            f"{cfg.frequency_limited_max_timing_recovered_ratio * 100:.1f}%"
+        )
+
+    if (
+        timing_shift_delta_p95_ms
+        > cfg.frequency_limited_max_timing_shift_delta_p95_ms
+    ):
+        hard_reasons.append(
+            "相邻心搏时间修正跳变 p95 "
+            f"{timing_shift_delta_p95_ms:.1f} ms > "
+            f"{cfg.frequency_limited_max_timing_shift_delta_p95_ms:.1f} ms"
+        )
+
+    if (
         protocol_health.error_ratio
         > cfg.protocol_max_error_ratio
     ):
@@ -1120,6 +1206,9 @@ def compute_frequency_domain(
             max_consecutive_artifacts=(
                 max_consecutive
             ),
+            waveform_inserted_ratio=waveform_inserted_ratio,
+            timing_recovered_ratio=timing_recovered_ratio,
+            timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,
             spectral_agreement=(
                 spectral_agreement
             ),
@@ -1200,6 +1289,31 @@ def compute_frequency_domain(
         )
 
     if (
+        waveform_inserted_ratio
+        > cfg.frequency_strict_max_waveform_inserted_ratio
+    ):
+        strict_reasons.append(
+            f"波形补搏 {waveform_inserted_ratio * 100:.1f}%"
+        )
+
+    if (
+        timing_recovered_ratio
+        > cfg.frequency_strict_max_timing_recovered_ratio
+    ):
+        strict_reasons.append(
+            f"时间恢复 {timing_recovered_ratio * 100:.1f}%"
+        )
+
+    if (
+        timing_shift_delta_p95_ms
+        > cfg.frequency_strict_max_timing_shift_delta_p95_ms
+    ):
+        strict_reasons.append(
+            "相邻时间修正跳变 p95 "
+            f"{timing_shift_delta_p95_ms:.1f} ms"
+        )
+
+    if (
         spectral_agreement
         < cfg.frequency_strict_min_spectral_agreement
     ):
@@ -1273,6 +1387,9 @@ def compute_frequency_domain(
         max_consecutive_artifacts=(
             max_consecutive
         ),
+        waveform_inserted_ratio=waveform_inserted_ratio,
+        timing_recovered_ratio=timing_recovered_ratio,
+        timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,
         spectral_agreement=(
             spectral_agreement
         ),

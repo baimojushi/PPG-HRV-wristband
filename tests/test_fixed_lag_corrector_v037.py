@@ -407,3 +407,50 @@ def test_ui_has_only_ppg_and_formal_beat_continuous_series():
 
     # 人工标签仍保留为区间阴影。
     assert "self.annotation_region =" in ui
+
+
+def test_corrector_does_not_reuse_firmware_beat_across_propose_calls():
+    cfg = AnalysisConfig()
+    corrector = FixedLagWaveformCorrector(cfg)
+    samples, truth = _synthetic_ppg(18.0)
+    firmware = [
+        BeatFrame(
+            seq=index,
+            t_us=int(round(beat_time * 1e6)),
+            rr_ms=800.0,
+            hr_bpm=75.0,
+            score=0.9,
+            flags=1,
+        )
+        for index, beat_time in enumerate(truth)
+    ]
+
+    first = corrector.propose(
+        samples=samples,
+        firmware_beats=firmware,
+        last_committed_t_us=0,
+        rr_history_ms=[800.0] * 5,
+        commit_until_t_us=int(16.0 * 1e6),
+    )
+    consumed = {
+        proposal.matched_firmware_t_us
+        for proposal in first
+        if proposal.matched_firmware_t_us > 0
+    }
+    assert consumed
+
+    # 重放同一个重叠窗口只用于验证跨调用消费状态：旧实现会再次匹配
+    # 同一 firmware beat；新实现必须把这些事件视为已经消费。
+    second = corrector.propose(
+        samples=samples,
+        firmware_beats=firmware,
+        last_committed_t_us=0,
+        rr_history_ms=[800.0] * 5,
+        commit_until_t_us=int(16.0 * 1e6),
+    )
+    reused = {
+        proposal.matched_firmware_t_us
+        for proposal in second
+        if proposal.matched_firmware_t_us in consumed
+    }
+    assert not reused

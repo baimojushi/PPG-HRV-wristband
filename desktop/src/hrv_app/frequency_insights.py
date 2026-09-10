@@ -160,34 +160,51 @@ def describe_frequency_balance(
 
 
 def build_frequency_trend_rows(history: Sequence[dict]) -> list[dict]:
-    valid_rows = [
-        row
-        for row in history
-        if row.get('frequency_status') in {'VALID', 'LIMITED'}
-        and np.isfinite(row.get('vlf_ms2', np.nan))
-        and np.isfinite(row.get('lf_ms2', np.nan))
-        and np.isfinite(row.get('hf_ms2', np.nan))
-        and np.isfinite(row.get('median_frequency_hz', np.nan))
-    ]
-
-    if not valid_rows:
+    """保留完整会话时间轴；不可用窗口写 NaN，而不是删除后跨空档连线。"""
+    if not history:
         return []
 
-    t0 = valid_rows[0].get('t_us', 0)
+    def _usable(row: dict) -> bool:
+        return bool(
+            row.get("frequency_status") in {"VALID", "LIMITED"}
+            and np.isfinite(row.get("vlf_ms2", np.nan))
+            and np.isfinite(row.get("lf_ms2", np.nan))
+            and np.isfinite(row.get("hf_ms2", np.nan))
+            and np.isfinite(row.get("median_frequency_hz", np.nan))
+        )
+
+    if not any(_usable(row) for row in history):
+        return []
+
+    # 与“过去一小时”统一到会话历史的第一条记录；
+    # 不再把首个成功的 5 分钟频率窗口伪装成 0 分钟。
+    t0 = int(history[0].get("t_us", 0) or 0)
     trend_rows: list[dict] = []
-    for row in valid_rows:
+
+    for row in history:
+        usable = _usable(row)
+        value = lambda key: (
+            float(row.get(key, np.nan)) if usable else float("nan")
+        )
+        median_hz = value("median_frequency_hz")
         trend_rows.append({
-            't_us': int(row.get('t_us', 0)),
-            'elapsed_minutes': float((row.get('t_us', 0) - t0) / 60e6),
-            'frequency_status': row.get('frequency_status', ''),
-            'total_power_ms2': float(row.get('total_power_ms2', 0.0)),
-            'vlf_ms2': float(row.get('vlf_ms2', 0.0)),
-            'lf_ms2': float(row.get('lf_ms2', 0.0)),
-            'hf_ms2': float(row.get('hf_ms2', 0.0)),
-            'lf_hf': float(row.get('lf_hf', 0.0)),
-            'median_frequency_hz': float(row.get('median_frequency_hz', 0.0)),
-            'median_frequency_mhz': float(row.get('median_frequency_hz', 0.0) * 1000.0),
+            "t_us": int(row.get("t_us", 0) or 0),
+            "elapsed_minutes": float(
+                (int(row.get("t_us", 0) or 0) - t0) / 60e6
+            ),
+            "frequency_status": row.get("frequency_status", ""),
+            "frequency_available": bool(usable),
+            "total_power_ms2": value("total_power_ms2"),
+            "vlf_ms2": value("vlf_ms2"),
+            "lf_ms2": value("lf_ms2"),
+            "hf_ms2": value("hf_ms2"),
+            "lf_hf": value("lf_hf"),
+            "median_frequency_hz": median_hz,
+            "median_frequency_mhz": (
+                median_hz * 1000.0 if np.isfinite(median_hz) else float("nan")
+            ),
         })
+
     return trend_rows
 
 

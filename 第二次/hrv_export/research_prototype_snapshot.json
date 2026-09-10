@@ -1,0 +1,119 @@
+{
+  "state_machine_state": "Q1_DATA_UNSTABLE",
+  "quality_state": "Q1_DATA_UNSTABLE",
+  "session_elapsed_minutes": 20.98941025,
+  "baseline_ready": true,
+  "baseline_reason": "",
+  "baseline_reference_window_count": 8,
+  "primary_state": null,
+  "matches": [
+    {
+      "code": "RESONANCE_0P1",
+      "name": "缓慢而规律",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "Welch在约0.075–0.11 Hz形成窄而突出的主峰，连续窗口主峰频率稳定，表现为低频规则振荡结构。",
+      "user_narrative": "心跳起伏逐渐集中成一个缓慢而规律的节奏，大约每10秒完成一次起伏。慢呼吸和部分冥想研究里出现过相似节律。",
+      "source_ids": [
+        2,
+        6
+      ],
+      "priority": 100
+    },
+    {
+      "code": "PHASED_VIPASSANA",
+      "name": "分阶段变化",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "十几到几十分钟内出现可重复的阶段结构：早段频带能量下降、中段LF与HF共同增强、后段再次回落。",
+      "user_narrative": "过去十几分钟出现了明显的阶段变化：前段起伏收窄，中段较慢和较快的起伏一起变明显，随后再次回落。",
+      "source_ids": [
+        4
+      ],
+      "priority": 80
+    },
+    {
+      "code": "AROUSAL_MEDITATION",
+      "name": "活跃而有序",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "数据稳定时HF相对个人基线下降，心率没有同步减慢，形成与安静高频增强型不同的有组织状态。",
+      "user_narrative": "较快、常跟呼吸一起变化的起伏变弱，心率没有一起变慢，整体节律仍较有组织。研究中的部分清醒、活跃冥想练习出现过相似组合。",
+      "source_ids": [
+        5
+      ],
+      "priority": 70
+    },
+    {
+      "code": "TRAINED_VIPASSANA_SHIFT",
+      "name": "呼吸起伏更明显",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "HF标准化贡献相对近期基线增加，同时0.06–0.10 Hz Traube–Hering–Mayer子带功率下降。",
+      "user_narrative": "与刚才相比，较快、常跟呼吸一起变化的起伏更明显，同时一部分较慢起伏减弱，整个节律的重心正在移动。",
+      "source_ids": [
+        3
+      ],
+      "priority": 55
+    },
+    {
+      "code": "SLOW_RECOVERY_VLF",
+      "name": "缓慢恢复中",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "较快的HF和LF/HF已回到个人基线附近，VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。",
+      "user_narrative": "较快的起伏已经接近你这次记录里的近期常态，最慢的背景变化还没有完全回来，身体可能仍处在一个更慢的恢复过程里。",
+      "source_ids": [
+        7
+      ],
+      "priority": 50
+    },
+    {
+      "code": "INWARD_QUIET",
+      "name": "向内安静",
+      "score": 0.0,
+      "lifecycle": "INACTIVE",
+      "evidence": [],
+      "quality_multiplier": 0.0,
+      "score_before_quality": 0.0,
+      "no_match_reason": "NO_MATCH: QUALITY_CEILING 0.00 < 0.70",
+      "baseline_ready": true,
+      "test_state": "静止、注意向内时，心率趋缓，RMSSD与HF相对个人近期稳定基线增强，同时LF/HF谱形比下降。",
+      "user_narrative": "这段时间，心跳整体稍慢，较快、常跟呼吸一起变化的起伏更明显，较慢与较快起伏的相对比例也在下降。研究中，静坐并把注意力转向身体内部时出现过相似组合。",
+      "source_ids": [
+        1,
+        5
+      ],
+      "priority": 40
+    }
+  ],
+  "source_ids": [],
+  "source_facts_html": "",
+  "primary_source_ids": [],
+  "primary_source_facts_html": ""
+}

@@ -605,3 +605,37 @@ def test_storage_exports_research_layer_files():
         "research_state_timeline.csv",
     ]:
         assert filename in storage
+
+
+def test_hour_timeline_uses_nan_when_research_similarity_is_unavailable():
+    history = []
+    for seconds in range(0, 46 * 60, 20):
+        status = "INVALID" if seconds == 36 * 60 else "VALID"
+        history.append(_row(float(seconds), status=status))
+
+    snapshot = _snapshot(
+        46 * 60,
+        hr=70.0,
+        rmssd=30.0,
+        vlf=200.0,
+        lf=500.0,
+        hf=300.0,
+        hf_nu=37.5,
+        lf_hf=1.67,
+    )
+
+    result = build_hour_experience(snapshot, history)
+    unavailable = next(
+        item
+        for item in result["timeline"]
+        if item["t_us"] == 36 * 60 * 1_000_000
+    )
+
+    assert unavailable["primary_code"] == "DATA_UNSTABLE"
+    score_values = [
+        value
+        for key, value in unavailable.items()
+        if key.startswith("score_")
+    ]
+    assert score_values
+    assert all(np.isnan(value) for value in score_values)

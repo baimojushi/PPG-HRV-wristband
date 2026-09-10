@@ -319,6 +319,13 @@ class FrequencyDomainMetrics:
     unresolved_suspect_ratio: float = 1.0
     max_consecutive_artifacts: int = 0
 
+    # v0.4.0 数据链诊断：桌面端波形重建负担。
+    # 单纯“整体平移”不会直接扭曲 RR，因此真正进入频域质量门的是
+    # 相邻心搏时间修正的变化量，而不是绝对 shift 本身。
+    waveform_inserted_ratio: float = 0.0
+    timing_recovered_ratio: float = 0.0
+    timing_shift_delta_p95_ms: float = 0.0
+
     # v0.3.3：
     # spectral_agreement 是“稳健 Welch/Lomb 一致性”，
     # 由约 0.02 Hz 频率尺度的谱形一致性 + VLF/LF/HF 频带分布一致性组成。

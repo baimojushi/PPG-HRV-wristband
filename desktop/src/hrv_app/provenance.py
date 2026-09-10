@@ -4,7 +4,7 @@
 现有 SessionRecorder 只回答"队列有没有掉数据、串口有没有错误、最后的心搏是什么、
 最后的 HRV 是多少"。它回答不了"算法为什么把 A 变成 B"。
 
-本模块补齐 8 条独立 CSV，全部只记录、不改变任何算法：
+本模块补齐 9 条独立 CSV，全部只记录、不改变任何算法：
 
   beat_provenance        每个心搏      固件心搏时间 / 波形峰时间 / 最终时间 / 偏移 /
                                   是否无固件匹配 / 是否恢复 / 原始波形评分 / 峰突出度 /
@@ -12,6 +12,8 @@
   beat_detector_state    每 5-10 秒   当前极性 / 模板相关度 / 自相关估计 RR /
                                   固件预期 RR / 候选峰数量 / 最终峰数量 /
                                   重新初始化原因
+  signal_input_trace     每约 5 秒     原始 ADC 分位数 / 削底 / wear / 采样时基 /
+                                  协议与队列 / fixed-lag 自相关与候选统计
   hrv_window_provenance  每 20 秒     窗口与 5 分钟补搏比例 / 恢复比例 /
                                   偏移 p50/p95 / 相邻偏移变化 p95 /
                                   固件 RR 与最终 RR 各自 RMSSD/SDNN / 削底比例
@@ -40,9 +42,13 @@ from collections import defaultdict
 from typing import Any
 
 from .models import (
+    AnalysisSnapshot,
     BeatFrame,
     BeatRecord,
-    AnalysisSnapshot,
+    DiagnosticFrame,
+    ProtocolHealth,
+    SampleFrame,
+    SignalQuality,
 )
 
 
@@ -59,6 +65,7 @@ class ProvenanceRecorder:
         self._files: dict[str, Any] = {}
         self._writers: dict[str, Any] = {}
         self._flushed = False
+        self._closed = False
 
     # ------------------------------------------------------------------
     # 公共 API
@@ -68,6 +75,9 @@ class ProvenanceRecorder:
 
     def record_beat_detector_state(self, row: dict[str, Any]) -> None:
         self._write_row("beat_detector_state", row)
+
+    def record_signal_input_trace(self, row: dict[str, Any]) -> None:
+        self._write_row("signal_input_trace", row)
 
     def record_hrv_window_provenance(self, row: dict[str, Any]) -> None:
         self._write_row("hrv_window_provenance", row)
@@ -89,16 +99,20 @@ class ProvenanceRecorder:
 
     def flush(self) -> None:
         with self._lock:
-            for w in self._writers.values():
-                w.flush()
+            for handle in self._files.values():
+                handle.flush()
+            self._flushed = True
 
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
             for f in self._files.values():
                 f.close()
             self._files.clear()
             self._writers.clear()
             self._flushed = True
+            self._closed = True
 
     # ------------------------------------------------------------------
     # 内部实现
@@ -117,6 +131,8 @@ class ProvenanceRecorder:
         if not row:
             return
         with self._lock:
+            if self._closed:
+                return
             if name not in self._writers:
                 self._open_file(name)
                 self._writers[name].writerow(list(row.keys()))
@@ -185,14 +201,17 @@ def build_beat_provenance_row(
     no_firmware_match = (
         1 if not firmware_match else 0
     )
-    recovered = (
-        1 if beat.inserted_by_smoother else 0
-    )
-    recovery_reason = (
-        beat.recovery_reason
-        if hasattr(beat, "recovery_reason")
-        else None
-    )
+    inserted_by_smoother = bool(beat.inserted_by_smoother)
+    timing_recovered = bool(beat.timing_recovered)
+    low_prominence_rescue = bool(beat.low_prominence_rescue)
+    recovery_flags: list[str] = []
+    if inserted_by_smoother:
+        recovery_flags.append("waveform_inserted")
+    if timing_recovered:
+        recovery_flags.append("timing_recovered")
+    if low_prominence_rescue:
+        recovery_flags.append("low_prominence_rescue")
+    recovery_reason = "+".join(recovery_flags)
     match_distance_ms = (
         abs(int(firmware_match.t_us) - waveform_t_us) / 1000.0
         if firmware_match and waveform_t_us
@@ -205,7 +224,9 @@ def build_beat_provenance_row(
         "final_t_us": final_t_us,
         "timing_shift_ms": timing_shift_ms,
         "no_firmware_match": no_firmware_match,
-        "recovered": recovered,
+        "inserted_by_smoother": int(inserted_by_smoother),
+        "timing_recovered": int(timing_recovered),
+        "low_prominence_rescue": int(low_prominence_rescue),
         "waveform_score": (
             float(proposal.waveform_score)
             if proposal
@@ -227,7 +248,7 @@ def build_beat_provenance_row(
             else 0.0
         ),
         "match_distance_ms": match_distance_ms,
-        "recovery_reason": recovery_reason or "",
+        "recovery_reason": recovery_reason,
         "template_version": template_version,
     }
 
@@ -239,53 +260,226 @@ def build_beat_detector_state_row(
     commit_until_t_us: int,
     reinit_reason: str | None = None,
 ) -> dict[str, Any]:
-    """从检测器当前状态构建 beat_detector_state 行。
+    """记录桌面 fixed-lag 波形检测器此刻的内部状态。
 
-    关键字段：
-      polarity                当前极性
-      template_correlation    模板相关度（autocorr_confidence）
-      autocorr_estimated_rr_ms 自相关估计 RR
-      firmware_expected_rr_ms  固件预期 RR
-      candidate_peak_count    候选峰数量
-      final_peak_count        最终峰数量
-      reinit_reason           重新初始化原因（None 则为空）
+    FixedLagWaveformCorrector 把实时状态放在 ``last_diagnostics`` 中；
+    旧日志直接从 detector 本体读属性，因此大部分字段长期为 0。
+    这里优先读取 last_diagnostics，并同时保留最近固件 RR 作为对照。
     """
-    autocorr_rr = (
-        float(getattr(detector, "autocorr_rr_ms", 0.0) or 0.0)
+    diag = getattr(detector, "last_diagnostics", detector)
+    autocorr_rr = float(
+        getattr(diag, "reference_rr_ms", 0.0) or 0.0
     )
     firmware_rr = 0.0
-    if firmware_beats:
-        recent = [
-            b
-            for b in firmware_beats
-            if b.t_us <= commit_until_t_us
+    recent = [
+        beat
+        for beat in firmware_beats
+        if (
+            beat.t_us <= commit_until_t_us
+            and beat.t_us >= commit_until_t_us - 12_000_000
+        )
+    ]
+    if len(recent) >= 2:
+        import numpy as _np
+
+        rrs = [
+            (recent[i].t_us - recent[i - 1].t_us) / 1000.0
+            for i in range(1, len(recent))
         ]
-        if len(recent) >= 2:
-            rrs = [
-                (recent[i].t_us - recent[i - 1].t_us) / 1000.0
-                for i in range(1, len(recent))
-            ]
-            import numpy as _np
-            firmware_rr = float(_np.median(rrs))
-    # 若外部传入了原因（wear 丢失），优先用；否则读检测器内部字段
+        firmware_rr = float(_np.median(rrs))
+
     detection_reason = reinit_reason or (
         getattr(detector, "_last_reinit_reason", "") or ""
     )
     return {
-        "t_us": commit_until_t_us,
-        "polarity": int(getattr(detector, "locked_polarity", 1) or 1),
+        "t_us": int(commit_until_t_us),
+        "last_committed_t_us": int(last_committed_t_us),
+        "polarity": int(getattr(diag, "polarity", 1) or 1),
         "template_correlation": float(
-            getattr(detector, "autocorr_confidence", 0.0) or 0.0
+            getattr(diag, "autocorr_confidence", 0.0) or 0.0
         ),
         "autocorr_estimated_rr_ms": autocorr_rr,
         "firmware_expected_rr_ms": firmware_rr,
         "candidate_peak_count": int(
-            getattr(detector, "candidate_count", 0) or 0
+            getattr(diag, "candidate_count", 0) or 0
         ),
         "final_peak_count": int(
-            getattr(detector, "accepted_count", 0) or 0
+            getattr(diag, "selected_count", 0) or 0
+        ),
+        "inserted_peak_count": int(
+            getattr(diag, "inserted_count", 0) or 0
+        ),
+        "firmware_matched_count": int(
+            getattr(diag, "firmware_matched_count", 0) or 0
+        ),
+        "waveform_amplitude": float(
+            getattr(diag, "waveform_amplitude", 0.0) or 0.0
+        ),
+        "commit_until_t_us": int(
+            getattr(diag, "commit_until_t_us", commit_until_t_us) or commit_until_t_us
+        ),
+        "latest_sample_t_us": int(
+            getattr(diag, "latest_sample_t_us", 0) or 0
         ),
         "reinit_reason": detection_reason,
+    }
+
+
+def build_signal_input_trace_row(
+    samples: list[SampleFrame],
+    detector: Any,
+    signal_quality: SignalQuality,
+    protocol_health: ProtocolHealth,
+    diagnostic: DiagnosticFrame | None,
+    window_t_us: int,
+    adc_low: float = 0.0,
+    adc_high: float = 1023.0,
+) -> dict[str, Any]:
+    """用最近约 5 秒原始输入记录传感器→算法第一现场。
+
+    该日志专门区分三类退化：
+    1. 原始 ADC 工作点/削底/佩戴状态变化；
+    2. 设备时基或协议/队列异常；
+    3. fixed-lag 自相关与匹配器自身退化。
+    """
+    import numpy as np
+
+    if not samples:
+        return {
+            "t_us": int(window_t_us),
+            "sample_count": 0,
+        }
+
+    raw = np.asarray([sample.raw for sample in samples], dtype=float)
+    avg = np.asarray([sample.avg for sample in samples], dtype=float)
+    filtered = np.asarray(
+        [sample.filtered for sample in samples], dtype=float
+    )
+    flags = np.asarray([sample.flags for sample in samples], dtype=np.int64)
+    detector_score = np.asarray(
+        [sample.detector_score for sample in samples], dtype=float
+    )
+    expected_rr = np.asarray(
+        [sample.expected_rr_ms for sample in samples], dtype=float
+    )
+    firmware_hr = np.asarray(
+        [sample.hr_bpm for sample in samples], dtype=float
+    )
+    t_us = np.asarray([sample.t_us for sample in samples], dtype=np.int64)
+    wear = (flags & 0x01) != 0
+    clip_low = (raw <= adc_low) | ((flags & 0x02) != 0)
+    clip_high = (raw >= adc_high) | ((flags & 0x04) != 0)
+
+    wear_transitions = int(np.count_nonzero(wear[1:] != wear[:-1]))
+    max_no_wear_run = 0
+    current_run = 0
+    for value in wear:
+        if value:
+            current_run = 0
+        else:
+            current_run += 1
+            max_no_wear_run = max(max_no_wear_run, current_run)
+
+    dt_ms = np.diff(t_us.astype(float)) / 1000.0
+    positive_dt = dt_ms[dt_ms > 0]
+    sample_period_ms = (
+        float(np.median(positive_dt)) if positive_dt.size else 0.0
+    )
+    effective_rate = (
+        1000.0 / sample_period_ms if sample_period_ms > 0 else 0.0
+    )
+    jitter_p95 = (
+        float(
+            np.percentile(
+                np.abs(positive_dt - sample_period_ms),
+                95,
+            )
+        )
+        if positive_dt.size
+        else 0.0
+    )
+
+    diag = getattr(detector, "last_diagnostics", detector)
+    latest_diag = diagnostic
+
+    def _p(values: np.ndarray, q: float) -> float:
+        return float(np.percentile(values, q)) if values.size else 0.0
+
+    finite_rr = expected_rr[np.isfinite(expected_rr) & (expected_rr > 0)]
+    finite_hr = firmware_hr[np.isfinite(firmware_hr) & (firmware_hr > 0)]
+
+    return {
+        "t_us": int(window_t_us),
+        "window_start_t_us": int(t_us[0]),
+        "window_end_t_us": int(t_us[-1]),
+        "sample_count": int(len(samples)),
+        "raw_min": float(np.min(raw)),
+        "raw_p05": _p(raw, 5),
+        "raw_p50": _p(raw, 50),
+        "raw_p95": _p(raw, 95),
+        "raw_max": float(np.max(raw)),
+        "avg_p05": _p(avg, 5),
+        "avg_p50": _p(avg, 50),
+        "avg_p95": _p(avg, 95),
+        "filtered_p05": _p(filtered, 5),
+        "filtered_p50": _p(filtered, 50),
+        "filtered_p95": _p(filtered, 95),
+        "filtered_std": float(np.std(filtered)),
+        "filtered_peak_to_peak": float(np.ptp(filtered)),
+        "clip_low_ratio": float(np.mean(clip_low)),
+        "clip_high_ratio": float(np.mean(clip_high)),
+        "wear_ratio": float(np.mean(wear)),
+        "wear_transition_count": wear_transitions,
+        "max_no_wear_run_ms": float(max_no_wear_run * sample_period_ms),
+        "candidate_count": int(
+            sum(1 for sample in samples if int(sample.peak) != 0)
+        ),
+        "detector_score_p50": _p(detector_score, 50),
+        "expected_rr_ms_p50": (
+            _p(finite_rr, 50) if finite_rr.size else 0.0
+        ),
+        "firmware_hr_bpm_p50": (
+            _p(finite_hr, 50) if finite_hr.size else 0.0
+        ),
+        "firmware_hr_zero_ratio": float(
+            np.mean(~np.isfinite(firmware_hr) | (firmware_hr <= 0))
+        ),
+        "effective_sample_rate_hz": effective_rate,
+        "timing_jitter_p95_ms": jitter_p95,
+        "sqi": float(signal_quality.sqi),
+        "sqi_wear_ratio": float(signal_quality.wear_ratio),
+        "sqi_clip_low_ratio": float(signal_quality.clip_low_ratio),
+        "sqi_clip_high_ratio": float(signal_quality.clip_high_ratio),
+        "protocol_error_ratio": float(protocol_health.error_ratio),
+        "protocol_seq_gaps": int(protocol_health.sample_seq_gaps),
+        "sample_drop_count": int(
+            latest_diag.sample_drop_count if latest_diag else 0
+        ),
+        "sample_queue_depth": int(
+            latest_diag.sample_queue_depth if latest_diag else 0
+        ),
+        "sample_queue_high_water": int(
+            latest_diag.sample_queue_high_water if latest_diag else 0
+        ),
+        "corrector_reference_rr_ms": float(
+            getattr(diag, "reference_rr_ms", 0.0) or 0.0
+        ),
+        "corrector_autocorr_confidence": float(
+            getattr(diag, "autocorr_confidence", 0.0) or 0.0
+        ),
+        "corrector_polarity": int(getattr(diag, "polarity", 1) or 1),
+        "corrector_candidate_count": int(
+            getattr(diag, "candidate_count", 0) or 0
+        ),
+        "corrector_selected_count": int(
+            getattr(diag, "selected_count", 0) or 0
+        ),
+        "corrector_inserted_count": int(
+            getattr(diag, "inserted_count", 0) or 0
+        ),
+        "corrector_firmware_matched_count": int(
+            getattr(diag, "firmware_matched_count", 0) or 0
+        ),
     }
 
 
@@ -342,6 +536,7 @@ def build_hrv_window_provenance_row(
             "recovery_ratio": 0.0,
             "offset_p50_ms": 0.0,
             "offset_p95_ms": 0.0,
+            "offset_signed_p50_ms": 0.0,
             "adjacent_offset_change_p95_ms": 0.0,
             "firmware_rr_rmssd_ms": 0.0,
             "firmware_rr_sdnn_ms": 0.0,
@@ -355,48 +550,48 @@ def build_hrv_window_provenance_row(
         (window_beats[i].t_us - window_beats[i - 1].t_us) / 1000.0
         for i in range(1, len(window_beats))
     ]
+    firmware_window = [
+        beat
+        for beat in firmware_beats
+        if window_start <= beat.t_us <= window_end
+    ]
     firmware_rrs = [
-        (firmware_beats[i].t_us - firmware_beats[i - 1].t_us) / 1000.0
-        for i in range(1, len(firmware_beats))
+        (firmware_window[i].t_us - firmware_window[i - 1].t_us) / 1000.0
+        for i in range(1, len(firmware_window))
     ]
     insertion_ratio = (
         sum(1 for b in window_beats if b.inserted_by_smoother)
         / max(1, len(window_beats))
     )
     recovery_ratio = (
-        sum(
-            1
-            for b in window_beats
-            if getattr(b, "recovery_reason", None)
-        )
+        sum(1 for b in window_beats if bool(b.timing_recovered))
         / max(1, len(window_beats))
     )
-    offsets = [
-        abs(
-            (int(b.t_us) - int(getattr(b, "firmware_t_us", b.t_us)))
-        )
-        / 1000.0
+    offsets_signed = [
+        float(b.timing_shift_ms)
         for b in window_beats
-        if getattr(b, "firmware_t_us", None)
+        if int(getattr(b, "matched_firmware_t_us", 0) or 0) > 0
     ]
+    offsets_abs = [abs(value) for value in offsets_signed]
     adjacent_changes = [
-        abs(offsets[i] - offsets[i - 1])
-        for i in range(1, len(offsets))
+        abs(offsets_signed[i] - offsets_signed[i - 1])
+        for i in range(1, len(offsets_signed))
     ]
-    clipping_ratio = (
-        sum(1 for b in window_beats if b.low_prominence_rescue)
-        / max(1, len(window_beats))
-    )
+    # 原始 ADC 削底由 signal_input_trace / SignalQuality 记录；
+    # low_prominence_rescue 不是削底，不能再借它冒充 clipping_ratio。
+    clipping_ratio = 0.0
     return {
         "t_us": window_t_us,
         "window_start_t_us": window_start,
         "window_end_t_us": window_end,
         "beat_count": len(window_beats),
-        "firmware_beat_count": len(firmware_beats),
+        "firmware_beat_count": len(firmware_window),
         "insertion_ratio": float(insertion_ratio),
         "recovery_ratio": float(recovery_ratio),
-        "offset_p50_ms": _percentile(offsets, 50),
-        "offset_p95_ms": _percentile(offsets, 95),
+        # 兼容旧列名：offset_p50/p95 继续表示绝对偏移；另存 signed 中位数。
+        "offset_p50_ms": _percentile(offsets_abs, 50),
+        "offset_p95_ms": _percentile(offsets_abs, 95),
+        "offset_signed_p50_ms": _percentile(offsets_signed, 50),
         "adjacent_offset_change_p95_ms": _percentile(
             adjacent_changes, 95
         ),
@@ -456,13 +651,32 @@ def build_spectrum_5min_trace_row(
         "lomb_vlf_ratio": float(stats.get("lomb_vlf_ratio", 0.0) or 0.0),
         "lomb_lf_ratio": float(stats.get("lomb_lf_ratio", 0.0) or 0.0),
         "lomb_hf_ratio": float(stats.get("lomb_hf_ratio", 0.0) or 0.0),
-        "welch_peak_hz": _dominant_freq(freqs, psd),
-        "lomb_peak_hz": _dominant_freq(lomb_freqs, lomb),
+        "welch_peak_hz": float(
+            stats.get("welch_peak_hz", _dominant_freq(freqs, psd)) or 0.0
+        ),
+        "lomb_peak_hz": float(
+            stats.get("lomb_peak_hz", _dominant_freq(lomb_freqs, lomb)) or 0.0
+        ),
         "spectral_agreement": float(
             stats.get("spectral_agreement", 0.0) or 0.0
         ),
+        "band_power_agreement": float(
+            stats.get("band_power_agreement", 0.0) or 0.0
+        ),
+        "interpolation_agreement": float(
+            stats.get("interpolation_agreement", 0.0) or 0.0
+        ),
         "pchip_vs_linear_diff": float(
             stats.get("pchip_vs_linear_diff", 0.0) or 0.0
+        ),
+        "waveform_inserted_ratio": float(
+            stats.get("waveform_inserted_ratio", 0.0) or 0.0
+        ),
+        "timing_recovered_ratio": float(
+            stats.get("timing_recovered_ratio", 0.0) or 0.0
+        ),
+        "timing_shift_delta_p95_ms": float(
+            stats.get("timing_shift_delta_p95_ms", 0.0) or 0.0
         ),
         "quality": str(stats.get("quality", "") or ""),
         "rejection_reason": rejection_reason or "",
@@ -475,42 +689,60 @@ def build_baseline_trace_row(
     included_window_t_us: int,
     source: str = "VALID",
 ) -> dict[str, Any]:
-    """从基线构建 baseline_trace 行。
-
-    关键字段：
-      baseline_version     基线版本
-      included_window_t_us 纳入的窗口时间
-      center_*_vlf / center_*_lf / center_*_hf / center_*_rr_ms
-                           各指标中心值
-      scale_*_vlf / scale_*_lf / scale_*_hf / scale_*_rr_ms
-                           各指标波动尺度
-      delta_*_vlf / delta_*_lf / delta_*_hf / delta_*_rr_ms
-                           与上一版差异
-      source                VALID/LIMITED 来源
-    """
-    metrics = baseline.get("metrics", {})
-    prev_metrics = (
-        previous.get("metrics", {}) if previous is not None else None
+    """记录真实 research baseline 的参照窗口与稳健中心/尺度。"""
+    rows = list(baseline.get("rows", []) or [])
+    features = baseline.get("features", {}) or {}
+    previous_features = (
+        previous.get("features", {}) or {}
+        if isinstance(previous, dict)
+        else {}
     )
-    row: dict[str, Any] = {
-        "t_us": included_window_t_us,
-        "baseline_version": int(baseline.get("version", 0)),
-        "included_window_t_us": included_window_t_us,
+    reference_start = int(rows[0].get("t_us", 0)) if rows else 0
+    reference_end = int(rows[-1].get("t_us", 0)) if rows else 0
+
+    result: dict[str, Any] = {
+        "t_us": int(included_window_t_us),
+        # 没有显式 version 时用最后一个参照窗口时间作为稳定版本号。
+        "baseline_version": reference_end,
+        "baseline_ready": 1 if baseline.get("ready") else 0,
+        "reference_window_count": len(rows),
+        "reference_start_t_us": reference_start,
+        "reference_end_t_us": reference_end,
+        "span_seconds": float(baseline.get("span_seconds", 0.0) or 0.0),
+        "included_window_t_us": int(included_window_t_us),
         "source": source,
+        "reason": str(baseline.get("reason", "") or ""),
     }
-    for key in ("vlf", "lf", "hf", "rr_ms"):
-        center = float(metrics.get(f"center_{key}", 0.0) or 0.0)
-        scale = float(metrics.get(f"scale_{key}", 0.0) or 0.0)
-        row[f"center_{key}"] = center
-        row[f"scale_{key}"] = scale
-        if prev_metrics is not None:
-            prev_center = float(
-                prev_metrics.get(f"center_{key}", 0.0) or 0.0
-            )
-            row[f"delta_{key}"] = center - prev_center
-        else:
-            row[f"delta_{key}"] = 0.0
-    return row
+
+    feature_names = (
+        "hr_bpm",
+        "rmssd_ms",
+        "total_power_ms2",
+        "vlf_ms2",
+        "lf_ms2",
+        "hf_ms2",
+        "lf_nu",
+        "hf_nu",
+        "lf_hf",
+        "median_frequency_hz",
+        "resonance_share",
+        "lf_peak_frequency_hz",
+        "lf_peak_prominence_ratio",
+    )
+    for name in feature_names:
+        feature = features.get(name, {}) or {}
+        previous_feature = previous_features.get(name, {}) or {}
+        median = float(feature.get("median", 0.0) or 0.0)
+        scale = float(feature.get("scale", 0.0) or 0.0)
+        previous_median = float(
+            previous_feature.get("median", median) or median
+        )
+        result[f"median_{name}"] = median
+        result[f"scale_{name}"] = scale
+        result[f"delta_median_{name}"] = median - previous_median
+        result[f"count_{name}"] = int(feature.get("count", 0) or 0)
+
+    return result
 
 
 # 门槛常量，与 research_prototypes._machine_state 保持一致。
@@ -561,21 +793,8 @@ def build_prototype_score_trace_row(
     baseline_ready: bool,
     match: dict | None,
 ) -> dict[str, Any]:
-    """从单个原型评分构建 prototype_score_trace 行。
-
-    每个字段都回答"为什么这个原型没有匹配"：
-      input_present_<key>    每个输入值是否存在（1/0）
-      raw_<key>              原始值
-      deviation_<key>        相对近期常态的偏差
-      z_<key>                各评分分项
-      quality_coefficient    质量系数
-      score_before_quality   乘质量前得分
-      final_score            最终得分
-      threshold              门槛
-      no_match_reason        明确的未匹配原因
-    """
-    metrics = baseline.get("metrics", {})
-    evidence_text = " ".join(str(e) for e in evidence)
+    """记录原型评分的输入存在性、基线偏差和未匹配原因。"""
+    features = baseline.get("features", {}) or {}
     no_match_reason = _parse_no_match_reason(
         evidence,
         score,
@@ -585,34 +804,77 @@ def build_prototype_score_trace_row(
     )
     if match is not None:
         no_match_reason = ""
+
     result_row: dict[str, Any] = {
-        "t_us": int(row.get("t_end", row.get("t_start", 0)) or 0),
+        "t_us": int(row.get("t_us", row.get("t_end", row.get("t_start", 0))) or 0),
         "prototype_id": prototype_id,
         "quality_coefficient": float(quality),
         "score_before_quality": float(score / quality)
-        if quality > 0
+        if quality > 0 and score == score
         else 0.0,
-        "final_score": float(score),
+        "final_score": float(score) if score == score else float("nan"),
         "threshold": float(threshold),
         "baseline_ready": 1 if baseline_ready else 0,
+        "evidence": " | ".join(str(item) for item in evidence),
         "no_match_reason": no_match_reason,
     }
-    for key in ("vlf", "lf", "hf", "rr_ms"):
-        raw_key = f"raw_{key}"
-        dev_key = f"deviation_{key}"
-        z_key = f"z_{key}"
-        present_key = f"input_present_{key}"
-        raw = row.get(raw_key)
-        center = float(getattr(metrics, f"center_{key}", 0.0) or 0.0)
-        scale = float(getattr(metrics, f"scale_{key}", 0.0) or 0.0)
-        result_row[present_key] = 1 if raw is not None else 0
-        result_row[raw_key] = float(raw) if raw is not None else 0.0
-        result_row[dev_key] = (
-            (float(raw) - center) / scale
-            if raw is not None and scale > 0
+
+    log_features = {
+        "rmssd_ms",
+        "total_power_ms2",
+        "vlf_ms2",
+        "lf_ms2",
+        "hf_ms2",
+        "lf_hf",
+        "lf_peak_prominence_ratio",
+    }
+    feature_names = (
+        "hr_bpm",
+        "rmssd_ms",
+        "total_power_ms2",
+        "vlf_ms2",
+        "lf_ms2",
+        "hf_ms2",
+        "lf_nu",
+        "hf_nu",
+        "lf_hf",
+        "median_frequency_hz",
+        "resonance_share",
+        "lf_peak_frequency_hz",
+        "lf_peak_prominence_ratio",
+    )
+
+    import math
+
+    for name in feature_names:
+        raw = row.get(name)
+        present = False
+        numeric = 0.0
+        try:
+            numeric = float(raw)
+            present = math.isfinite(numeric)
+        except (TypeError, ValueError):
+            present = False
+
+        feature = features.get(name, {}) or {}
+        median = float(feature.get("median", 0.0) or 0.0)
+        scale = float(feature.get("scale", 0.0) or 0.0)
+        transformed = (
+            math.log(max(numeric, 1e-9))
+            if present and name in log_features
+            else numeric
+        )
+        z_value = (
+            (transformed - median) / scale
+            if present and scale > 0
             else 0.0
         )
-        result_row[z_key] = float(result_row[dev_key])
+        result_row[f"input_present_{name}"] = 1 if present else 0
+        result_row[f"raw_{name}"] = numeric if present else 0.0
+        result_row[f"baseline_median_{name}"] = median
+        result_row[f"baseline_scale_{name}"] = scale
+        result_row[f"z_{name}"] = float(z_value)
+
     return result_row
 
 

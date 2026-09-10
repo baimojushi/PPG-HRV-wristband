@@ -31,7 +31,12 @@ from PySide6.QtWidgets import (
 )
 
 from .engine import AnalysisEngine
-from .frequency_insights import AUTONOMIC_ZONES, describe_frequency_balance, frequency_zone_brushes
+from .frequency_insights import (
+    AUTONOMIC_ZONES,
+    build_frequency_trend_rows,
+    describe_frequency_balance,
+    frequency_zone_brushes,
+)
 from .legacy_csv import load_csv_into_engine
 from .models import (
     BeatFrame,
@@ -214,6 +219,7 @@ class MainWindow(QMainWindow):
             on_message=self._on_protocol_message,
             on_status=self._set_worker_status,
             on_protocol_health=self.engine.ingest_protocol_health,
+            on_io_trace=self._on_transport_io_trace,
         )
 
         self.recorder: SessionRecorder | None = None
@@ -1557,6 +1563,9 @@ class MainWindow(QMainWindow):
             self._last_session_dir = (
                 self.recorder.session_dir
             )
+            self.engine.attach_provenance_recorder(
+                self.recorder.provenance
+            )
 
             self.receiver.start(port, 115200)
             self.connect_button.setText("断开设备")
@@ -1579,6 +1588,10 @@ class MainWindow(QMainWindow):
             self.engine.ingest_firmware_metric(message)
         elif isinstance(message, DiagnosticFrame):
             self.engine.ingest_diagnostic(message)
+
+    def _on_transport_io_trace(self, row: dict) -> None:
+        if self.recorder:
+            self.recorder.record_transport_io(row)
 
     def _set_worker_status(self, text: str) -> None:
         # 后台线程只更新普通 Python 字符串；
@@ -2382,20 +2395,21 @@ class MainWindow(QMainWindow):
                 code,
                 curve,
             ) in self.prototype_score_curves.items():
+                values = []
+                for item in research_timeline:
+                    raw_value = item.get(
+                        f"score_{code}",
+                        np.nan,
+                    )
+                    try:
+                        values.append(float(raw_value))
+                    except (TypeError, ValueError):
+                        values.append(float("nan"))
+
                 curve.setData(
                     tx_research,
-                    np.asarray(
-                        [
-                            float(
-                                item.get(
-                                    f"score_{code}",
-                                    0.0,
-                                )
-                            )
-                            for item in research_timeline
-                        ],
-                        dtype=float,
-                    ),
+                    np.asarray(values, dtype=float),
+                    connect="finite",
                 )
         else:
             for curve in self.prototype_score_curves.values():
@@ -2455,56 +2469,70 @@ class MainWindow(QMainWindow):
             )
             self.psd_curve.setData([], [])
 
-        valid_frequency_history = [
-            item
-            for item in history
-            if (
-                item.get("frequency_status")
-                in {"VALID", "LIMITED"}
-                and np.isfinite(item.get("vlf_ms2", np.nan))
-                and np.isfinite(item.get("lf_ms2", np.nan))
-                and np.isfinite(item.get("hf_ms2", np.nan))
-                and np.isfinite(item.get("median_frequency_hz", np.nan))
-            )
-        ]
+        frequency_trend_rows = build_frequency_trend_rows(
+            history
+        )
 
-        if valid_frequency_history:
-            t0 = valid_frequency_history[0]["t_us"]
+        if frequency_trend_rows:
             tx = np.asarray(
                 [
-                    (item["t_us"] - t0) / 60e6
-                    for item in valid_frequency_history
+                    item["elapsed_minutes"]
+                    for item in frequency_trend_rows
                 ],
                 dtype=float,
             )
+            vlf_values = np.asarray(
+                [item["vlf_ms2"] for item in frequency_trend_rows],
+                dtype=float,
+            )
+            lf_values = np.asarray(
+                [item["lf_ms2"] for item in frequency_trend_rows],
+                dtype=float,
+            )
+            hf_values = np.asarray(
+                [item["hf_ms2"] for item in frequency_trend_rows],
+                dtype=float,
+            )
+            median_values = np.asarray(
+                [item["median_frequency_mhz"] for item in frequency_trend_rows],
+                dtype=float,
+            )
+
             self.vlf_trend_curve.setData(
                 tx,
-                np.asarray([item["vlf_ms2"] for item in valid_frequency_history], dtype=float),
+                vlf_values,
+                connect="finite",
             )
             self.lf_trend_curve.setData(
                 tx,
-                np.asarray([item["lf_ms2"] for item in valid_frequency_history], dtype=float),
+                lf_values,
+                connect="finite",
             )
             self.hf_trend_curve.setData(
                 tx,
-                np.asarray([item["hf_ms2"] for item in valid_frequency_history], dtype=float),
+                hf_values,
+                connect="finite",
             )
             self.median_freq_curve.setData(
                 tx,
-                np.asarray(
-                    [item["median_frequency_hz"] * 1000.0 for item in valid_frequency_history],
-                    dtype=float,
-                ),
+                median_values,
+                connect="finite",
             )
+
+            finite_power = np.concatenate([
+                values[np.isfinite(values)]
+                for values in (vlf_values, lf_values, hf_values)
+                if np.any(np.isfinite(values))
+            ])
             max_power = max(
-                float(np.nanmax([item["vlf_ms2"] for item in valid_frequency_history])),
-                float(np.nanmax([item["lf_ms2"] for item in valid_frequency_history])),
-                float(np.nanmax([item["hf_ms2"] for item in valid_frequency_history])),
+                float(np.max(finite_power)) if finite_power.size else 0.0,
                 1.0,
             )
             self.frequency_trend_plot.setYRange(0.0, max_power * 1.12)
+
+            finite_median = median_values[np.isfinite(median_values)]
             max_mhz = max(
-                float(np.nanmax([item["median_frequency_hz"] * 1000.0 for item in valid_frequency_history])),
+                float(np.max(finite_median)) if finite_median.size else 0.0,
                 1.0,
             )
             self.frequency_trend_view.setYRange(0.0, max_mhz * 1.12)
@@ -2514,6 +2542,7 @@ class MainWindow(QMainWindow):
             self.lf_trend_curve.setData([], [])
             self.hf_trend_curve.setData([], [])
             self.median_freq_curve.setData([], [])
+
 
         # 会话级 VLF/LF/HF 统计。
         statistics = (
@@ -2604,6 +2633,9 @@ class MainWindow(QMainWindow):
                 self._worker_status = "当前数据还不足以生成5分钟节律变化图"
 
     def _close_recorder(self) -> None:
+        # 先让 Engine 停止写，再关闭文件；否则关闭后的 recorder
+        # 仍可能在后续 snapshot/force_update 时被重新打开。
+        self.engine.attach_provenance_recorder(None)
         if self.recorder:
             self._last_session_dir = (
                 self.recorder.session_dir

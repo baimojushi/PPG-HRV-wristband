@@ -241,6 +241,19 @@ private:
     float legacy_peak_factor_ = 11.0f;
     float score_threshold_scale_ = 1.0f;
 
+    // --------------------------------------------------------------------
+    // 短时佩戴丢失恢复
+    // --------------------------------------------------------------------
+    // Wear 判定偶发掉线时不把已学到的 RR 周期先验立即清空。
+    // 无佩戴持续超过 2 秒才执行完整冷启动；短于此值只清空
+    // 当前波形/候选/相位，恢复后第一搏重新作为 first 建锚。
+    static constexpr int64_t WEAR_GAP_HARD_RESET_US = 2000000LL;
+    bool wear_gap_active_ = false;
+    bool wear_gap_hard_reset_ = false;
+    int64_t wear_gap_start_t_us_ = 0;
+
+    void resetTransientState(bool preserve_rhythm_prior);
+
     // ------------------------------------------------------------------------
     // 动态特征
     // ------------------------------------------------------------------------
