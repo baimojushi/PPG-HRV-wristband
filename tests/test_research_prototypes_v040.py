@@ -299,25 +299,46 @@ def test_extract_research_features_detects_narrow_0p1_hz_peak():
     ] > 0.20
 
 
-def test_inward_quiet_requires_personal_baseline_and_two_consecutive_windows():
-    history = [
-        _row(0.0),
-        _row(120.0),
-        _row(240.0),
-        _row(360.0),
-        _row(
-            580.0,
-            hr=62.0,
-            rmssd=55.0,
-            lf=380.0,
-            hf=720.0,
-            hf_nu=65.0,
-            lf_hf=0.53,
-        ),
-    ]
+def test_personal_baseline_does_not_mature_from_short_overlapping_history():
+    history = [_row(float(seconds)) for seconds in range(0, 12 * 60, 20)]
+    snapshot = _snapshot(
+        12 * 60,
+        hr=70.0,
+        rmssd=30.0,
+        vlf=200.0,
+        lf=500.0,
+        hf=300.0,
+        hf_nu=37.5,
+        lf_hf=1.67,
+    )
+
+    result = evaluate_research_state(snapshot, history)
+
+    assert not result["baseline_ready"]
+    assert result["baseline_reference_window_count"] < 4
+    assert "5分钟" in result["baseline_reason"] or "15分钟" in result["baseline_reason"]
+
+
+def test_inward_quiet_requires_long_baseline_and_sustained_evidence_window():
+    history = []
+    for seconds in range(0, 32 * 60, 20):
+        if seconds < 24 * 60:
+            history.append(_row(float(seconds)))
+        else:
+            history.append(
+                _row(
+                    float(seconds),
+                    hr=62.0,
+                    rmssd=55.0,
+                    lf=380.0,
+                    hf=720.0,
+                    hf_nu=65.0,
+                    lf_hf=0.53,
+                )
+            )
 
     snapshot = _snapshot(
-        600.0,
+        32 * 60,
         hr=61.0,
         rmssd=58.0,
         vlf=210.0,
@@ -327,57 +348,58 @@ def test_inward_quiet_requires_personal_baseline_and_two_consecutive_windows():
         lf_hf=0.49,
     )
 
-    result = evaluate_research_state(
-        snapshot,
-        history,
-    )
+    result = evaluate_research_state(snapshot, history)
+    inward = next(item for item in result["matches"] if item["code"] == "INWARD_QUIET")
 
-    inward = next(
-        item
-        for item in result[
-            "matches"
-        ]
-        if item[
-            "code"
-        ]
-        == "INWARD_QUIET"
-    )
+    assert result["baseline_ready"]
+    assert result["baseline"]["span_seconds"] >= 15 * 60
+    assert inward["temporal_ready"]
+    assert inward["observation_minutes"] == 8.0
+    assert inward["observed_span_minutes"] >= 7.0
+    # The physiological evidence is already strong, but the one-hour state
+    # layer must accumulate it gradually instead of jumping from 0 to >0.7.
+    assert inward["evidence_score"] >= 0.90
+    assert 0.50 <= inward["score"] < 0.70
+    assert inward["lifecycle"] == "CANDIDATE"
+    assert 1 in inward["source_ids"]
 
-    assert result[
-        "baseline_ready"
-    ]
-    assert inward[
-        "score"
-    ] >= 0.70
-    assert inward[
-        "lifecycle"
-    ] == "ACTIVE"
-    assert 1 in inward[
-        "source_ids"
-    ]
-
-
-def test_resonance_can_be_candidate_before_personal_baseline_is_ready():
-    freqs = np.linspace(
-        0.0033,
-        0.40,
-        512,
-    )
-    psd = (
-        0.2
-        + 35.0
-        * np.exp(
-            -0.5
-            * (
-                (
-                    freqs
-                    - 0.095
+    longer_history = []
+    for seconds in range(0, 36 * 60, 20):
+        if seconds < 24 * 60:
+            longer_history.append(_row(float(seconds)))
+        else:
+            longer_history.append(
+                _row(
+                    float(seconds),
+                    hr=62.0,
+                    rmssd=55.0,
+                    lf=380.0,
+                    hf=720.0,
+                    hf_nu=65.0,
+                    lf_hf=0.53,
                 )
-                / 0.004
             )
-            ** 2
-        )
+    longer = evaluate_research_state(
+        _snapshot(
+            36 * 60,
+            hr=61.0,
+            rmssd=58.0,
+            vlf=210.0,
+            lf=370.0,
+            hf=760.0,
+            hf_nu=67.0,
+            lf_hf=0.49,
+        ),
+        longer_history,
     )
+    longer_inward = next(item for item in longer["matches"] if item["code"] == "INWARD_QUIET")
+    assert longer_inward["score"] >= 0.70
+    assert longer_inward["lifecycle"] == "ACTIVE"
+
+
+def test_resonance_needs_multi_minute_evidence_even_before_personal_baseline():
+    freqs = np.linspace(0.0033, 0.40, 512)
+    psd = 0.2 + 35.0 * np.exp(-0.5 * (((freqs - 0.095) / 0.004) ** 2))
 
     snapshot = _snapshot(
         330.0,
@@ -391,64 +413,100 @@ def test_resonance_can_be_candidate_before_personal_baseline_is_ready():
         freqs=freqs,
         psd=psd,
     )
+    features = extract_research_frequency_features(snapshot.frequency)
 
-    features = extract_research_frequency_features(
-        snapshot.frequency
-    )
-
-    history = [
-        {
+    history = []
+    for seconds in range(30, 330, 20):
+        history.append({
             **_row(
-                310.0,
+                float(seconds),
                 lf=900.0,
                 hf=120.0,
-                peak_hz=features[
-                    "lf_peak_frequency_hz"
-                ],
-                prominence=features[
-                    "lf_peak_prominence_ratio"
-                ],
-                resonance_share=features[
-                    "resonance_share"
-                ],
+                peak_hz=features["lf_peak_frequency_hz"],
+                prominence=features["lf_peak_prominence_ratio"],
+                resonance_share=features["resonance_share"],
             ),
-            "thm_power_ms2": features[
-                "thm_power_ms2"
-            ],
-        },
-    ]
+            "thm_power_ms2": features["thm_power_ms2"],
+        })
 
-    result = evaluate_research_state(
-        snapshot,
-        history,
+    result = evaluate_research_state(snapshot, history)
+    resonance = next(item for item in result["matches"] if item["code"] == "RESONANCE_0P1")
+
+    assert not result["baseline_ready"]
+    assert resonance["temporal_ready"]
+    assert resonance["observed_span_minutes"] >= 4.0
+    assert resonance["evidence_score"] >= 0.90
+    # Five minutes of sustained raw evidence starts the state memory, but it
+    # cannot become ACTIVE in a single refresh.
+    assert 0.20 <= resonance["score"] < 0.50
+    assert resonance["lifecycle"] == "INACTIVE"
+    assert 2 in resonance["source_ids"]
+
+    later_snapshot = _snapshot(
+        10 * 60,
+        hr=72.0,
+        rmssd=45.0,
+        vlf=30.0,
+        lf=900.0,
+        hf=120.0,
+        hf_nu=12.0,
+        lf_hf=7.5,
+        freqs=freqs,
+        psd=psd,
     )
+    later_history = []
+    for seconds in range(30, 10 * 60, 20):
+        later_history.append({
+            **_row(
+                float(seconds),
+                lf=900.0,
+                hf=120.0,
+                peak_hz=features["lf_peak_frequency_hz"],
+                prominence=features["lf_peak_prominence_ratio"],
+                resonance_share=features["resonance_share"],
+            ),
+            "thm_power_ms2": features["thm_power_ms2"],
+        })
+    later = evaluate_research_state(later_snapshot, later_history)
+    later_resonance = next(item for item in later["matches"] if item["code"] == "RESONANCE_0P1")
+    assert later_resonance["score"] >= 0.70
+    assert later_resonance["lifecycle"] == "ACTIVE"
 
-    resonance = next(
-        item
-        for item in result[
-            "matches"
-        ]
-        if item[
-            "code"
-        ]
-        == "RESONANCE_0P1"
+
+def test_resonance_does_not_jump_from_one_fresh_window():
+    freqs = np.linspace(0.0033, 0.40, 512)
+    psd = 0.2 + 35.0 * np.exp(-0.5 * (((freqs - 0.095) / 0.004) ** 2))
+    snapshot = _snapshot(
+        330.0,
+        hr=72.0,
+        rmssd=45.0,
+        vlf=30.0,
+        lf=900.0,
+        hf=120.0,
+        hf_nu=12.0,
+        lf_hf=7.5,
+        freqs=freqs,
+        psd=psd,
     )
+    features = extract_research_frequency_features(snapshot.frequency)
+    history = [{
+        **_row(
+            310.0,
+            lf=900.0,
+            hf=120.0,
+            peak_hz=features["lf_peak_frequency_hz"],
+            prominence=features["lf_peak_prominence_ratio"],
+            resonance_share=features["resonance_share"],
+        ),
+        "thm_power_ms2": features["thm_power_ms2"],
+    }]
 
-    assert not result[
-        "baseline_ready"
-    ]
-    assert resonance[
-        "score"
-    ] >= 0.70
-    assert resonance[
-        "lifecycle"
-    ] in {
-        "CANDIDATE",
-        "ACTIVE",
-    }
-    assert 2 in resonance[
-        "source_ids"
-    ]
+    result = evaluate_research_state(snapshot, history)
+    resonance = next(item for item in result["matches"] if item["code"] == "RESONANCE_0P1")
+
+    assert not resonance["temporal_ready"]
+    assert resonance["score"] == 0.0
+    assert resonance["lifecycle"] == "INACTIVE"
 
 
 def test_hour_experience_has_hour_stage_timeline_and_trait_gate():
@@ -528,6 +586,60 @@ def test_hour_experience_has_hour_stage_timeline_and_trait_gate():
         item.get("name", "").strip()
         for item in result["state_distribution"]
     )
+
+
+def test_hour_research_curve_uses_temporal_state_not_pointwise_jump():
+    history = []
+    for seconds in range(0, 46 * 60, 20):
+        if seconds < 30 * 60:
+            history.append(_row(float(seconds)))
+        else:
+            history.append(
+                _row(
+                    float(seconds),
+                    hr=63.0,
+                    rmssd=52.0,
+                    lf=410.0,
+                    hf=680.0,
+                    hf_nu=62.0,
+                    lf_hf=0.60,
+                )
+            )
+
+    snapshot = _snapshot(
+        46 * 60,
+        hr=62.0,
+        rmssd=55.0,
+        vlf=205.0,
+        lf=400.0,
+        hf=700.0,
+        hf_nu=64.0,
+        lf_hf=0.57,
+    )
+    result = build_hour_experience(snapshot, history)
+    timeline = result["timeline"]
+
+    state_scores = np.asarray(
+        [row["score_INWARD_QUIET"] for row in timeline],
+        dtype=float,
+    )
+    finite_diffs = np.abs(np.diff(state_scores))
+    finite_diffs = finite_diffs[np.isfinite(finite_diffs)]
+    raw_scores = np.asarray(
+        [row["raw_score_INWARD_QUIET"] for row in timeline],
+        dtype=float,
+    )
+    raw_diffs = np.abs(np.diff(raw_scores))
+    raw_diffs = raw_diffs[np.isfinite(raw_diffs)]
+
+    assert timeline
+    assert all("raw_score_INWARD_QUIET" in row for row in timeline)
+    assert finite_diffs.size and raw_diffs.size
+    assert float(np.max(finite_diffs)) < 0.15
+    assert float(np.max(finite_diffs)) < float(np.max(raw_diffs)) * 0.75
+    # The one-hour state layer is intentionally coarser than the 20-second
+    # physiological observation history, while still using all rows internally.
+    assert len(timeline) < len(history) / 2
 
 
 def test_ui_contains_hour_research_layer_and_clickable_sources():

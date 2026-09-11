@@ -1,0 +1,103 @@
+{
+  "version": "0.4.3",
+  "base_version": "0.4.2",
+  "replay_semantics": "reconstruct research-history rows from v0.4.2 prototype_score_trace + spectrum quality; compare research scoring layer only; no ECG/beat reprocessing",
+  "sessions": {
+    "20260910_135448": {
+      "input_points": 111,
+      "v0_4_2_timeline_points": 111,
+      "v0_4_3_timeline_points": 38,
+      "prototypes": {
+        "INWARD_QUIET": {
+          "v0_4_2_max_adjacent_jump": 0.5611549437465884,
+          "v0_4_3_max_adjacent_state_jump": 0.04545319606743892,
+          "v0_4_3_raw_max_adjacent_jump": 0.32625247745895225,
+          "v0_4_3_state_p95_jump": 0.0452698849714428
+        },
+        "RESONANCE_0P1": {
+          "v0_4_2_max_adjacent_jump": 0.4110700676356594,
+          "v0_4_3_max_adjacent_state_jump": 0.07398803109070673,
+          "v0_4_3_raw_max_adjacent_jump": 0.17881130994444272,
+          "v0_4_3_state_p95_jump": 0.04855986317153211
+        },
+        "PHASED_VIPASSANA": {
+          "v0_4_2_max_adjacent_jump": 0.46583779814625714,
+          "v0_4_3_max_adjacent_state_jump": 0.08325625870334738,
+          "v0_4_3_raw_max_adjacent_jump": 0.3672399471903105,
+          "v0_4_3_state_p95_jump": 0.07752300445727986
+        },
+        "TRAINED_VIPASSANA_SHIFT": {
+          "v0_4_2_max_adjacent_jump": 0.58,
+          "v0_4_3_max_adjacent_state_jump": 0.039030425737404034,
+          "v0_4_3_raw_max_adjacent_jump": 0.4215535097505409,
+          "v0_4_3_state_p95_jump": 0.03724143080381197
+        },
+        "AROUSAL_MEDITATION": {
+          "v0_4_2_max_adjacent_jump": 0.7774470166886179,
+          "v0_4_3_max_adjacent_state_jump": 0.03262172475097716,
+          "v0_4_3_raw_max_adjacent_jump": 0.12528056887240324,
+          "v0_4_3_state_p95_jump": 0.03221261287155087
+        },
+        "SLOW_RECOVERY_VLF": {
+          "v0_4_2_max_adjacent_jump": 0.35000000000000003,
+          "v0_4_3_max_adjacent_state_jump": 0.032448654474007826,
+          "v0_4_3_raw_max_adjacent_jump": 0.06121661768369113,
+          "v0_4_3_state_p95_jump": 0.031272120838002855
+        }
+      },
+      "max_jump_across_prototypes": {
+        "v0_4_2": 0.7774470166886179,
+        "v0_4_3": 0.08325625870334738,
+        "reduction_fraction": 0.8929106975572934
+      }
+    },
+    "20260910_152745": {
+      "input_points": 99,
+      "v0_4_2_timeline_points": 99,
+      "v0_4_3_timeline_points": 34,
+      "prototypes": {
+        "INWARD_QUIET": {
+          "v0_4_2_max_adjacent_jump": 0.48,
+          "v0_4_3_max_adjacent_state_jump": 0.01611680341264846,
+          "v0_4_3_raw_max_adjacent_jump": 0.1519104473140005,
+          "v0_4_3_state_p95_jump": 0.014676939298512878
+        },
+        "RESONANCE_0P1": {
+          "v0_4_2_max_adjacent_jump": 0.46774975061028456,
+          "v0_4_3_max_adjacent_state_jump": 0.08940519592686506,
+          "v0_4_3_raw_max_adjacent_jump": 0.23177863489355,
+          "v0_4_3_state_p95_jump": 0.060214661653781774
+        },
+        "PHASED_VIPASSANA": {
+          "v0_4_2_max_adjacent_jump": 0.2090579258345796,
+          "v0_4_3_max_adjacent_state_jump": 0.08003460250747307,
+          "v0_4_3_raw_max_adjacent_jump": 0.3518394936835502,
+          "v0_4_3_state_p95_jump": 0.07671813876807866
+        },
+        "TRAINED_VIPASSANA_SHIFT": {
+          "v0_4_2_max_adjacent_jump": 0.58,
+          "v0_4_3_max_adjacent_state_jump": 0.024916979925204044,
+          "v0_4_3_raw_max_adjacent_jump": 0.26963727955346095,
+          "v0_4_3_state_p95_jump": 0.02361499966367019
+        },
+        "AROUSAL_MEDITATION": {
+          "v0_4_2_max_adjacent_jump": 0.5513525205988755,
+          "v0_4_3_max_adjacent_state_jump": 0.05775930464670889,
+          "v0_4_3_raw_max_adjacent_jump": 0.2754440594275838,
+          "v0_4_3_state_p95_jump": 0.057721981696632084
+        },
+        "SLOW_RECOVERY_VLF": {
+          "v0_4_2_max_adjacent_jump": 0.28,
+          "v0_4_3_max_adjacent_state_jump": 0.03923370449600993,
+          "v0_4_3_raw_max_adjacent_jump": 0.08089661825445316,
+          "v0_4_3_state_p95_jump": 0.03556444946028984
+        }
+      },
+      "max_jump_across_prototypes": {
+        "v0_4_2": 0.58,
+        "v0_4_3": 0.08940519592686506,
+        "reduction_fraction": 0.8458531104709223
+      }
+    }
+  }
+}

@@ -1454,6 +1454,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(
             self.prototype_score_plot
         )
+        self.prototype_score_hint = QLabel(
+            "这张图按不同节律所需的数分钟到数十分钟持续证据计算；"
+            "短暂波动不会立即被当成状态变化。"
+        )
+        self.prototype_score_hint.setWordWrap(True)
+        self.prototype_score_hint.setObjectName("heroSub")
+        layout.addWidget(self.prototype_score_hint)
         layout.addWidget(QLabel("不同快慢的心跳起伏趋势"))
         layout.addWidget(self.frequency_trend_plot)
         layout.addWidget(self.freq_trend_hint)

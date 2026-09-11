@@ -11,7 +11,6 @@ from .confidence import compute_quality_assessment
 from .frequency_stats import compute_frequency_statistics
 from .research_prototypes import (
     build_hour_experience,
-    evaluate_research_state,
     extract_research_frequency_features,
     research_state_table,
 )
@@ -1454,14 +1453,18 @@ class AnalysisEngine:
             pass
 
         # ----------------------------------------------------------
-        # ④ baseline 变化（每次 evaluate_research_state 之后对比版本）
+        # ④ baseline 变化（每次研究时间模型刷新后对比版本）
         # ----------------------------------------------------------
         try:
-            research_snapshot = evaluate_research_state(
+            # Build the causal one-hour product once.  It already contains the
+            # current research state evaluated from the exact same temporal
+            # timeline, so computing evaluate_research_state() separately would
+            # duplicate the expensive multi-minute evidence pass.
+            hour = build_hour_experience(
                 copy.deepcopy(self._last_snapshot),
                 copy.deepcopy(list(self._metric_history)),
-                self.config,
             )
+            research_snapshot = hour.get("current_research_state", {})
             baseline = research_snapshot.get("baseline", {})
             if isinstance(baseline, dict) and baseline:
                 prev = self._provenance_prev_baseline
@@ -1543,18 +1546,27 @@ class AnalysisEngine:
                             if m["lifecycle"] in {"ACTIVE", "CANDIDATE"}
                             else None
                         ),
+                        temporal=m,
                     )
                 )
         except Exception:
             pass
 
-        # v0.4.2 trajectory rows are causal: each point records the newest data
+        # v0.4.3 trajectory rows are causal temporal states: each point uses only data available by that time
         # and baseline version that were actually available at that historical time.
         try:
-            hour = build_hour_experience(
-                copy.deepcopy(self._last_snapshot),
-                copy.deepcopy(list(self._metric_history)),
+            # ``hour`` was built above together with ``research_snapshot``.
+            # Reuse it here for causality logging and the UI cache.
+            # v0.4.3 temporal research scoring is intentionally heavier than
+            # pointwise scoring. Reuse the result already computed for
+            # provenance so the next UI refresh does not recompute the same
+            # one-hour trajectory under the engine lock.
+            self._research_cache_key = (
+                int(self._last_snapshot.t_us),
+                len(self._metric_history),
             )
+            self._research_state_cache = copy.deepcopy(research_snapshot)
+            self._hour_experience_cache = copy.deepcopy(hour)
             for item in hour.get("timeline", []):
                 score_t_us = int(item.get("t_us", 0))
                 self._provenance.record_causality_trace(
@@ -2554,21 +2566,18 @@ class AnalysisEngine:
                 ),
             )
 
-        research_state = (
-            evaluate_research_state(
-                copy.deepcopy(
-                    self._last_snapshot
-                ),
-                history,
-                self.config,
-            )
-        )
         hour_experience = (
             build_hour_experience(
                 copy.deepcopy(
                     self._last_snapshot
                 ),
                 history,
+            )
+        )
+        research_state = copy.deepcopy(
+            hour_experience.get(
+                "current_research_state",
+                {},
             )
         )
 
@@ -2671,17 +2680,16 @@ class AnalysisEngine:
             else:
                 history[-1] = current_row
 
-            research_snapshot = (
-                evaluate_research_state(
-                    snapshot,
-                    history,
-                    self.config,
-                )
-            )
             hour_experience = (
                 build_hour_experience(
                     snapshot,
                     history,
+                )
+            )
+            research_snapshot = copy.deepcopy(
+                hour_experience.get(
+                    "current_research_state",
+                    {},
                 )
             )
 

@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.2",
-  "base_version": "0.4.1",
-  "release_type": "interval-artifact-rewrite",
+  "version": "0.4.3",
+  "base_version": "0.4.2",
+  "release_type": "research-temporal-model",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "119 passed",
+    "tests": "123 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -721,7 +721,7 @@
         }
       ]
     },
-    "final_rebuild_tests": "70 passed",
+    "final_rebuild_tests": "123 passed",
     "fixed_lag_specific_tests": "13 passed",
     "protocol_version": 4,
     "annotated_v0_3_6_replay": {
@@ -751,7 +751,7 @@
       "smooth physiological HRV remains present after future-aware RR cleaning"
     ],
     "final_delivery_python_compileall": "passed",
-    "final_delivery_tests": "119 passed",
+    "final_delivery_tests": "123 passed",
     "fresh_baseline_plus_patch_tests": "119 passed",
     "git_apply_check": "passed",
     "responsive_ui_tests": "5 passed",
@@ -851,10 +851,32 @@
           }
         ]
       }
+    },
+    "research_temporal_v0_4_3": {
+      "method": "aggregate physiological features over prototype-specific multi-minute horizons before nonlinear prototype scoring; then accumulate causal state evidence",
+      "baseline": ">=4 full analyzable anchors, >=5 min anchor spacing, >=15 min reference span, newest 3 min excluded",
+      "real_session_replay": {
+        "20260910_135448": {
+          "input_points": 111,
+          "v0_4_2_timeline_points": 111,
+          "v0_4_3_timeline_points": 38,
+          "max_adjacent_similarity_jump_before": 0.777447,
+          "max_adjacent_similarity_jump_after": 0.083256,
+          "jump_reduction_percent": 89.3
+        },
+        "20260910_152745": {
+          "input_points": 99,
+          "v0_4_2_timeline_points": 99,
+          "v0_4_3_timeline_points": 34,
+          "max_adjacent_similarity_jump_before": 0.58,
+          "max_adjacent_similarity_jump_after": 0.089405,
+          "jump_reduction_percent": 84.6
+        }
+      }
     }
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 272,
+  "file_count": 274,
   "files": [
     "#U542f#U52a8UI.bat",
     "#U7b2c#U4e00#U6b21/hrv_export.zip",
@@ -1126,7 +1148,10 @@
     "docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md",
     "docs/VALIDATION_v0.4.1_BENCHMARK_FRAMEWORK.json",
     "docs/VALIDATION_v0.4.1_BENCHMARK_FRAMEWORK.md",
-    "tests/test_benchmark_v041.py"
+    "tests/test_benchmark_v041.py",
+    "docs/RESEARCH_TEMPORAL_MODEL_v0.4.3.md",
+    "docs/VALIDATION_v0.4.3_RESEARCH_TEMPORAL.json",
+    "docs/VALIDATION_v0.4.3_RESEARCH_TEMPORAL.md"
   ],
   "debug_export": [
     "samples_debug.csv",
@@ -1315,13 +1340,14 @@
       "AROUSAL_MEDITATION",
       "SLOW_RECOVERY_VLF"
     ],
-    "candidate_threshold": 0.7,
-    "active_consecutive_windows": 2,
+    "candidate_threshold": 0.5,
+    "active_consecutive_windows": "replaced by prototype-specific causal duration / coverage / persistence criteria in v0.4.3",
     "exit_threshold": 0.45,
     "exit_consecutive_windows": 2,
-    "personal_baseline": "session median + 1.4826*MAD; ~120 s decimation",
+    "personal_baseline": "full analyzable 5-min windows; >=4 anchors, >=5 min anchor gap, >=15 min anchor span; robust median + 1.4826*MAD; excludes newest 3 min",
     "literature_source_count": 8,
-    "ui_citation_style": "[n] hyperlink + author + title"
+    "ui_citation_style": "[n] hyperlink + author + title",
+    "active_threshold": 0.7
   },
   "hour_experience": {
     "enabled": true,
@@ -1380,6 +1406,30 @@
       "interval_candidate_trace.csv",
       "interval_artifact_trace.csv"
     ]
+  },
+  "research_temporal_model_v0_4_3": {
+    "enabled": true,
+    "raw_observation": "5-minute HRV observations, nominal 20 s cadence",
+    "calculation_order": "robust multi-minute feature aggregation -> nonlinear prototype evidence -> causal state accumulator",
+    "plot_series": "state_score",
+    "audit_series": [
+      "raw_score",
+      "evidence_score",
+      "state_score"
+    ],
+    "user_plot_cadence_seconds": 60,
+    "prototype_horizons_minutes": {
+      "INWARD_QUIET": 8,
+      "RESONANCE_0P1": 5,
+      "PHASED_VIPASSANA": 24,
+      "TRAINED_VIPASSANA_SHIFT": 10,
+      "AROUSAL_MEDITATION": 8,
+      "SLOW_RECOVERY_VLF": 20
+    },
+    "causal_history_only": true,
+    "plot_smoothing_only": false,
+    "interval_core_changed": false,
+    "feature_scale_floors": "unit-aware robust floors in transformed feature units (bpm / percentage points / Hz / log-power)"
   },
   "benchmark_framework_v0_4_1": {
     "production_detector_under_test": "v0.4.1 IntervalCore",

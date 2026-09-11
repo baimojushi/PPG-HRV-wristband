@@ -275,38 +275,65 @@ def test_research_baseline_does_not_count_frequency_buffering_rows():
     assert not baseline["ready"]
     assert baseline["rows"] == []
 
-    mature = [_research_row(t, ready=True) for t in (300, 420, 540, 660)]
-    baseline = _build_personal_baseline(mature, int(780 * 1e6))
+    # v0.4.3 requires genuinely separated five-minute anchors spanning at
+    # least fifteen minutes; four heavily overlapping rows are not a baseline.
+    mature = [_research_row(t, ready=True) for t in (300, 600, 900, 1200)]
+    baseline = _build_personal_baseline(mature, int(1380 * 1e6))
     assert baseline["ready"]
-    assert len(baseline["rows"]) >= 3
+    assert len(baseline["rows"]) >= 4
+    assert baseline["span_seconds"] >= 15 * 60
+
+
+def test_research_baseline_uses_feature_unit_aware_scale_floors():
+    # A perfectly flat short reference must not create near-zero dispersion for
+    # differently-scaled features.  Otherwise tiny percentage-point changes can
+    # become huge z-scores and make the user state jump.
+    mature = [_research_row(t, ready=True) for t in (300, 600, 900, 1200)]
+    baseline = _build_personal_baseline(mature, int(1380 * 1e6))
+
+    assert baseline["ready"]
+    assert baseline["features"]["hr_bpm"]["scale"] >= 1.5
+    assert baseline["features"]["hf_nu"]["scale"] >= 3.0
+    assert baseline["features"]["median_frequency_hz"]["scale"] >= 0.015
+    assert baseline["features"]["resonance_share"]["scale"] >= 0.04
 
 
 def test_limited_research_evidence_no_longer_has_mathematical_similarity_ceiling():
-    history = [
-        _research_row(300),
-        _research_row(420),
-        _research_row(540),
-        _research_row(660, hf=720.0),
-        _research_row(680, hf=750.0),
-    ]
-    snapshot = _research_snapshot(700, status="LIMITED")
+    history = []
+    for t in range(0, 36 * 60, 20):
+        row = _research_row(t)
+        if t >= 24 * 60:
+            row.update(
+                hr_bpm=62.0,
+                rmssd_ms=55.0,
+                lf_ms2=380.0,
+                hf_ms2=720.0,
+                lf_nu=35.0,
+                hf_nu=65.0,
+                lf_hf=0.53,
+            )
+        history.append(row)
+
+    snapshot = _research_snapshot(36 * 60, status="LIMITED")
     result = evaluate_research_state(snapshot, history)
     inward = next(item for item in result["matches"] if item["code"] == "INWARD_QUIET")
 
     assert inward["quality_multiplier"] < 0.70
+    assert inward["evidence_score"] >= 0.90
     assert inward["score"] >= 0.70
-    assert inward["no_match_reason"] != "NO_MATCH: QUALITY_CEILING 0.65 < 0.70"
+    assert inward["lifecycle"] == "ACTIVE"
+    assert "QUALITY_CEILING" not in inward["no_match_reason"]
 
 
 def test_historical_research_timeline_is_causal_and_stable_when_future_rows_are_added():
-    history = [_research_row(t) for t in (300, 420, 540, 660, 680, 700)]
+    history = [_research_row(t) for t in range(0, 30 * 60 + 1, 20)]
     before = _timeline_score_rows(history)
-    early_t = int(680 * 1e6)
+    early_t = int(27 * 60 * 1e6)
     early_before = next(item for item in before if item["t_us"] == early_t)
 
     extended = history + [
-        _research_row(720, hf=1800.0),
-        _research_row(740, hf=80.0),
+        _research_row(t, hf=1800.0 if (t // 20) % 2 == 0 else 80.0)
+        for t in range(30 * 60 + 20, 34 * 60 + 1, 20)
     ]
     after = _timeline_score_rows(extended)
     early_after = next(item for item in after if item["t_us"] == early_t)

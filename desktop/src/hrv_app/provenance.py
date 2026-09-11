@@ -1043,6 +1043,7 @@ def build_prototype_score_trace_row(
     threshold: float,
     baseline_ready: bool,
     match: dict | None,
+    temporal: dict | None = None,
 ) -> dict[str, Any]:
     """记录原型评分的输入存在性、基线偏差和未匹配原因。"""
     features = baseline.get("features", {}) or {}
@@ -1066,6 +1067,15 @@ def build_prototype_score_trace_row(
         "baseline_ready": 1 if baseline_ready else 0,
         "evidence": " | ".join(str(item) for item in evidence),
         "no_match_reason": no_match_reason,
+        "raw_score": float((temporal or {}).get("raw_score", score) or 0.0),
+        "evidence_score": float((temporal or {}).get("evidence_score", score) or 0.0),
+        "state_score": float((temporal or {}).get("state_score", score) or 0.0),
+        "temporal_ready": 1 if bool((temporal or {}).get("temporal_ready", False)) else 0,
+        "observation_minutes": float((temporal or {}).get("observation_minutes", 0.0) or 0.0),
+        "observed_span_minutes": float((temporal or {}).get("observed_span_minutes", 0.0) or 0.0),
+        "coverage_ratio": float((temporal or {}).get("coverage_ratio", 0.0) or 0.0),
+        "persistence_ratio": float((temporal or {}).get("persistence_ratio", 0.0) or 0.0),
+        "stability_score": float((temporal or {}).get("stability_score", 0.0) or 0.0),
     }
 
     log_features = {

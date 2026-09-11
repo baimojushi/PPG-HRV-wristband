@@ -17,7 +17,7 @@ from .models import AnalysisSnapshot, FrequencyDomainMetrics
 # 匹配门槛常量。
 # `_parse_no_match_reason` 会用到这个名字；只存一个引用，不改任何阈值。
 _MATCH_THRESHOLD_ACTIVE = 0.70
-_MATCH_THRESHOLD_CANDIDATE = 0.70
+_MATCH_THRESHOLD_CANDIDATE = 0.50
 
 
 PROTOTYPE_DEFINITIONS: dict[str, dict] = {
@@ -101,6 +101,70 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
     },
 }
 
+
+# v0.4.3 research temporal model.  The five-minute HRV estimate is an
+# observation primitive, not a one-point "state".  Each prototype therefore
+# has its own evidence horizon before its similarity can move the one-hour
+# trajectory.  These windows deliberately differ because the prototypes
+# describe phenomena at different time scales.
+PROTOTYPE_TEMPORAL_MODEL: dict[str, dict[str, float]] = {
+    "INWARD_QUIET": {
+        "observation_minutes": 8.0,
+        "minimum_span_minutes": 6.0,
+        "activation_hold_minutes": 3.0,
+        "exit_hold_minutes": 2.0,
+        "state_rise_tau_minutes": 6.0,
+        "state_fall_tau_minutes": 4.0,
+    },
+    "RESONANCE_0P1": {
+        "observation_minutes": 5.0,
+        "minimum_span_minutes": 4.0,
+        "activation_hold_minutes": 2.0,
+        "exit_hold_minutes": 1.5,
+        "state_rise_tau_minutes": 5.0,
+        "state_fall_tau_minutes": 4.0,
+    },
+    "PHASED_VIPASSANA": {
+        "observation_minutes": 24.0,
+        "minimum_span_minutes": 14.0,
+        "activation_hold_minutes": 5.0,
+        "exit_hold_minutes": 3.0,
+        "state_rise_tau_minutes": 10.0,
+        "state_fall_tau_minutes": 7.0,
+    },
+    "TRAINED_VIPASSANA_SHIFT": {
+        "observation_minutes": 10.0,
+        "minimum_span_minutes": 8.0,
+        "activation_hold_minutes": 4.0,
+        "exit_hold_minutes": 2.5,
+        "state_rise_tau_minutes": 7.0,
+        "state_fall_tau_minutes": 5.0,
+    },
+    "AROUSAL_MEDITATION": {
+        "observation_minutes": 8.0,
+        "minimum_span_minutes": 6.0,
+        "activation_hold_minutes": 3.0,
+        "exit_hold_minutes": 2.0,
+        "state_rise_tau_minutes": 6.0,
+        "state_fall_tau_minutes": 4.0,
+    },
+    "SLOW_RECOVERY_VLF": {
+        "observation_minutes": 20.0,
+        "minimum_span_minutes": 14.0,
+        "activation_hold_minutes": 6.0,
+        "exit_hold_minutes": 4.0,
+        "state_rise_tau_minutes": 12.0,
+        "state_fall_tau_minutes": 8.0,
+    },
+}
+
+_BASELINE_EXCLUDE_RECENT_SECONDS = 3.0 * 60.0
+_BASELINE_MINIMUM_GAP_SECONDS = 5.0 * 60.0
+_BASELINE_MINIMUM_SPAN_SECONDS = 15.0 * 60.0
+_BASELINE_MINIMUM_REFERENCE_WINDOWS = 4
+_BASELINE_LOOKBACK_SECONDS = 2.0 * 60.0 * 60.0
+_TEMPORAL_MINIMUM_COVERAGE = 0.68
+
 def research_state_display_name(code: str) -> str:
     definition = PROTOTYPE_DEFINITIONS.get(str(code))
     if definition is not None:
@@ -108,6 +172,7 @@ def research_state_display_name(code: str) -> str:
 
     return {
         "STABLE_NEUTRAL": "暂无突出节律",
+        "REFERENCE_BUILDING": "正在形成长期参照",
         "DATA_UNSTABLE": "暂时看不清",
     }.get(str(code), str(code))
 
@@ -122,7 +187,7 @@ def _coalesce_meaningful_segments(segments: Sequence[dict]) -> list[dict]:
     merged: list[dict] = []
     for raw in segments:
         code = str(raw.get("code", ""))
-        if code in {"STABLE_NEUTRAL", "DATA_UNSTABLE"}:
+        if code in {"STABLE_NEUTRAL", "REFERENCE_BUILDING", "DATA_UNSTABLE"}:
             continue
         segment = dict(raw)
         if merged and str(merged[-1].get("code", "")) == code:
@@ -157,6 +222,7 @@ def _hour_trajectory_summary(
         )
         if code not in {
             "STABLE_NEUTRAL",
+            "REFERENCE_BUILDING",
             "DATA_UNSTABLE",
         }
         and float(minutes) > 0.0
@@ -215,6 +281,28 @@ FEATURE_TRANSFORMS: dict[str, str] = {
     "resonance_share": "linear",
     "lf_peak_frequency_hz": "linear",
     "lf_peak_prominence_ratio": "log",
+}
+
+# Minimum robust scales are expressed in each feature's transformed unit.
+# A single universal floor is dimensionally wrong here: 0.08 is tiny for
+# HFnu measured in percentage points but enormous for a frequency in Hz.
+# Unit-aware floors stop an unusually quiet baseline from turning a trivial
+# numerical change into a multi-sigma research-state jump.
+FEATURE_ROBUST_SCALE_FLOORS: dict[str, float] = {
+    "hr_bpm": 1.5,
+    "rmssd_ms": 0.15,
+    "total_power_ms2": 0.18,
+    "vlf_ms2": 0.18,
+    "lf_ms2": 0.18,
+    "hf_ms2": 0.18,
+    "lf_nu": 3.0,
+    "hf_nu": 3.0,
+    "lf_hf": 0.18,
+    "median_frequency_hz": 0.015,
+    "thm_power_ms2": 0.18,
+    "resonance_share": 0.04,
+    "lf_peak_frequency_hz": 0.008,
+    "lf_peak_prominence_ratio": 0.18,
 }
 
 
@@ -503,75 +591,65 @@ def _build_personal_baseline(
     history: Sequence[dict],
     current_t_us: int,
 ) -> dict:
+    """Build a slow, causal within-session reference.
+
+    A five-minute spectral row is highly overlapped with its neighbours.  The
+    old implementation treated three rows two minutes apart as three separate
+    reference observations and could declare a baseline after only four
+    minutes of span.  v0.4.3 instead samples non-overlapping-ish five-minute
+    anchors, requires at least fifteen minutes of actual anchor span, and keeps
+    the most recent three minutes out of the reference so the current state does
+    not immediately drag its own comparison point.
+    """
     if not history:
         return {
             "ready": False,
             "rows": [],
             "features": {},
-            "reason": "尚无历史窗口",
+            "reason": "尚无可用于形成长期参照的记录",
         }
 
-    # 最近 60 秒不进入自身基线，降低“当前变化被自己稀释”的程度。
-    cutoff_us = (
-        int(
-            current_t_us
-        )
-        - 60_000_000
-    )
+    current_t_us = int(current_t_us)
+    cutoff_us = current_t_us - int(round(_BASELINE_EXCLUDE_RECENT_SECONDS * 1e6))
+    lookback_start_us = current_t_us - int(round(_BASELINE_LOOKBACK_SECONDS * 1e6))
 
     candidates = [
         row
         for row in history
         if (
-            int(
-                row.get(
-                    "t_us",
-                    0,
-                )
-            )
-            <= cutoff_us
-            and _valid_research_row(
-                row
-            )
+            lookback_start_us <= int(row.get("t_us", 0)) <= cutoff_us
+            and _valid_research_row(row)
         )
     ]
 
     selected = _decimate_rows(
         candidates,
-        minimum_gap_seconds=120.0,
+        minimum_gap_seconds=_BASELINE_MINIMUM_GAP_SECONDS,
     )
 
-    if len(
-        selected
-    ) < 3:
+    if len(selected) < _BASELINE_MINIMUM_REFERENCE_WINDOWS:
         return {
             "ready": False,
             "rows": selected,
             "features": {},
             "reason": (
-                "需要至少3个相隔约2分钟的稳定频域参照窗口"
+                "需要至少4段相隔约5分钟的清晰记录，"
+                "先积累更长时间再形成个人参照"
             ),
         }
 
     span_seconds = (
-        int(
-            selected[-1][
-                "t_us"
-            ]
-        )
-        - int(
-            selected[0][
-                "t_us"
-            ]
-        )
+        int(selected[-1].get("t_us", 0))
+        - int(selected[0].get("t_us", 0))
     ) / 1e6
 
-    if span_seconds < 240.0:
+    if span_seconds < _BASELINE_MINIMUM_SPAN_SECONDS:
         return {
             "ready": False,
             "rows": selected,
             "features": {},
-            "reason": "个人近期基线覆盖时间不足4分钟",
+            "reason": "个人参照至少需要覆盖约15分钟的真实时间跨度",
+            "span_seconds": float(span_seconds),
         }
 
     features: dict[str, dict] = {}
@@ -579,57 +657,36 @@ def _build_personal_baseline(
     for name in FEATURE_TRANSFORMS:
         values = np.asarray(
             [
-                _transform(
-                    name,
-                    row[name],
-                )
+                _transform(name, row[name])
                 for row in selected
-                if (
-                    name in row
-                    and _finite(
-                        row[name]
-                    )
-                )
+                if name in row and _finite(row[name])
             ],
             dtype=float,
         )
 
-        if values.size < 3:
+        if values.size < _BASELINE_MINIMUM_REFERENCE_WINDOWS:
             continue
 
-        median = float(
-            np.median(
-                values
-            )
-        )
-        mad = float(
-            np.median(
-                np.abs(
-                    values
-                    - median
-                )
-            )
-        )
+        median = float(np.median(values))
+        mad = float(np.median(np.abs(values - median)))
         scale = max(
-            1.4826
-            * mad,
-            0.08
-            if name
-            in {
-                "lf_nu",
-                "hf_nu",
-                "median_frequency_hz",
-                "resonance_share",
-            }
-            else 0.12,
+            1.4826 * mad,
+            float(FEATURE_ROBUST_SCALE_FLOORS.get(name, 0.12)),
         )
 
         features[name] = {
             "median": median,
             "scale": scale,
-            "count": int(
-                values.size
-            ),
+            "count": int(values.size),
+        }
+
+    if not features:
+        return {
+            "ready": False,
+            "rows": selected,
+            "features": {},
+            "reason": "长期参照仍缺少足够完整的身体节律数据",
+            "span_seconds": float(span_seconds),
         }
 
     return {
@@ -637,9 +694,10 @@ def _build_personal_baseline(
         "rows": selected,
         "features": features,
         "reason": "",
-        "span_seconds": span_seconds,
+        "span_seconds": float(span_seconds),
+        "minimum_gap_seconds": float(_BASELINE_MINIMUM_GAP_SECONDS),
+        "excluded_recent_seconds": float(_BASELINE_EXCLUDE_RECENT_SECONDS),
     }
-
 
 def _z(
     baseline: dict,
@@ -1617,6 +1675,523 @@ def _score_row(
     )
 
 
+
+def _inverse_transform(
+    name: str,
+    value: float,
+) -> float:
+    if FEATURE_TRANSFORMS.get(name, "linear") == "log":
+        return float(math.exp(float(value)))
+    return float(value)
+
+
+def _history_cadence_seconds(history: Sequence[dict]) -> float:
+    times = np.asarray(
+        sorted({int(row.get("t_us", 0)) for row in history if int(row.get("t_us", 0)) > 0}),
+        dtype=float,
+    )
+    if times.size < 2:
+        return 20.0
+    diffs = np.diff(times) / 1e6
+    diffs = diffs[(diffs >= 5.0) & (diffs <= 90.0)]
+    if diffs.size == 0:
+        return 20.0
+    return float(np.clip(np.median(diffs), 10.0, 60.0))
+
+
+def _robust_temporal_feature(
+    rows: Sequence[dict],
+    name: str,
+    current_t_us: int,
+    half_life_minutes: float,
+) -> float:
+    samples: list[tuple[float, float]] = []
+    for row in rows:
+        value = row.get(name, np.nan)
+        if not _finite(value):
+            continue
+        samples.append((float(_transform(name, float(value))), float(row.get("t_us", 0))))
+
+    if not samples:
+        return float("nan")
+
+    transformed = np.asarray([item[0] for item in samples], dtype=float)
+    sample_times = np.asarray([item[1] for item in samples], dtype=float)
+    center = float(np.median(transformed))
+    mad = float(np.median(np.abs(transformed - center)))
+    # Use the same unit-aware scale family as the baseline.  Half of the
+    # baseline floor is enough for outlier clipping while still allowing a
+    # sustained physiological shift to move the aggregate.
+    robust_scale = max(
+        1.4826 * mad,
+        0.5 * float(FEATURE_ROBUST_SCALE_FLOORS.get(name, 0.12)),
+    )
+    clipped = np.clip(
+        transformed,
+        center - 3.0 * robust_scale,
+        center + 3.0 * robust_scale,
+    )
+    ages_minutes = np.maximum(0.0, (float(current_t_us) - sample_times) / 60e6)
+    half_life = max(float(half_life_minutes), 1.0)
+    weights = np.power(0.5, ages_minutes / half_life)
+    if float(np.sum(weights)) <= 1e-12:
+        aggregate = center
+    else:
+        aggregate = float(np.sum(clipped * weights) / np.sum(weights))
+    return _inverse_transform(name, aggregate)
+
+
+def _aggregate_research_rows(
+    rows: Sequence[dict],
+    current_t_us: int,
+    observation_minutes: float,
+) -> dict:
+    """Aggregate physiological features before applying nonlinear prototype rules."""
+    valid_rows = [row for row in rows if _valid_research_row(row)]
+    if not valid_rows:
+        return {"t_us": int(current_t_us)}
+
+    half_life_minutes = max(float(observation_minutes) * 0.55, 2.0)
+    aggregate: dict[str, object] = {
+        "t_us": int(current_t_us),
+        "time_status": "VALID",
+        "frequency_status": "VALID",
+        "frequency_ready": True,
+        "overall_status": "VALID",
+        "transport_status": "VALID",
+        "transport_score": 1.0,
+    }
+    for name in FEATURE_TRANSFORMS:
+        aggregate[name] = _robust_temporal_feature(
+            valid_rows,
+            name,
+            int(current_t_us),
+            half_life_minutes,
+        )
+
+    # Preserve a few non-scoring fields for diagnostics and future extensions.
+    for name in (
+        "resonance_band_power_ms2",
+        "spectral_agreement",
+        "band_power_agreement",
+        "interpolation_agreement",
+        "contact_score",
+    ):
+        values = [float(row[name]) for row in valid_rows if name in row and _finite(row[name])]
+        aggregate[name] = float(np.median(values)) if values else float("nan")
+
+    return aggregate
+
+
+def _temporal_window_rows(
+    history: Sequence[dict],
+    current_t_us: int,
+    observation_minutes: float,
+) -> list[dict]:
+    start_t_us = int(current_t_us) - int(round(float(observation_minutes) * 60e6))
+    return [
+        row
+        for row in history
+        if start_t_us <= int(row.get("t_us", 0)) <= int(current_t_us)
+        and _valid_research_row(row)
+    ]
+
+
+def _temporal_window_coverage(
+    rows: Sequence[dict],
+    history: Sequence[dict],
+    observation_minutes: float,
+) -> tuple[float, float, float]:
+    if not rows:
+        return 0.0, 0.0, _history_cadence_seconds(history)
+    observation_seconds = max(float(observation_minutes) * 60.0, 1.0)
+    span_seconds = max(
+        0.0,
+        (int(rows[-1].get("t_us", 0)) - int(rows[0].get("t_us", 0))) / 1e6,
+    )
+    cadence_seconds = _history_cadence_seconds(history)
+    expected_count = max(observation_seconds / max(cadence_seconds, 1.0) + 1.0, 1.0)
+    count_coverage = float(np.clip(len(rows) / expected_count, 0.0, 1.0))
+    span_coverage = float(np.clip(span_seconds / observation_seconds, 0.0, 1.0))
+    coverage = float(math.sqrt(max(count_coverage * span_coverage, 0.0)))
+    return coverage, span_seconds, cadence_seconds
+
+
+def _score_aggregated_prototype(
+    code: str,
+    aggregate_row: dict,
+    baseline: dict,
+    causal_history: Sequence[dict],
+    observation_rows: Sequence[dict],
+) -> tuple[float, list[str]]:
+    if code == "RESONANCE_0P1":
+        return _score_resonance(aggregate_row, observation_rows)
+    return _score_row(code, aggregate_row, baseline, causal_history)
+
+
+def _temporal_observation_score(
+    code: str,
+    current_t_us: int,
+    history: Sequence[dict],
+    baseline: dict,
+) -> dict:
+    """Return a prototype score based on sustained physiological evidence.
+
+    The key ordering is intentional: features are aggregated over the prototype's
+    own time horizon first, then the nonlinear research-prototype score is
+    applied.  Only after that do persistence/stability terms reduce confidence.
+    This prevents a single 20-second update from becoming a one-hour state jump.
+    """
+    spec = PROTOTYPE_TEMPORAL_MODEL[code]
+    observation_minutes = float(spec["observation_minutes"])
+    minimum_span_minutes = float(spec["minimum_span_minutes"])
+
+    if code != "RESONANCE_0P1" and not baseline.get("ready"):
+        return {
+            "ready": False,
+            "raw_score": float("nan"),
+            "state_score": float("nan"),
+            "coverage_ratio": 0.0,
+            "persistence_ratio": 0.0,
+            "stability_score": 0.0,
+            "observation_minutes": observation_minutes,
+            "observed_span_minutes": 0.0,
+            "evidence": ["长期个人参照仍在建立"],
+            "reason": "BASELINE_NOT_READY",
+        }
+
+    causal_history = [
+        row for row in history if int(row.get("t_us", 0)) <= int(current_t_us)
+    ]
+    observation_rows = _temporal_window_rows(
+        causal_history,
+        int(current_t_us),
+        observation_minutes,
+    )
+    coverage, span_seconds, _ = _temporal_window_coverage(
+        observation_rows,
+        causal_history,
+        observation_minutes,
+    )
+    span_minutes = span_seconds / 60.0
+
+    if (
+        span_minutes < minimum_span_minutes
+        or coverage < _TEMPORAL_MINIMUM_COVERAGE
+        or len(observation_rows) < 4
+    ):
+        return {
+            "ready": False,
+            "raw_score": float("nan"),
+            "state_score": float("nan"),
+            "coverage_ratio": float(coverage),
+            "persistence_ratio": 0.0,
+            "stability_score": 0.0,
+            "observation_minutes": observation_minutes,
+            "observed_span_minutes": float(span_minutes),
+            "evidence": [
+                f"持续观察 {span_minutes:.1f}/{minimum_span_minutes:.1f} 分钟",
+                f"有效覆盖 {coverage * 100.0:.0f}%",
+            ],
+            "reason": "TEMPORAL_EVIDENCE_BUILDING",
+        }
+
+    aggregate_row = _aggregate_research_rows(
+        observation_rows,
+        int(current_t_us),
+        observation_minutes,
+    )
+    raw_score, evidence = _score_aggregated_prototype(
+        code,
+        aggregate_row,
+        baseline,
+        causal_history,
+        observation_rows,
+    )
+    raw_score = float(np.clip(raw_score, 0.0, 1.0))
+
+    # For phased structure the score already describes a multi-segment pattern.
+    # Other prototypes receive an additional persistence/stability check based
+    # on four sub-periods, each of which is itself feature-aggregated first.
+    segment_scores: list[float] = []
+    if code == "PHASED_VIPASSANA":
+        persistence_ratio = float(np.clip(raw_score / 0.70, 0.0, 1.0))
+        stability_score = float(np.clip(span_minutes / observation_minutes, 0.0, 1.0))
+    else:
+        window_start_us = int(current_t_us) - int(round(observation_minutes * 60e6))
+        segment_count = int(np.clip(round(observation_minutes), 4, 8))
+        edges = np.linspace(
+            float(window_start_us),
+            float(current_t_us),
+            segment_count + 1,
+        )
+        for index in range(segment_count):
+            lower = int(edges[index])
+            upper = int(edges[index + 1])
+            segment = [
+                row
+                for row in observation_rows
+                if lower <= int(row.get("t_us", 0)) <= upper
+            ]
+            if len(segment) < 2:
+                continue
+            segment_aggregate = _aggregate_research_rows(
+                segment,
+                upper,
+                max(observation_minutes / 4.0, 1.0),
+            )
+            segment_history = [
+                row for row in causal_history if int(row.get("t_us", 0)) <= upper
+            ]
+            score, _ = _score_aggregated_prototype(
+                code,
+                segment_aggregate,
+                baseline,
+                segment_history,
+                segment,
+            )
+            if _finite(score):
+                segment_scores.append(float(np.clip(score, 0.0, 1.0)))
+
+        if segment_scores:
+            segment_array = np.asarray(segment_scores, dtype=float)
+            # Continuous support avoids 0.25-sized jumps when one quarter of
+            # the observation window crosses a hard persistence threshold.
+            persistence_ratio = float(
+                np.mean(np.clip((segment_array - 0.20) / 0.55, 0.0, 1.0))
+            )
+            spread = float(np.percentile(segment_array, 90) - np.percentile(segment_array, 10))
+            stability_score = float(1.0 - np.clip(spread / 0.60, 0.0, 1.0))
+        else:
+            persistence_ratio = 0.0
+            stability_score = 0.0
+
+    segment_level = (
+        float(np.mean(np.asarray(segment_scores, dtype=float)))
+        if segment_scores
+        else raw_score
+    )
+    temporal_support = float(
+        np.clip(
+            0.70
+            + 0.10 * persistence_ratio
+            + 0.10 * stability_score
+            + 0.10 * coverage,
+            0.0,
+            1.0,
+        )
+    )
+    # Full-window amplitude and sub-period persistence are both calculated from
+    # aggregated physiology.  Blending them is the evidence-accumulation step;
+    # it is deliberately not a moving average of the plotted score.
+    state_core = 0.55 * raw_score + 0.45 * segment_level
+    state_score = float(np.clip(state_core * temporal_support, 0.0, 1.0))
+
+    evidence = list(evidence) + [
+        f"持续观察窗 {observation_minutes:.0f} 分钟",
+        f"有效覆盖 {coverage * 100.0:.0f}%",
+        f"持续证据 {persistence_ratio * 100.0:.0f}%",
+        f"稳定程度 {stability_score * 100.0:.0f}%",
+    ]
+
+    return {
+        "ready": True,
+        "raw_score": raw_score,
+        "state_score": state_score,
+        "coverage_ratio": float(coverage),
+        "persistence_ratio": float(persistence_ratio),
+        "stability_score": float(stability_score),
+        "observation_minutes": observation_minutes,
+        "observed_span_minutes": float(span_minutes),
+        "evidence": evidence,
+        "reason": "",
+    }
+
+
+
+def _accumulate_state_similarity(
+    code: str,
+    previous: float | None,
+    target: float,
+    dt_seconds: float,
+) -> float:
+    """Integrate sustained evidence into a slow research-state similarity.
+
+    This is deliberately *after* physiological features have been aggregated and
+    scored over the prototype-specific observation window.  It is therefore a
+    state-memory model, not plot smoothing.  Missing data never advances the
+    state; when evidence returns, elapsed time is capped so a long gap cannot
+    manufacture an instantaneous transition.
+    """
+    if not _finite(target):
+        return float("nan")
+
+    spec = PROTOTYPE_TEMPORAL_MODEL[code]
+    prior = float(previous) if previous is not None and _finite(previous) else 0.0
+    rising = float(target) >= prior
+    tau_minutes = float(
+        spec["state_rise_tau_minutes"] if rising else spec["state_fall_tau_minutes"]
+    )
+    # The display/state trajectory is evaluated about once per minute.  If a
+    # quality gap lasts longer, do not infer unobserved physiological change.
+    effective_dt = float(np.clip(dt_seconds, 10.0, 90.0))
+    alpha = 1.0 - math.exp(-effective_dt / max(tau_minutes * 60.0, 1.0))
+    value = prior + alpha * (float(target) - prior)
+    return float(np.clip(value, 0.0, 1.0))
+
+def _temporal_machine_state_from_detail(
+    code: str,
+    detail: dict,
+    analyzable: bool,
+    baseline_ready: bool,
+    was_active_recently: bool = False,
+) -> str:
+    """Lifecycle from multi-minute evidence plus causal state memory.
+
+    ``CANDIDATE`` and ``ACTIVE`` are intentionally separate: 0.50 means there
+    is enough sustained similarity to mention gently, while 0.70 is reserved
+    for a mature state.  ``EXITING`` is only legal after the same state was
+    actually active; a newly rising 0.4-0.5 score must never be mislabeled as
+    recovery/exit.
+    """
+    if not analyzable:
+        return "INACTIVE"
+    if code != "RESONANCE_0P1" and not baseline_ready:
+        return "INACTIVE"
+    if not detail.get("ready") or not _finite(detail.get("state_score", np.nan)):
+        return "INACTIVE"
+
+    score = float(detail.get("state_score", 0.0) or 0.0)
+    spec = PROTOTYPE_TEMPORAL_MODEL[code]
+    observation_minutes = float(spec["observation_minutes"])
+    observed_span = float(detail.get("observed_span_minutes", 0.0) or 0.0)
+    coverage = float(detail.get("coverage_ratio", 0.0) or 0.0)
+    persistence = float(detail.get("persistence_ratio", 0.0) or 0.0)
+    stability = float(detail.get("stability_score", 0.0) or 0.0)
+
+    if score >= _MATCH_THRESHOLD_ACTIVE:
+        mature = (
+            observed_span >= observation_minutes * 0.88
+            and coverage >= 0.75
+            and persistence >= 0.65
+            and stability >= 0.40
+        )
+        return "ACTIVE" if mature else "CANDIDATE"
+
+    if score >= _MATCH_THRESHOLD_CANDIDATE:
+        return "CANDIDATE"
+
+    if (
+        was_active_recently
+        and 0.30 <= score < _MATCH_THRESHOLD_CANDIDATE
+        and observed_span >= observation_minutes * 0.75
+    ):
+        return "EXITING"
+
+    return "INACTIVE"
+
+
+def _temporal_series_for_lifecycle(
+    code: str,
+    history: Sequence[dict],
+    current_t_us: int,
+) -> list[dict]:
+    spec = PROTOTYPE_TEMPORAL_MODEL[code]
+    memory_minutes = max(
+        float(spec["activation_hold_minutes"]) + float(spec["exit_hold_minutes"]) + 2.0,
+        8.0,
+    )
+    start_us = int(current_t_us) - int(round(memory_minutes * 60e6))
+    points = [
+        row for row in history
+        if start_us <= int(row.get("t_us", 0)) <= int(current_t_us)
+    ]
+    series: list[dict] = []
+    for point in points:
+        point_t_us = int(point.get("t_us", 0))
+        causal_history = [
+            row for row in history if int(row.get("t_us", 0)) <= point_t_us
+        ]
+        point_baseline = _build_personal_baseline(causal_history, point_t_us)
+        detail = _temporal_observation_score(
+            code,
+            point_t_us,
+            causal_history,
+            point_baseline,
+        )
+        series.append({"t_us": point_t_us, **detail})
+    return series
+
+
+def _temporal_machine_state(
+    code: str,
+    series: Sequence[dict],
+    analyzable: bool,
+    baseline_ready: bool,
+) -> str:
+    if not analyzable or not series:
+        return "INACTIVE"
+    if code != "RESONANCE_0P1" and not baseline_ready:
+        return "INACTIVE"
+
+    current = series[-1]
+    if not current.get("ready") or not _finite(current.get("state_score", np.nan)):
+        return "INACTIVE"
+    current_score = float(current["state_score"])
+    current_t_us = int(current.get("t_us", 0))
+    spec = PROTOTYPE_TEMPORAL_MODEL[code]
+
+    if current_score >= _MATCH_THRESHOLD_ACTIVE:
+        hold_minutes = float(spec["activation_hold_minutes"])
+        hold_start = current_t_us - int(round(hold_minutes * 60e6))
+        recent = [
+            item for item in series
+            if int(item.get("t_us", 0)) >= hold_start
+            and item.get("ready")
+            and _finite(item.get("state_score", np.nan))
+        ]
+        if recent:
+            span_minutes = (
+                int(recent[-1].get("t_us", 0)) - int(recent[0].get("t_us", 0))
+            ) / 60e6
+            scores = np.asarray([float(item["state_score"]) for item in recent], dtype=float)
+            sustained_ratio = float(np.mean(scores >= 0.65))
+            if (
+                span_minutes >= hold_minutes * 0.80
+                and sustained_ratio >= 0.75
+                and float(np.median(scores)) >= 0.68
+            ):
+                return "ACTIVE"
+        return "CANDIDATE"
+
+    if current_score < 0.45:
+        exit_minutes = float(spec["exit_hold_minutes"])
+        exit_start = current_t_us - int(round(exit_minutes * 60e6))
+        recent_exit = [
+            item for item in series
+            if int(item.get("t_us", 0)) >= exit_start
+            and item.get("ready")
+            and _finite(item.get("state_score", np.nan))
+        ]
+        earlier = [
+            item for item in series
+            if int(item.get("t_us", 0)) < exit_start
+            and item.get("ready")
+            and _finite(item.get("state_score", np.nan))
+        ]
+        if recent_exit and earlier:
+            exit_span = (
+                int(recent_exit[-1].get("t_us", 0)) - int(recent_exit[0].get("t_us", 0))
+            ) / 60e6
+            if (
+                exit_span >= exit_minutes * 0.75
+                and float(np.mean([float(item["state_score"]) < 0.45 for item in recent_exit])) >= 0.75
+                and max(float(item["state_score"]) for item in earlier) >= _MATCH_THRESHOLD_ACTIVE
+            ):
+                return "EXITING"
+
+    return "INACTIVE"
+
 def _current_row_from_snapshot(
     snapshot: AnalysisSnapshot,
 ) -> dict:
@@ -1794,73 +2369,35 @@ def evaluate_research_state(
     snapshot: AnalysisSnapshot,
     history: Sequence[dict],
     config: AnalysisConfig | None = None,
+    timeline: Sequence[dict] | None = None,
 ) -> dict:
     del config  # 预留给后续产品阈值配置。
 
-    history_rows = [
-        dict(
-            row
-        )
-        for row in history
-    ]
-    current_row = _current_row_from_snapshot(
-        snapshot
-    )
+    history_rows = [dict(row) for row in history]
+    current_row = _current_row_from_snapshot(snapshot)
 
     if (
         not history_rows
-        or int(
-            history_rows[-1].get(
-                "t_us",
-                0,
-            )
-        )
-        != int(
-            current_row[
-                "t_us"
-            ]
-        )
+        or int(history_rows[-1].get("t_us", 0)) != int(current_row["t_us"])
     ):
-        history_rows.append(
-            current_row
-        )
+        history_rows.append(current_row)
     else:
-        history_rows[-1].update(
-            current_row
-        )
+        history_rows[-1].update(current_row)
 
     session_elapsed_minutes = 0.0
     if history_rows:
         session_elapsed_minutes = max(
             0.0,
             (
-                int(
-                    current_row[
-                        "t_us"
-                    ]
-                )
-                - int(
-                    history_rows[0].get(
-                        "t_us",
-                        current_row[
-                            "t_us"
-                        ],
-                    )
-                )
-            )
-            / 60e6,
+                int(current_row["t_us"])
+                - int(history_rows[0].get("t_us", current_row["t_us"]))
+            ) / 60e6,
         )
 
-    if (
-        not snapshot.frequency.valid
-        and snapshot.frequency.progress
-        < 1.0
-    ):
+    if not snapshot.frequency.valid and snapshot.frequency.progress < 1.0:
         quality_state = "Q0_BUFFERING"
         analyzable = False
-    elif _quality_multiplier(
-        snapshot
-    ) <= 0:
+    elif _quality_multiplier(snapshot) <= 0:
         quality_state = "Q1_DATA_UNSTABLE"
         analyzable = False
     else:
@@ -1869,318 +2406,173 @@ def evaluate_research_state(
 
     baseline = _build_personal_baseline(
         history_rows,
-        int(
-            current_row[
-                "t_us"
-            ]
-        ),
+        int(current_row["t_us"]),
     )
 
-    if (
-        analyzable
-        and not baseline[
-            "ready"
-        ]
-    ):
-        quality_state = (
-            "Q2_BASELINE_BUILDING"
-        )
-
-    recent_rows = [
-        row
-        for row in history_rows
-        if (
-            int(
-                current_row[
-                    "t_us"
-                ]
-            )
-            - int(
-                row.get(
-                    "t_us",
-                    0,
-                )
-            )
-            <= 180_000_000
-        )
-    ]
+    if analyzable and not baseline["ready"]:
+        quality_state = "Q2_BASELINE_BUILDING"
 
     matches: list[dict] = []
+    current_t_us = int(current_row["t_us"])
+    evidence_quality = float(_quality_multiplier(snapshot))
+
+    state_timeline = list(timeline) if timeline is not None else _timeline_score_rows(history_rows)
+    latest_state_row = next(
+        (
+            item for item in reversed(state_timeline)
+            if int(item.get("t_us", 0)) <= current_t_us
+        ),
+        {},
+    )
 
     for code, definition in PROTOTYPE_DEFINITIONS.items():
-        score_series: list[float] = []
-        latest_evidence: list[str] = []
-
-        for row in recent_rows[-5:]:
-            row_t_us = int(row.get("t_us", 0))
-            causal_history = [
-                item for item in history_rows
-                if int(item.get("t_us", 0)) <= row_t_us
-            ]
-            causal_baseline = _build_personal_baseline(causal_history, row_t_us)
-            score, evidence = _score_row(
-                code,
-                row,
-                causal_baseline,
-                causal_history,
-            )
-            score_series.append(float(score))
-            latest_evidence = evidence
-
-        current_score = (
-            score_series[-1]
-            if score_series
-            else 0.0
+        detail = _temporal_observation_score(
+            code,
+            current_t_us,
+            history_rows,
+            baseline,
         )
-
-        # 0.1 Hz 共振结构在首个5分钟窗即可显示为 CANDIDATE；
-        # 其他原型需要个人近期基线。
-        baseline_gate = (
-            baseline[
-                "ready"
-            ]
-            or code
-            == "RESONANCE_0P1"
+        accumulated = latest_state_row.get(f"score_{code}", float("nan"))
+        evidence_score = detail.get("state_score", float("nan"))
+        raw_score = detail.get("raw_score", float("nan"))
+        current_score = float(accumulated) if _finite(accumulated) else 0.0
+        current_evidence_score = (
+            float(evidence_score) if _finite(evidence_score) else 0.0
         )
+        current_raw_score = float(raw_score) if _finite(raw_score) else 0.0
 
-        lifecycle = _machine_state(
-            score_series,
-            analyzable=(
-                analyzable
-                and baseline_gate
-            ),
-            baseline_ready=(
-                baseline[
-                    "ready"
-                ]
-                or code
-                == "RESONANCE_0P1"
-            ),
+        lifecycle_detail = dict(detail)
+        lifecycle_detail["state_score"] = (
+            float(accumulated) if _finite(accumulated) else float("nan")
         )
+        spec = PROTOTYPE_TEMPORAL_MODEL[code]
+        active_lookback_minutes = max(
+            float(spec["observation_minutes"]),
+            3.0 * float(spec["exit_hold_minutes"]),
+        )
+        active_lookback_us = current_t_us - int(round(active_lookback_minutes * 60e6))
+        was_active_recently = any(
+            active_lookback_us <= int(item.get("t_us", 0)) < current_t_us
+            and _finite(item.get(f"score_{code}", np.nan))
+            and float(item.get(f"score_{code}", 0.0)) >= _MATCH_THRESHOLD_ACTIVE
+            for item in state_timeline
+        )
+        lifecycle = _temporal_machine_state_from_detail(
+            code,
+            lifecycle_detail,
+            analyzable=analyzable,
+            baseline_ready=(baseline["ready"] or code == "RESONANCE_0P1"),
+            was_active_recently=was_active_recently,
+        )
+        latest_evidence = list(detail.get("evidence", []))
+        if detail.get("ready"):
+            latest_evidence.append(f"状态证据累计 {current_score * 100.0:.0f}%")
 
-        # ---- 观测：相似度与证据质量分开记录 —— 只读，不改逻辑 ----
-        quality_multiplier = float(_quality_multiplier(
-            snapshot
-        ))
-        # v0.4.2: similarity and evidence quality are separate axes.  LIMITED
-        # evidence no longer imposes a mathematical score ceiling below 0.70.
-        provisional_score = float(current_score)
-        # 计算 NO_MATCH 原因的字段
         no_match_reason = ""
-        if lifecycle in ("ACTIVE", "CANDIDATE", "EXITING"):
+        if lifecycle in {"ACTIVE", "CANDIDATE", "EXITING"}:
             no_match_reason = ""
-        elif not baseline["ready"] and code != "RESONANCE_0P1":
-            no_match_reason = "NO_MATCH: BASELINE_NOT_READY"
-        elif quality_multiplier <= 0:
+        elif evidence_quality <= 0:
             no_match_reason = "NO_MATCH: DATA_UNAVAILABLE"
-        elif "HF_MISSING" in str(latest_evidence):
-            no_match_reason = "NO_MATCH: HF_MISSING"
-        elif current_score < _MATCH_THRESHOLD_ACTIVE:
+        elif code != "RESONANCE_0P1" and not baseline["ready"]:
+            no_match_reason = "NO_MATCH: BASELINE_NOT_READY"
+        elif not detail.get("ready"):
+            no_match_reason = "NO_MATCH: TEMPORAL_EVIDENCE_BUILDING"
+        elif current_score < _MATCH_THRESHOLD_CANDIDATE:
             no_match_reason = (
-                "NO_MATCH: SCORE_BELOW_THRESHOLD %.2f < %.2f"
-                % (current_score, _MATCH_THRESHOLD_ACTIVE)
+                "NO_MATCH: STATE_SCORE_BELOW_CANDIDATE %.2f < %.2f"
+                % (current_score, _MATCH_THRESHOLD_CANDIDATE)
             )
         else:
-            no_match_reason = "NO_MATCH"
+            no_match_reason = "NO_MATCH: DURATION_NOT_CONFIRMED"
 
         matches.append({
             "code": code,
-            "name": definition[
-                "name"
-            ],
-            "score": float(
-                current_score
-            ),
+            "name": definition["name"],
+            # ``score`` is the user-facing state similarity from v0.4.3 onward.
+            "score": current_score,
+            "raw_score": current_raw_score,
+            "evidence_score": current_evidence_score,
+            "state_score": current_score,
             "lifecycle": lifecycle,
-            "evidence": (
-                latest_evidence
-            ),
-            "quality_multiplier": quality_multiplier,
-            "score_before_quality": provisional_score,
+            "evidence": latest_evidence,
+            "quality_multiplier": evidence_quality,
+            "score_before_quality": current_evidence_score,
             "no_match_reason": no_match_reason,
             "baseline_ready": bool(baseline["ready"]),
-            "test_state": definition[
-                "test_state"
-            ],
-            "user_narrative": definition[
-                "user_narrative"
-            ],
-            "source_ids": list(
-                definition[
-                    "source_ids"
-                ]
-            ),
-            "priority": int(
-                definition[
-                    "priority"
-                ]
-            ),
+            "temporal_ready": bool(detail.get("ready")),
+            "observation_minutes": float(detail.get("observation_minutes", 0.0) or 0.0),
+            "observed_span_minutes": float(detail.get("observed_span_minutes", 0.0) or 0.0),
+            "coverage_ratio": float(detail.get("coverage_ratio", 0.0) or 0.0),
+            "persistence_ratio": float(detail.get("persistence_ratio", 0.0) or 0.0),
+            "stability_score": float(detail.get("stability_score", 0.0) or 0.0),
+            "test_state": definition["test_state"],
+            "user_narrative": definition["user_narrative"],
+            "source_ids": list(definition["source_ids"]),
+            "priority": int(definition["priority"]),
         })
 
     matches.sort(
         key=lambda item: (
-            item[
-                "lifecycle"
-            ]
-            == "ACTIVE",
-            item[
-                "score"
-            ],
-            item[
-                "priority"
-            ],
+            item["lifecycle"] == "ACTIVE",
+            item["lifecycle"] == "CANDIDATE",
+            item["score"],
+            item["priority"],
         ),
         reverse=True,
     )
 
-    primary = None
-    active_matches = [
-        item
-        for item in matches
-        if item[
-            "lifecycle"
-        ]
-        == "ACTIVE"
-    ]
-    candidate_matches = [
-        item
-        for item in matches
-        if item[
-            "lifecycle"
-        ]
-        == "CANDIDATE"
-    ]
-
-    pool = (
-        active_matches
-        if active_matches
-        else candidate_matches
+    active_matches = [item for item in matches if item["lifecycle"] == "ACTIVE"]
+    candidate_matches = [item for item in matches if item["lifecycle"] == "CANDIDATE"]
+    pool = active_matches if active_matches else candidate_matches
+    primary = (
+        max(pool, key=lambda item: (item["score"], item["priority"]))
+        if pool
+        else None
     )
 
-    if pool:
-        primary = max(
-            pool,
-            key=lambda item: (
-                item[
-                    "score"
-                ],
-                item[
-                    "priority"
-                ],
-            ),
-        )
-
-    if (
-        quality_state
-        == "Q1_DATA_UNSTABLE"
-    ):
-        state_machine_state = (
-            "Q1_DATA_UNSTABLE"
-        )
-    elif (
-        quality_state
-        == "Q0_BUFFERING"
-    ):
-        state_machine_state = (
-            "Q0_BUFFERING"
-        )
-    elif (
-        quality_state
-        == "Q2_BASELINE_BUILDING"
-    ):
-        state_machine_state = (
-            "Q2_BASELINE_BUILDING"
-        )
+    if quality_state == "Q1_DATA_UNSTABLE":
+        state_machine_state = "Q1_DATA_UNSTABLE"
+    elif quality_state == "Q0_BUFFERING":
+        state_machine_state = "Q0_BUFFERING"
+    elif quality_state == "Q2_BASELINE_BUILDING":
+        # Resonance can still become a candidate before the personal baseline,
+        # but the overall session remains explicit about reference maturity.
+        state_machine_state = "Q4_STATE_CANDIDATE" if candidate_matches else "Q2_BASELINE_BUILDING"
     elif active_matches:
-        state_machine_state = (
-            "Q5_STATE_ACTIVE"
-        )
+        state_machine_state = "Q5_STATE_ACTIVE"
     elif candidate_matches:
-        state_machine_state = (
-            "Q4_STATE_CANDIDATE"
-        )
-    elif any(
-        item[
-            "lifecycle"
-        ]
-        == "EXITING"
-        for item in matches
-    ):
-        state_machine_state = (
-            "Q6_STATE_EXITING"
-        )
+        state_machine_state = "Q4_STATE_CANDIDATE"
+    elif any(item["lifecycle"] == "EXITING" for item in matches):
+        state_machine_state = "Q6_STATE_EXITING"
     else:
-        state_machine_state = (
-            "Q3_ANALYZABLE"
-        )
+        state_machine_state = "Q3_ANALYZABLE"
 
     source_ids: list[int] = []
     for item in matches:
-        if (
-            item[
-                "lifecycle"
-            ]
-            in {
-                "ACTIVE",
-                "CANDIDATE",
-            }
-        ):
-            for source_id in item[
-                "source_ids"
-            ]:
+        if item["lifecycle"] in {"ACTIVE", "CANDIDATE"}:
+            for source_id in item["source_ids"]:
                 if source_id not in source_ids:
-                    source_ids.append(
-                        source_id
-                    )
+                    source_ids.append(source_id)
 
     return {
-        "state_machine_state": (
-            state_machine_state
-        ),
+        "state_machine_state": state_machine_state,
         "quality_state": quality_state,
-        "session_elapsed_minutes": (
-            session_elapsed_minutes
-        ),
-        "baseline_ready": bool(
-            baseline[
-                "ready"
-            ]
-        ),
-        # 工程溯源使用；UI 不直接展示该内部结构。
+        "session_elapsed_minutes": session_elapsed_minutes,
+        "baseline_ready": bool(baseline["ready"]),
         "baseline": baseline,
-        "baseline_reason": baseline[
-            "reason"
-        ],
-        "baseline_reference_window_count": len(
-            baseline[
-                "rows"
-            ]
-        ),
+        "baseline_reason": baseline["reason"],
+        "baseline_reference_window_count": len(baseline["rows"]),
         "primary_state": primary,
         "matches": matches,
         "source_ids": source_ids,
-        "source_facts_html": (
-            render_source_facts_html(
-                source_ids
-            )
-            if source_ids
-            else ""
-        ),
-        "primary_source_ids": (
-            list(primary.get("source_ids", []))
-            if isinstance(primary, dict)
-            else []
-        ),
+        "source_facts_html": render_source_facts_html(source_ids) if source_ids else "",
+        "primary_source_ids": list(primary.get("source_ids", [])) if isinstance(primary, dict) else [],
         "primary_source_facts_html": (
-            render_source_facts_html(
-                list(primary.get("source_ids", []))
-            )
-            if isinstance(primary, dict)
-            and primary.get("source_ids")
+            render_source_facts_html(list(primary.get("source_ids", [])))
+            if isinstance(primary, dict) and primary.get("source_ids")
             else ""
         ),
     }
-
 
 def _session_stage(
     elapsed_minutes: float,
@@ -2240,49 +2632,129 @@ def _timeline_score_rows(
     history: Sequence[dict],
     baseline: dict | None = None,
 ) -> list[dict]:
-    """Score the last hour causally.
+    """Build a causal one-hour research *state* trajectory.
 
-    ``baseline`` is accepted for API compatibility but intentionally ignored.
-    Each historical point receives a baseline built only from data available at
-    or before that point, so the displayed trajectory cannot change because of
-    future observations.
+    Each plotted value has three layers of evidence:
+
+    1. ``raw_score_*``: nonlinear prototype score after robust aggregation of
+       physiology over that prototype's own multi-minute observation horizon;
+    2. ``evidence_score_*``: raw score reduced by coverage, persistence and
+       within-window stability;
+    3. ``score_*``: slow state memory used by the user-facing one-hour chart.
+
+    The state memory is causal and only advances when analyzable evidence is
+    present.  It is not a moving average of 20-second scores.
     """
     del baseline
     if not history:
         return []
 
-    latest_t_us = int(history[-1].get("t_us", 0))
-    start_us = latest_t_us - 60 * 60 * 1_000_000
-    rows = [
-        row for row in history
-        if int(row.get("t_us", 0)) >= start_us
+    ordered_history = sorted(
+        (dict(row) for row in history),
+        key=lambda row: int(row.get("t_us", 0)),
+    )
+    latest_t_us = int(ordered_history[-1].get("t_us", 0))
+    display_start_us = latest_t_us - 60 * 60 * 1_000_000
+
+    # Warm state memory before the visible hour so sessions longer than an hour
+    # do not restart every curve from zero at the left chart edge.
+    max_tau_minutes = max(
+        max(
+            float(spec["state_rise_tau_minutes"]),
+            float(spec["state_fall_tau_minutes"]),
+        )
+        for spec in PROTOTYPE_TEMPORAL_MODEL.values()
+    )
+    warmup_start_us = display_start_us - int(round(max(30.0, 2.5 * max_tau_minutes) * 60e6))
+    process_source = [
+        row for row in ordered_history
+        if int(row.get("t_us", 0)) >= warmup_start_us
     ]
+
+    # Keep all original 20-second rows available to temporal windows, but a
+    # state trajectory only needs about one user-visible point per minute.
+    rows = _decimate_rows(process_source, minimum_gap_seconds=60.0)
+    if process_source and (
+        not rows
+        or int(rows[-1].get("t_us", 0)) != int(process_source[-1].get("t_us", 0))
+    ):
+        rows.append(process_source[-1])
+
     timeline: list[dict] = []
+    state_memory: dict[str, float] = {}
+    state_memory_t_us: dict[str, int] = {}
 
     for row in rows:
         row_t_us = int(row.get("t_us", 0))
         causal_history = [
-            item for item in history
+            item for item in ordered_history
             if int(item.get("t_us", 0)) <= row_t_us
         ]
         row_baseline = _build_personal_baseline(causal_history, row_t_us)
         quality = _row_quality_multiplier(row)
-        scores: dict[str, float] = {}
+
+        state_scores: dict[str, float] = {}
+        evidence_scores: dict[str, float] = {}
+        raw_scores: dict[str, float] = {}
+        details: dict[str, dict] = {}
 
         if quality <= 0:
-            scores = {code: float("nan") for code in PROTOTYPE_DEFINITIONS}
+            for code in PROTOTYPE_DEFINITIONS:
+                state_scores[code] = float("nan")
+                evidence_scores[code] = float("nan")
+                raw_scores[code] = float("nan")
+                details[code] = {
+                    "ready": False,
+                    "coverage_ratio": 0.0,
+                    "persistence_ratio": 0.0,
+                    "stability_score": 0.0,
+                    "observed_span_minutes": 0.0,
+                }
             ranked: list[tuple[str, float]] = []
         else:
             for code in PROTOTYPE_DEFINITIONS:
-                score, _ = _score_row(
+                detail = _temporal_observation_score(
                     code,
-                    row,
-                    row_baseline,
+                    row_t_us,
                     causal_history,
+                    row_baseline,
                 )
-                scores[code] = float(score)
+                details[code] = detail
+                target_value = detail.get("state_score", float("nan"))
+                raw_value = detail.get("raw_score", float("nan"))
+                evidence_scores[code] = (
+                    float(target_value) if _finite(target_value) else float("nan")
+                )
+                raw_scores[code] = (
+                    float(raw_value) if _finite(raw_value) else float("nan")
+                )
+
+                if detail.get("ready") and _finite(target_value):
+                    previous = state_memory.get(code)
+                    previous_t = state_memory_t_us.get(code)
+                    if previous_t is None:
+                        dt_seconds = 60.0
+                    else:
+                        dt_seconds = max((row_t_us - previous_t) / 1e6, 10.0)
+                    state_value = _accumulate_state_similarity(
+                        code,
+                        previous,
+                        float(target_value),
+                        dt_seconds,
+                    )
+                    state_memory[code] = state_value
+                    state_memory_t_us[code] = row_t_us
+                    state_scores[code] = state_value
+                else:
+                    # No new evidence: draw a gap and keep latent memory intact.
+                    state_scores[code] = float("nan")
+
             ranked = sorted(
-                scores.items(),
+                [
+                    (code, score)
+                    for code, score in state_scores.items()
+                    if _finite(score)
+                ],
                 key=lambda item: (
                     item[1],
                     PROTOTYPE_DEFINITIONS[item[0]]["priority"],
@@ -2290,15 +2762,22 @@ def _timeline_score_rows(
                 reverse=True,
             )
 
+        if row_t_us < display_start_us:
+            # Warm-up rows only establish the causal state memory.
+            continue
+
         if quality <= 0:
             primary_code = "DATA_UNSTABLE"
             primary_score = 0.0
         elif ranked and ranked[0][1] >= _MATCH_THRESHOLD_ACTIVE:
             primary_code = ranked[0][0]
             primary_score = float(ranked[0][1])
-        else:
+        elif ranked:
             primary_code = "STABLE_NEUTRAL"
-            primary_score = ranked[0][1] if ranked else 0.0
+            primary_score = float(ranked[0][1])
+        else:
+            primary_code = "REFERENCE_BUILDING"
+            primary_score = 0.0
 
         baseline_rows = list(row_baseline.get("rows", []) or [])
         baseline_version = int(baseline_rows[-1].get("t_us", 0)) if baseline_rows else 0
@@ -2310,17 +2789,33 @@ def _timeline_score_rows(
             "quality_multiplier": float(quality),
             "primary_code": primary_code,
             "primary_score": float(primary_score),
+            "temporal_model_version": "v0.4.3",
         }
-        for code, score in scores.items():
-            timeline_row[f"score_{code}"] = float(score)
+        for code in PROTOTYPE_DEFINITIONS:
+            detail = details.get(code, {})
+            timeline_row[f"score_{code}"] = float(state_scores.get(code, float("nan")))
+            timeline_row[f"evidence_score_{code}"] = float(
+                evidence_scores.get(code, float("nan"))
+            )
+            timeline_row[f"raw_score_{code}"] = float(raw_scores.get(code, float("nan")))
+            timeline_row[f"temporal_ready_{code}"] = 1 if bool(detail.get("ready")) else 0
+            timeline_row[f"coverage_{code}"] = float(detail.get("coverage_ratio", 0.0) or 0.0)
+            timeline_row[f"persistence_{code}"] = float(
+                detail.get("persistence_ratio", 0.0) or 0.0
+            )
+            timeline_row[f"stability_{code}"] = float(
+                detail.get("stability_score", 0.0) or 0.0
+            )
+            timeline_row[f"observed_span_minutes_{code}"] = float(
+                detail.get("observed_span_minutes", 0.0) or 0.0
+            )
         timeline.append(timeline_row)
 
     if timeline:
         t0 = timeline[0]["t_us"]
-        for row in timeline:
-            row["elapsed_minutes"] = float((row["t_us"] - t0) / 60e6)
+        for item in timeline:
+            item["elapsed_minutes"] = float((item["t_us"] - t0) / 60e6)
     return timeline
-
 
 def build_hour_experience(
     snapshot: AnalysisSnapshot,
@@ -2537,6 +3032,7 @@ def build_hour_experience(
         evaluate_research_state(
             snapshot,
             history_rows,
+            timeline=timeline,
         )
     )
 
