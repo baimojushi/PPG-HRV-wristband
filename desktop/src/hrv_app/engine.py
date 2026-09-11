@@ -37,6 +37,8 @@ from .provenance import (
     ProvenanceRecorder,
     build_beat_provenance_row,
     build_beat_detector_state_row,
+    build_interval_candidate_trace_row,
+    build_interval_artifact_trace_row,
     build_causality_trace_row,
     build_hrv_window_provenance_row,
     build_prototype_score_trace_row,
@@ -53,7 +55,7 @@ class AnalysisEngine:
     """
     线程安全分析引擎。
 
-    v0.4.1 interval-core：
+    v0.4.2 interval-artifact core：
     - `_firmware_beats` 只保留为诊断/实时 HR 证据，不再参与 HRV hard gate；
     - 正式心搏由 multiscale + Elgendi-style 两条独立波形检测链共同产生；
     - fixed-lag resolver 只能从真实波形候选中消歧，不能凭 expected RR 造时间点；
@@ -102,7 +104,7 @@ class AnalysisEngine:
             maxlen=5000
         )
 
-        # v0.4.1 authoritative interval core:
+        # v0.4.2 authoritative interval core:
         # two independent waveform detectors -> consensus -> fixed-lag resolver.
         # Firmware beats remain diagnostic only.
         self._waveform_corrector = IntervalCore(
@@ -160,6 +162,12 @@ class AnalysisEngine:
         self._detector_state_interval_s = 5.0
         # proposal 的最近一次记录，用作 beat_provenance 里上一心搏的 prior 参考。
         self._last_proposal_ref_t_us = 0
+        # v0.4.2 provenance de-duplication. Candidate decisions can be revisited
+        # across overlapping fixed-lag windows; artifact decisions can be revised
+        # as future context arrives, so we record only new/revised signatures.
+        self._candidate_log_keys: set[tuple[int, str, str]] = set()
+        self._artifact_log_signatures: dict[int, tuple] = {}
+        self._artifact_log_revisions: dict[int, int] = {}
 
     def attach_provenance_recorder(
         self, recorder: ProvenanceRecorder | None
@@ -197,6 +205,9 @@ class AnalysisEngine:
             self._last_detector_log_us = 0
             self._last_signal_input_log_us = -1
             self._last_proposal_ref_t_us = 0
+            self._candidate_log_keys.clear()
+            self._artifact_log_signatures.clear()
+            self._artifact_log_revisions.clear()
 
     def ingest_sample(
         self,
@@ -750,6 +761,7 @@ class AnalysisEngine:
         self._log_fast_provenance_locked(
             latest_sample_t_us
         )
+        self._log_interval_candidate_decisions_locked(latest_sample_t_us)
 
         if not proposals:
             return
@@ -964,7 +976,7 @@ class AnalysisEngine:
                             ),
                             None,
                         )
-                    template_version = "v0.4.1-interval-core"
+                    template_version = "v0.4.2-interval-artifact"
                     self._provenance.record_beat_provenance(
                         build_beat_provenance_row(
                             beat=refined,
@@ -1093,6 +1105,11 @@ class AnalysisEngine:
         now_us: int,
         record_history: bool,
     ) -> None:
+        # A manual/forced refresh can be timestamped at the newest Sample while
+        # the next automatic metric callback is still tied to a fixed-lag Beat.
+        # Never let analysis/history/provenance time move backwards.
+        now_us = max(int(now_us), int(self._last_snapshot.t_us))
+
         # ---------------------------------------------------------------
         # 每次重新清洗整段原始 Beat。
         # 5000 个事件规模很小，换来可回溯的一致性和可复现导出。
@@ -1103,6 +1120,9 @@ class AnalysisEngine:
         self._cleaned_records = clean_result.records
         self._nn_intervals = clean_result.nn_intervals
         self._timeline_quality = clean_result.quality
+        self._log_interval_artifact_decisions_locked(
+            clean_result.artifact_decisions
+        )
 
         # 时域看最近 30 秒信号质量；频域审计整个 5 分钟窗口。
         signal_quality = evaluate_signal_quality(
@@ -1173,6 +1193,48 @@ class AnalysisEngine:
             time_metrics=time_metrics,
             signal_quality=signal_quality,
         )
+
+    def _log_interval_candidate_decisions_locked(self, observed_at_t_us: int) -> None:
+        if self._provenance is None:
+            return
+        for decision in getattr(self._waveform_corrector, "last_candidate_decisions", []):
+            key = (
+                int(getattr(decision, "t_us", 0) or 0),
+                str(getattr(decision, "decision", "") or ""),
+                str(getattr(decision, "reason", "") or ""),
+            )
+            if key in self._candidate_log_keys:
+                continue
+            self._candidate_log_keys.add(key)
+            self._provenance.record_interval_candidate_trace(
+                build_interval_candidate_trace_row(decision, observed_at_t_us)
+            )
+
+    def _log_interval_artifact_decisions_locked(self, decisions) -> None:
+        if self._provenance is None:
+            return
+        record_by_t = {record.t_us: record for record in self._cleaned_records}
+        for decision in decisions:
+            t_us = int(getattr(decision, "t_us", 0) or 0)
+            signature = (
+                str(getattr(decision, "artifact_class", "") or ""),
+                str(getattr(decision, "status", "") or ""),
+                round(float(getattr(decision, "corrected_rr_ms", 0.0) or 0.0), 3),
+                int(getattr(decision, "split_count", 1) or 1),
+                round(float(getattr(decision, "reference_rr_ms", 0.0) or 0.0), 1),
+            )
+            if self._artifact_log_signatures.get(t_us) == signature:
+                continue
+            self._artifact_log_signatures[t_us] = signature
+            revision = self._artifact_log_revisions.get(t_us, 0) + 1
+            self._artifact_log_revisions[t_us] = revision
+            self._provenance.record_interval_artifact_trace(
+                build_interval_artifact_trace_row(
+                    decision,
+                    record_by_t.get(t_us),
+                    revision=revision,
+                )
+            )
 
     def _log_fast_provenance_locked(
         self,
@@ -1252,7 +1314,10 @@ class AnalysisEngine:
         # ② 20 秒窗口 HRV（与 metric_update_seconds 同节奏）
         # ----------------------------------------------------------
         window_days = self.config.metric_update_seconds * 1_000_000
-        if now_us - self._last_metric_us >= window_days:
+        if (
+            self._last_metric_us is None
+            or now_us - self._last_metric_us >= window_days
+        ):
             try:
                 # 最近 20 秒所有 beat
                 recent_beats = [
@@ -1483,23 +1548,20 @@ class AnalysisEngine:
         except Exception:
             pass
 
-        # 当前实现会用“此刻已经拥有的历史”重绘过去一小时。
-        # causality_trace 把这一事实显式写出来，便于下一轮继续收敛历史因果性。
+        # v0.4.2 trajectory rows are causal: each point records the newest data
+        # and baseline version that were actually available at that historical time.
         try:
             hour = build_hour_experience(
                 copy.deepcopy(self._last_snapshot),
                 copy.deepcopy(list(self._metric_history)),
             )
-            baseline = research_snapshot.get("baseline", {})
-            baseline_version = int(
-                (baseline.get("rows") or [{}])[-1].get("t_us", 0)
-            )
             for item in hour.get("timeline", []):
+                score_t_us = int(item.get("t_us", 0))
                 self._provenance.record_causality_trace(
                     build_causality_trace_row(
-                        score_t_us=int(item.get("t_us", 0)),
-                        latest_data_t_us=int(now_us),
-                        baseline_version=baseline_version,
+                        score_t_us=score_t_us,
+                        latest_data_t_us=int(item.get("latest_data_t_us", score_t_us)),
+                        baseline_version=int(item.get("baseline_version", 0)),
                     )
                 )
         except Exception:
@@ -1568,6 +1630,9 @@ class AnalysisEngine:
             "frequency_validity_reason": (
                 frequency.validity_reason
             ),
+            "frequency_ready": bool(frequency.valid),
+            "frequency_progress": float(frequency.progress),
+            "frequency_duration_seconds": float(frequency.duration_seconds),
             "total_power_ms2": (
                 frequency.total_power_ms2
                 if frequency.valid
@@ -1701,6 +1766,12 @@ class AnalysisEngine:
             ),
             "max_consecutive_artifacts": (
                 time_metrics.max_consecutive_artifacts
+            ),
+            "max_consecutive_unresolved": (
+                time_metrics.max_consecutive_unresolved
+            ),
+            "resolved_artifact_ratio": (
+                time_metrics.resolved_artifact_ratio
             ),
 
             "protocol_error_ratio": (
@@ -2792,6 +2863,13 @@ class AnalysisEngine:
                 "max_consecutive_artifacts": (
                     time_metrics.max_consecutive_artifacts
                 ),
+                "max_consecutive_unresolved": (
+                    time_metrics.max_consecutive_unresolved
+                ),
+                "resolved_artifact_ratio": round(
+                    time_metrics.resolved_artifact_ratio,
+                    5,
+                ),
                 "fiducial_quality_mean": round(
                     time_metrics.fiducial_quality_mean,
                     4,
@@ -2914,6 +2992,13 @@ class AnalysisEngine:
                 ),
                 "max_consecutive_artifacts": (
                     frequency.max_consecutive_artifacts
+                ),
+                "max_consecutive_unresolved": (
+                    frequency.max_consecutive_unresolved
+                ),
+                "resolved_artifact_ratio": round(
+                    frequency.resolved_artifact_ratio,
+                    5,
                 ),
                 "waveform_inserted_ratio": round(
                     frequency.waveform_inserted_ratio,
@@ -3057,6 +3142,13 @@ class AnalysisEngine:
                 ),
                 "max_consecutive_artifacts": (
                     snapshot.timeline_quality.max_consecutive_artifacts
+                ),
+                "max_consecutive_unresolved": (
+                    snapshot.timeline_quality.max_consecutive_unresolved
+                ),
+                "resolved_artifact_ratio": round(
+                    snapshot.timeline_quality.resolved_artifact_ratio,
+                    5,
                 ),
                 "fiducial_quality_mean": round(
                     snapshot.timeline_quality.fiducial_quality_mean,

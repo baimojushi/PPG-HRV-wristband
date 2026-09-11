@@ -1,9 +1,9 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.1",
-  "base_version": "0.4.0",
-  "release_type": "interval-core-rewrite",
-  "algorithm_source": "project-local desktop interval core + firmware zeezPPG diagnostic evidence",
+  "version": "0.4.2",
+  "base_version": "0.4.1",
+  "release_type": "interval-artifact-rewrite",
+  "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
   "hardware_parameters": {
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "105 passed",
+    "tests": "119 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -751,8 +751,8 @@
       "smooth physiological HRV remains present after future-aware RR cleaning"
     ],
     "final_delivery_python_compileall": "passed",
-    "final_delivery_tests": "72 passed",
-    "fresh_baseline_plus_patch_tests": "72 passed",
+    "final_delivery_tests": "119 passed",
+    "fresh_baseline_plus_patch_tests": "119 passed",
     "git_apply_check": "passed",
     "responsive_ui_tests": "5 passed",
     "qt_runtime_window_test": "not executed: PySide6 unavailable in artifact runtime",
@@ -794,10 +794,67 @@
         "LIMITED": 23,
         "INVALID": 23
       }
+    },
+    "real_measurement_v0_4_2_interval_artifact": {
+      "ecg_ground_truth_available": false,
+      "replay_semantics": "same v0.4.1 formal PPG beat timestamps through old vs v0.4.2 interval layer",
+      "20260910_135448": {
+        "raw_rr_count": 2831,
+        "old_accepted_nn_count": 2816,
+        "new_accepted_nn_count": 2830,
+        "old_unresolved_ratio": 0.005298481102084069,
+        "new_unresolved_ratio": 0.00035323207347227127,
+        "old_max_consecutive_artifacts": 6,
+        "new_max_consecutive_unresolved": 1,
+        "old_time_snapshots": {
+          "VALID": 86,
+          "LIMITED": 7,
+          "INVALID": 17
+        },
+        "new_time_snapshots": {
+          "VALID": 95,
+          "LIMITED": 0,
+          "INVALID": 15
+        }
+      },
+      "20260910_152745": {
+        "raw_rr_count": 2496,
+        "old_accepted_nn_count": 2487,
+        "new_accepted_nn_count": 2492,
+        "old_unresolved_ratio": 0.002403846153846154,
+        "new_unresolved_ratio": 0.00040064102564102563,
+        "new_resolved_artifact_ratio": 0.001201923076923077,
+        "old_time_snapshots": {
+          "VALID": 79,
+          "LIMITED": 11,
+          "INVALID": 8
+        },
+        "new_time_snapshots": {
+          "VALID": 83,
+          "LIMITED": 7,
+          "INVALID": 8
+        },
+        "key_repairs": [
+          {
+            "rr_pair_ms": [
+              336.004,
+              407.998
+            ],
+            "corrected_nn_ms": 744.002,
+            "kind": "extra_peak_split_merge"
+          },
+          {
+            "rr_ms": 1296.004,
+            "corrected_nn_ms": 648.002,
+            "split_count": 2,
+            "kind": "missed_beat"
+          }
+        ]
+      }
     }
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 249,
+  "file_count": 272,
   "files": [
     "#U542f#U52a8UI.bat",
     "#U7b2c#U4e00#U6b21/hrv_export.zip",
@@ -1047,7 +1104,29 @@
     "tests/test_spwvd.py",
     "tests/test_zeez_detector_cpp.py",
     "tests/test_zeez_detector_wear_gap_cpp.py",
-    "tests/test_zeez_wrapper_cpp.py"
+    "tests/test_zeez_wrapper_cpp.py",
+    "desktop/src/hrv_app/interval_artifacts.py",
+    "tests/test_interval_artifacts_v042.py",
+    "docs/INTERVAL_ARTIFACT_REWRITE_v0.4.2.md",
+    "docs/VALIDATION_v0.4.2_INTERVAL_ARTIFACT.md",
+    "docs/VALIDATION_v0.4.2_INTERVAL_ARTIFACT.json",
+    "desktop/src/hrv_app/benchmark/__init__.py",
+    "desktop/src/hrv_app/benchmark/__main__.py",
+    "desktop/src/hrv_app/benchmark/cli.py",
+    "desktop/src/hrv_app/benchmark/datasets.py",
+    "desktop/src/hrv_app/benchmark/ecg_reference.py",
+    "desktop/src/hrv_app/benchmark/matching.py",
+    "desktop/src/hrv_app/benchmark/metrics.py",
+    "desktop/src/hrv_app/benchmark/production_detector.py",
+    "desktop/src/hrv_app/benchmark/runner.py",
+    "desktop/src/hrv_app/benchmark/synthetic.py",
+    "desktop/src/hrv_app/benchmark/types.py",
+    "desktop/benchmark_interval_core.py",
+    "desktop/requirements-benchmark.txt",
+    "docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md",
+    "docs/VALIDATION_v0.4.1_BENCHMARK_FRAMEWORK.json",
+    "docs/VALIDATION_v0.4.1_BENCHMARK_FRAMEWORK.md",
+    "tests/test_benchmark_v041.py"
   ],
   "debug_export": [
     "samples_debug.csv",
@@ -1060,7 +1139,10 @@
     "raw_session/*.csv",
     "beats_refined.csv: fixed-lag waveform evidence",
     "beats_cleaned.csv: fixed-lag waveform evidence",
-    "annotation_context_1s.csv: waveform correction statistics"
+    "annotation_context_1s.csv: waveform correction statistics",
+    "raw_session/interval_candidate_trace.csv",
+    "raw_session/interval_artifact_trace.csv",
+    "beats_cleaned.csv: interval artifact evidence"
   ],
   "firmware_changed": false,
   "protocol_version": 4,
@@ -1273,5 +1355,54 @@
     "global_contact_sqi_hard_gate_for_hrv": false,
     "spectral_disagreement_invalidates_beat_timeline": false,
     "sequence_resolver_synthesizes_expected_beats": false
+  },
+  "interval_artifact_v0_4_2": {
+    "detector_consensus_is_final_truth": false,
+    "raw_beat_timestamps_preserved": true,
+    "corrected_nn_separate_from_raw_beat_timeline": true,
+    "artifact_classes": [
+      "extra_peak_split/merge",
+      "missed_beat_multiple",
+      "long_short_compensating_pair",
+      "hard_short/hard_long",
+      "isolated_outlier",
+      "accepted/coherent_rate_transition"
+    ],
+    "single_detector_candidates_preserved_for_sequence_reconsideration": true,
+    "resolved_artifact_separate_from_unresolved_gate": true,
+    "time_hrv_uses_corrected_nn": false,
+    "frequency_hrv_may_use_corrected_nn": true,
+    "full_frequency_window_required_for_research_baseline": true,
+    "research_similarity_separate_from_evidence_quality": true,
+    "historical_research_scoring_is_causal": true,
+    "analysis_timestamp_monotonic": true,
+    "new_provenance_logs": [
+      "interval_candidate_trace.csv",
+      "interval_artifact_trace.csv"
+    ]
+  },
+  "benchmark_framework_v0_4_1": {
+    "production_detector_under_test": "v0.4.1 IntervalCore",
+    "reference_sources": [
+      "provided R-peak annotations",
+      "dual ECG detector consensus"
+    ],
+    "adapters": [
+      "BIDMC open CSV auto-cache",
+      "local synchronized CSV pair",
+      "NPZ interchange"
+    ],
+    "metrics": [
+      "sensitivity",
+      "PPV",
+      "F1",
+      "timing MAE/p95",
+      "RR MAE/p95/correlation",
+      "RMSSD error",
+      "SDNN error",
+      "real-time ratio"
+    ],
+    "alignment": "one-to-one beat matching after piecewise ECG-to-PPG lag alignment",
+    "docs": "docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md"
   }
 }

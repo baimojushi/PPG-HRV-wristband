@@ -1,0 +1,52 @@
+{
+  "version": "0.4.1",
+  "scope": "ECG/public-data benchmark framework",
+  "python_compileall": "passed",
+  "pytest": "112 passed",
+  "synthetic_smoke": {
+    "duration_s": 90.0,
+    "reference_method": "provided_annotations",
+    "reference_beats": 111,
+    "ppg_beats": 111,
+    "correct_beats": 111,
+    "sensitivity_percent": 100.0,
+    "ppv_percent": 100.0,
+    "f1_percent": 100.0,
+    "rr_mae_ms": 2.952,
+    "rr_p95_ms": 6.385,
+    "rr_correlation": 0.99482,
+    "rmssd_abs_error_ms": 0.823,
+    "sdnn_abs_error_ms": 0.122,
+    "note": "Synthetic regression verifies plumbing/alignment/metrics; it is not external scientific validation."
+  },
+  "public_dataset_adapter": {
+    "dataset": "BIDMC PPG and Respiration Dataset v1.0.0",
+    "records": 53,
+    "duration_per_record_min": 8,
+    "sample_rate_hz": 125,
+    "signals": ["PLETH", "ECG lead II"],
+    "access": "open PhysioNet CSV",
+    "runtime_public_download_executed_in_artifact_environment": false,
+    "reason": "artifact runtime has no outbound network; loader/parser/URL construction are unit-tested and the public source URL was verified from PhysioNet documentation"
+  },
+  "method": {
+    "ecg_reference": "dual independent ECG QRS detectors, agreement-window filtering; supplied annotations override this",
+    "ecg_reference_window_s": 20,
+    "ecg_detector_agreement_tolerance_ms": 80,
+    "ecg_min_window_f1": 0.90,
+    "ppg_detector": "production v0.4.1 interval core",
+    "ppg_correctness_tolerance_ms": 150,
+    "lag_window_s": 300,
+    "alignment": "piecewise ECG-to-PPG lag; one-to-one beat matching",
+    "metrics": [
+      "sensitivity",
+      "PPV",
+      "F1",
+      "timing MAE/p95",
+      "RR MAE/p95/correlation",
+      "RMSSD absolute error",
+      "SDNN absolute error",
+      "real-time execution ratio"
+    ]
+  }
+}

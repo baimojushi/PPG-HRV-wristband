@@ -6,7 +6,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from .beat_consensus import build_detector_consensus
-from .beat_sequence_resolver import resolve_consensus_sequence
+from .beat_sequence_resolver import SequenceCandidateDecision, resolve_consensus_sequence
 from .config import AnalysisConfig
 from .models import BeatFrame, SampleFrame
 from .ppg_preprocessor import preprocess_ppg
@@ -66,15 +66,19 @@ class IntervalCoreDiagnostics:
     local_dual_rr_ms: float = 0.0
     local_dual_rr_robust_cv: float = 0.0
     reference_update_reason: str = ""
+    rejected_candidate_count: int = 0
+    long_gap_rescue_count: int = 0
 
 
 class IntervalCore:
-    """v0.4.1 authoritative PPG -> Beat core.
+    """v0.4.2 authoritative PPG -> Beat candidate core.
 
     Firmware Accepted beats are diagnostic only. Formal beats are created from two
     heterogeneous waveform detectors, consensus evidence and a fixed-lag sequence
     resolver. The resolver may choose among real peaks, but it never synthesizes an
-    expected timestamp.
+    expected timestamp.  Final RR authority still belongs to the downstream
+    interval-artifact classifier, because two waveform detectors may share the same
+    optical false peak.
     """
 
     def __init__(self, config: AnalysisConfig | None = None):
@@ -85,6 +89,7 @@ class IntervalCore:
         self._last_reference_reason: str = "bootstrap"
         self._last_local_dual_rr_ms: float = 0.0
         self._last_local_dual_rr_robust_cv: float = 0.0
+        self.last_candidate_decisions: list[SequenceCandidateDecision] = []
 
     def reset(self) -> None:
         self.last_diagnostics = IntervalCoreDiagnostics()
@@ -93,6 +98,7 @@ class IntervalCore:
         self._last_reference_reason = "reset"
         self._last_local_dual_rr_ms = 0.0
         self._last_local_dual_rr_robust_cv = 0.0
+        self.last_candidate_decisions = []
 
     def _reference_rr(
         self,
@@ -260,6 +266,7 @@ class IntervalCore:
         secondary = detect_elgendi_like(ppg, self.config)
         consensus = build_detector_consensus(primary, secondary, ppg.t_us, self.config)
         reference_rr_ms = self._reference_rr(consensus, rr_history_ms)
+        candidate_decisions: list[SequenceCandidateDecision] = []
         selected = resolve_consensus_sequence(
             consensus,
             ppg,
@@ -267,7 +274,9 @@ class IntervalCore:
             commit_until_t_us=commit_until_t_us,
             reference_rr_ms=reference_rr_ms,
             config=self.config,
+            decision_sink=candidate_decisions,
         )
+        self.last_candidate_decisions = candidate_decisions
 
         firmware_window = [
             beat for beat in firmware_beats
@@ -383,5 +392,17 @@ class IntervalCore:
             local_dual_rr_ms=float(self._last_local_dual_rr_ms),
             local_dual_rr_robust_cv=float(self._last_local_dual_rr_robust_cv),
             reference_update_reason=str(self._last_reference_reason),
+            rejected_candidate_count=sum(
+                decision.decision.startswith("rejected")
+                for decision in candidate_decisions
+            ),
+            long_gap_rescue_count=sum(
+                decision.decision == "selected_rescued"
+                and decision.reason in {
+                    "real_single_candidate_splits_long_gap",
+                    "committed_waveform_candidate",
+                }
+                for decision in candidate_decisions
+            ),
         )
         return proposals

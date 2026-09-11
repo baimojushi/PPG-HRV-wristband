@@ -426,21 +426,32 @@ def prepare_tachogram(
     - 漏搏已经插入合成时间点；
     - 无法修复的异常不再被“局部中位数 + 原错误时间戳”混入频谱。
     """
-    usable = [
+    all_usable = [
         interval
         for interval in nn_intervals
         if interval.nn_ms > 0 and np.isfinite(interval.nn_ms)
     ]
-    if len(usable) < 20:
+    if len(all_usable) < 20:
         return None
 
-    latest_s = usable[-1].t_us / 1e6
+    latest_s = all_usable[-1].t_us / 1e6
     start_s = latest_s - config.frequency_window_seconds
-    usable = [
-        interval
-        for interval in usable
-        if (interval.t_us / 1e6) >= start_s
-    ]
+
+    # Keep the interval immediately before the nominal five-minute boundary.
+    # Without this boundary anchor a mature sliding window can measure only
+    # ~298-299 s simply because the first heartbeat after the cutoff is later,
+    # causing a long-running session to regress to "buffering".
+    first_index = next(
+        (
+            index
+            for index, interval in enumerate(all_usable)
+            if (interval.t_us / 1e6) >= start_s
+        ),
+        len(all_usable) - 1,
+    )
+    if first_index > 0:
+        first_index -= 1
+    usable = all_usable[first_index:]
 
     if len(usable) < 20:
         return None
@@ -601,8 +612,13 @@ def compute_frequency_domain(
         unresolved_records
         / total_records
     )
+    artifact_records = sum(record.status != "accepted" for record in record_window)
+    resolved_artifact_ratio = max(
+        (artifact_records - unresolved_records) / total_records,
+        0.0,
+    )
 
-    # 连续异常比“同样数量但彼此孤立”更危险。
+    # 连续未解决异常比“同样数量但彼此孤立”更危险。
     max_consecutive = 0
     current_run = 0
 
@@ -1149,9 +1165,9 @@ def compute_frequency_domain(
             unresolved_suspect_ratio=(
                 unresolved_ratio
             ),
-            max_consecutive_artifacts=(
-                max_consecutive
-            ),
+            max_consecutive_artifacts=max_consecutive,
+            max_consecutive_unresolved=max_consecutive,
+            resolved_artifact_ratio=float(resolved_artifact_ratio),
             waveform_inserted_ratio=waveform_inserted_ratio,
             timing_recovered_ratio=timing_recovered_ratio,
             timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,
@@ -1333,9 +1349,9 @@ def compute_frequency_domain(
         unresolved_suspect_ratio=(
             unresolved_ratio
         ),
-        max_consecutive_artifacts=(
-            max_consecutive
-        ),
+        max_consecutive_artifacts=max_consecutive,
+        max_consecutive_unresolved=max_consecutive,
+        resolved_artifact_ratio=float(resolved_artifact_ratio),
         waveform_inserted_ratio=waveform_inserted_ratio,
         timing_recovered_ratio=timing_recovered_ratio,
         timing_shift_delta_p95_ms=timing_shift_delta_p95_ms,

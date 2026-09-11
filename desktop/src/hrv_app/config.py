@@ -5,8 +5,8 @@ from dataclasses import dataclass
 class AnalysisConfig:
     """统一保存分析常量。
 
-v0.4.1 正式 HRV Beat 由桌面 interval core 产生；固件 zeezPPG Beat
-保留为实时/诊断证据。
+v0.4.2 正式 HRV 继续以桌面 interval core 为准；双检测器共识之后新增
+独立 RR artifact / sequence 层。固件 zeezPPG Beat 只保留为实时/诊断证据。
 """
 
     sample_rate_hz: float = 125.0
@@ -108,6 +108,19 @@ v0.4.1 正式 HRV Beat 由桌面 interval core 产生；固件 zeezPPG Beat
     interval_reference_strong_dual_ratio: float = 0.90
     interval_reference_strong_max_robust_cv: float = 0.16
     interval_reference_update_gain: float = 0.25
+
+    # v0.4.2 interval artifact layer. 这些不是 UI/gate 阈值，而是序列重建
+    # 规则：只有前后节律锚点同时支持时才修复 extra/missed/long-short 结构。
+    interval_artifact_context_intervals: int = 8
+    interval_artifact_reference_min_ms: float = 360.0
+    interval_artifact_reference_max_ms: float = 1500.0
+    interval_artifact_anchor_max_robust_cv: float = 0.18
+    interval_artifact_anchor_side_tolerance: float = 0.22
+    interval_artifact_neighbor_tolerance: float = 0.22
+    interval_phase_pair_min_deviation_ratio: float = 0.24
+    interval_phase_pair_sum_tolerance: float = 0.14
+    interval_missed_min_ratio: float = 1.65
+    interval_missed_max_multiple: int = 3
 
     # BeatTimelineQuality 的正式门：这些证据直接来自两条独立波形检测链，
     # 不再把 firmware 是否匹配当作 HRV 真值。

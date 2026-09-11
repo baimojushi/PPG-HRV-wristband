@@ -4,7 +4,7 @@
 现有 SessionRecorder 只回答"队列有没有掉数据、串口有没有错误、最后的心搏是什么、
 最后的 HRV 是多少"。它回答不了"算法为什么把 A 变成 B"。
 
-本模块补齐 9 条独立 CSV，全部只记录、不改变任何算法：
+本模块补齐独立 CSV 证据链，全部只记录、不改变任何算法：
 
   beat_provenance        每个心搏      固件心搏时间 / 波形峰时间 / 最终时间 / 偏移 /
                                   是否无固件匹配 / 是否恢复 / 原始波形评分 / 峰突出度 /
@@ -12,6 +12,8 @@
   beat_detector_state    每 5-10 秒   当前极性 / 模板相关度 / 自相关估计 RR /
                                   固件预期 RR / 候选峰数量 / 最终峰数量 /
                                   重新初始化原因
+  interval_candidate_trace 每个成熟候选  两检测器支持 / 波形分 / 序列分 / 选择或拒绝原因
+  interval_artifact_trace  每个 RR 决策   原始 RR / 局部参考 / artifact 类别 / 修复前后 / 证据
   signal_input_trace     每约 5 秒     原始 ADC 分位数 / 削底 / wear / 采样时基 /
                                   协议与队列 / fixed-lag 自相关与候选统计
   hrv_window_provenance  每 20 秒     窗口与 5 分钟补搏比例 / 恢复比例 /
@@ -24,8 +26,8 @@
                                   与上一版差异 / VALID/LIMITED 来源
   prototype_score_trace  每个分析点x每个原型
                                   输入值是否存在 / 原始值 / 相对近期常态偏差 /
-                                  各评分分项 / 质量系数 / 乘质量前得分 /
-                                  最终得分 / 门槛 / 未匹配原因
+                                  各评分分项 / 证据质量系数 / 相似度得分 /
+                                  门槛 / 未匹配原因
   causality_trace        每个历史评分  当前评分时间 / 使用到的最晚数据时间 /
                                   基线版本
   ui_explanation_trace   每次文案更新  底层状态 / 用户文案 / 触发依据 /
@@ -75,6 +77,12 @@ class ProvenanceRecorder:
 
     def record_beat_detector_state(self, row: dict[str, Any]) -> None:
         self._write_row("beat_detector_state", row)
+
+    def record_interval_candidate_trace(self, row: dict[str, Any]) -> None:
+        self._write_row("interval_candidate_trace", row)
+
+    def record_interval_artifact_trace(self, row: dict[str, Any]) -> None:
+        self._write_row("interval_artifact_trace", row)
 
     def record_signal_input_trace(self, row: dict[str, Any]) -> None:
         self._write_row("signal_input_trace", row)
@@ -277,6 +285,61 @@ def build_beat_provenance_row(
     }
 
 
+def build_interval_candidate_trace_row(
+    decision: Any,
+    observed_at_t_us: int,
+) -> dict[str, Any]:
+    """Serialize one mature detector candidate and its sequence decision."""
+    return {
+        "t_us": int(getattr(decision, "t_us", 0) or 0),
+        "observed_at_t_us": int(observed_at_t_us),
+        "candidate_index": int(getattr(decision, "index", 0) or 0),
+        "support_count": int(getattr(decision, "support_count", 0) or 0),
+        "detector_names": str(getattr(decision, "detector_names", "") or ""),
+        "detector_score": float(getattr(decision, "detector_score", 0.0) or 0.0),
+        "prominence": float(getattr(decision, "prominence", 0.0) or 0.0),
+        "reference_rr_ms": float(getattr(decision, "reference_rr_ms", 0.0) or 0.0),
+        "primary_t_us": int(getattr(decision, "primary_t_us", 0) or 0),
+        "secondary_t_us": int(getattr(decision, "secondary_t_us", 0) or 0),
+        "sequence_score": float(getattr(decision, "sequence_score", 0.0) or 0.0),
+        "combined_score": float(getattr(decision, "combined_score", 0.0) or 0.0),
+        "left_gap_ms": float(getattr(decision, "left_gap_ms", 0.0) or 0.0),
+        "right_gap_ms": float(getattr(decision, "right_gap_ms", 0.0) or 0.0),
+        "decision": str(getattr(decision, "decision", "") or ""),
+        "reason": str(getattr(decision, "reason", "") or ""),
+    }
+
+
+def build_interval_artifact_trace_row(
+    decision: Any,
+    record: BeatRecord | None = None,
+    revision: int = 1,
+) -> dict[str, Any]:
+    """Serialize the sequence-level decision for one raw RR interval."""
+    return {
+        "t_us": int(getattr(decision, "t_us", 0) or 0),
+        "seq": int(getattr(decision, "seq", 0) or 0),
+        "revision": int(revision),
+        "rr_raw_ms": float(getattr(decision, "rr_raw_ms", 0.0) or 0.0),
+        "reference_rr_ms": float(getattr(decision, "reference_rr_ms", 0.0) or 0.0),
+        "robust_scale_ms": float(getattr(decision, "robust_scale_ms", 0.0) or 0.0),
+        "artifact_class": str(getattr(decision, "artifact_class", "") or ""),
+        "status": str(getattr(decision, "status", "") or ""),
+        "resolved": int(bool(getattr(decision, "resolved", False))),
+        "corrected_rr_ms": float(getattr(decision, "corrected_rr_ms", 0.0) or 0.0),
+        "split_count": int(getattr(decision, "split_count", 1) or 1),
+        "paired_index": int(getattr(decision, "paired_index", -1)),
+        "paired_t_us": int(getattr(decision, "paired_t_us", 0) or 0),
+        "confidence": float(getattr(decision, "confidence", 0.0) or 0.0),
+        "metric_eligible": int(bool(getattr(record, "metric_eligible", False))) if record else 0,
+        "detector_support_count": int(getattr(record, "detector_support_count", 0) or 0) if record else 0,
+        "detector_consensus": float(getattr(record, "detector_consensus", 0.0) or 0.0) if record else 0.0,
+        "local_clipped": int(bool(getattr(record, "local_clipped", False))) if record else 0,
+        "reason": str(getattr(decision, "reason", "") or ""),
+        "evidence": str(getattr(decision, "evidence", "") or ""),
+    }
+
+
 def build_beat_detector_state_row(
     detector: Any,
     firmware_beats: list[BeatFrame],
@@ -365,6 +428,12 @@ def build_beat_detector_state_row(
         ),
         "reference_update_reason": str(
             getattr(diag, "reference_update_reason", "") or ""
+        ),
+        "rejected_candidate_count": int(
+            getattr(diag, "rejected_candidate_count", 0) or 0
+        ),
+        "long_gap_rescue_count": int(
+            getattr(diag, "long_gap_rescue_count", 0) or 0
         ),
         "waveform_amplitude": float(
             getattr(diag, "waveform_amplitude", 0.0) or 0.0
@@ -940,17 +1009,20 @@ def _parse_no_match_reason(
     """从 _score_row 的 evidence 与最终得分解析 NO_MATCH 原因。
 
     优先级（与 research_prototypes.evaluate_research_state 一致）：
-      1. QUALITY_CEILING   —— 质量系数封顶，乘质量前得分够不到门槛
-      2. BASELINE_NOT_READY —— 个人基线尚未建立
-      3. HF_MISSING        —— 高频带缺失
-      4. SCORE_BELOW_THRESHOLD —— 得分本身低于门槛
-      5. NO_MATCH          —— 其他未分类原因
+      1. BASELINE_NOT_READY —— 个人基线尚未建立
+      2. DATA_UNAVAILABLE   —— 当前证据不可用于比较
+      3. HF_MISSING         —— 高频带缺失
+      4. SCORE_BELOW_THRESHOLD —— 相似度本身低于门槛
+      5. NO_MATCH           —— 其他未分类原因
+
+    v0.4.2 起 quality 是独立证据等级，不再乘进相似度，因此不存在
+    0.65/0.68 质量系数把 0.70 匹配门槛数学封死的问题。
     """
     ev_text = " ".join(str(e) for e in evidence)
     if not baseline_ready:
         return "NO_MATCH: BASELINE_NOT_READY"
     if quality <= 0.0:
-        return "NO_MATCH: QUALITY_CEILING 0.00 < %.2f" % threshold
+        return "NO_MATCH: DATA_UNAVAILABLE"
     if "hf" in ev_text.lower() and "missing" in ev_text.lower():
         return "NO_MATCH: HF_MISSING"
     if final_score < threshold:
@@ -988,9 +1060,7 @@ def build_prototype_score_trace_row(
         "t_us": int(row.get("t_us", row.get("t_end", row.get("t_start", 0))) or 0),
         "prototype_id": prototype_id,
         "quality_coefficient": float(quality),
-        "score_before_quality": float(score / quality)
-        if quality > 0 and score == score
-        else 0.0,
+        "score_before_quality": float(score) if score == score else 0.0,
         "final_score": float(score) if score == score else float("nan"),
         "threshold": float(threshold),
         "baseline_ready": 1 if baseline_ready else 0,

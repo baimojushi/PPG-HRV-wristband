@@ -16,17 +16,35 @@ from .models import (
 )
 
 
+_UNRESOLVED_STATUSES = {
+    "hard_outlier",
+    "local_outlier",
+    "no_wear",
+    "unresolved",
+}
+
+
 def _max_artifact_run(records: Sequence[BeatRecord]) -> int:
     max_run = 0
     current = 0
-
     for record in records:
         if record.status != "accepted":
             current += 1
             max_run = max(max_run, current)
         else:
             current = 0
+    return max_run
 
+
+def _max_unresolved_run(records: Sequence[BeatRecord]) -> int:
+    max_run = 0
+    current = 0
+    for record in records:
+        if record.status in _UNRESOLVED_STATUSES:
+            current += 1
+            max_run = max(max_run, current)
+        else:
+            current = 0
     return max_run
 
 
@@ -141,13 +159,7 @@ def compute_time_domain(
     )
 
     unresolved_count = sum(
-        record.status
-        in {
-            "hard_outlier",
-            "local_outlier",
-            "no_wear",
-            "unresolved",
-        }
+        record.status in _UNRESOLVED_STATUSES
         for record in record_window
     )
 
@@ -164,10 +176,11 @@ def compute_time_domain(
         / total_records
     )
 
-    max_consecutive = (
-        _max_artifact_run(
-            record_window
-        )
+    max_consecutive_artifacts = _max_artifact_run(record_window)
+    max_consecutive_unresolved = _max_unresolved_run(record_window)
+    resolved_artifact_ratio = max(
+        (artifact_count - unresolved_count) / total_records,
+        0.0,
     )
 
     # ---------------------------------------------------------------
@@ -386,15 +399,10 @@ def compute_time_domain(
             f"{cfg.time_limited_min_contiguous_diffs}"
         )
 
-    if (
-        artifact_ratio
-        > cfg.time_limited_max_artifact_ratio
-    ):
-        hard_reasons.append(
-            f"异常搏 {artifact_ratio * 100:.1f}% > "
-            f"{cfg.time_limited_max_artifact_ratio * 100:.1f}%"
-        )
-
+    # v0.4.2: resolved extra/missed/long-short structures do not by themselves
+    # invalidate time-domain HRV. Corrected intervals are excluded from RMSSD and
+    # pNN50 already; reliability is controlled by the remaining contiguous raw NN
+    # count plus unresolved-artifact evidence.
     if (
         unresolved_ratio
         > cfg.time_limited_max_unresolved_ratio
@@ -405,11 +413,11 @@ def compute_time_domain(
         )
 
     if (
-        max_consecutive
+        max_consecutive_unresolved
         > cfg.time_limited_max_consecutive_artifacts
     ):
         hard_reasons.append(
-            f"连续异常搏 {max_consecutive} > "
+            f"连续未解决异常 {max_consecutive_unresolved} > "
             f"{cfg.time_limited_max_consecutive_artifacts}"
         )
 
@@ -462,22 +470,6 @@ def compute_time_domain(
         )
 
     if hard_reasons:
-        # 即使真正触发 INVALID 的是“未解决异常/连续异常/时基”，
-        # 也同时给出严格异常搏比例，避免原因只显示半条。
-        if (
-            artifact_ratio
-            > cfg.time_max_artifact_ratio
-            and not any(
-                reason.startswith("异常搏")
-                for reason in hard_reasons
-            )
-        ):
-            hard_reasons.insert(
-                0,
-                f"异常搏 {artifact_ratio * 100:.1f}% > "
-                f"{cfg.time_max_artifact_ratio * 100:.1f}%"
-            )
-
         return TimeDomainMetrics(
             valid=False,
             status=INVALID,
@@ -510,24 +502,15 @@ def compute_time_domain(
             unresolved_suspect_ratio=float(
                 unresolved_ratio
             ),
-            max_consecutive_artifacts=(
-                max_consecutive
-            ),
+            max_consecutive_artifacts=max_consecutive_artifacts,
+            max_consecutive_unresolved=max_consecutive_unresolved,
+            resolved_artifact_ratio=float(resolved_artifact_ratio),
         )
 
     # ---------------------------------------------------------------
     # 严格门：未达到严格条件时仍允许 LIMITED。
     # ---------------------------------------------------------------
     strict_reasons: list[str] = []
-
-    if (
-        artifact_ratio
-        > cfg.time_max_artifact_ratio
-    ):
-        strict_reasons.append(
-            f"异常搏 {artifact_ratio * 100:.1f}% > "
-            f"{cfg.time_max_artifact_ratio * 100:.1f}%"
-        )
 
     if (
         unresolved_ratio
@@ -539,11 +522,11 @@ def compute_time_domain(
         )
 
     if (
-        max_consecutive
+        max_consecutive_unresolved
         > cfg.time_max_consecutive_artifacts
     ):
         strict_reasons.append(
-            f"连续异常搏 {max_consecutive} > "
+            f"连续未解决异常 {max_consecutive_unresolved} > "
             f"{cfg.time_max_consecutive_artifacts}"
         )
 
@@ -646,8 +629,8 @@ def compute_time_domain(
         unresolved_suspect_ratio=float(
             unresolved_ratio
         ),
-        max_consecutive_artifacts=(
-            max_consecutive
-        ),
+        max_consecutive_artifacts=max_consecutive_artifacts,
+        max_consecutive_unresolved=max_consecutive_unresolved,
+        resolved_artifact_ratio=float(resolved_artifact_ratio),
     )
 

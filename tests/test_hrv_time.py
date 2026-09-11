@@ -55,7 +55,7 @@ def test_good_window_produces_rmssd_and_ci():
     assert metrics.rmssd_ci_high_ms >= metrics.rmssd_ci_low_ms
 
 
-def test_artifact_over_five_percent_invalidates_entire_window():
+def test_unresolved_artifacts_over_limited_ratio_invalidate_entire_window():
     records = []
     intervals = []
 
@@ -86,4 +86,5 @@ def test_artifact_over_five_percent_invalidates_entire_window():
 
     assert not metrics.valid
     assert metrics.detected_artifact_ratio > 0.05
-    assert "异常搏" in metrics.validity_reason
+    assert metrics.unresolved_suspect_ratio > 0.05
+    assert "未解决异常" in metrics.validity_reason

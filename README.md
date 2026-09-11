@@ -1,12 +1,45 @@
-# PPG / HRV 实时分析系统 v0.4.1
+# PPG / HRV 实时分析系统 v0.4.2
 
-v0.4.1 从 **v0.4.0** 建立。本次冻结研究原型与普通用户 UI，集中重写
-`PPG → Beat → RR → quality` 的正式间期核心。
+v0.4.2 从 **v0.4.1 interval core** 建立。本版不再继续调 HRV gate 数字，
+而是补齐 `Beat consensus → RR sequence → corrected NN` 的结构性异常层。
 
-ESP32 固件和串口协议保持不变；桌面端正式心搏时间线不再把 Firmware
-Accepted Beat 当作参考真值。
+ESP32 固件和串口协议保持不变；Firmware Accepted Beat 继续只作诊断。
+两个 PPG detector 的一致也只作为波形证据，正式 NN 还必须经过序列级审核。
 
-## 1. v0.4.1 间期核心
+## 1. v0.4.2 序列异常层
+
+```text
+双 detector 波形候选
+        ↓
+fixed-lag sequence resolver
+        ↓
+raw formal Beat / RR
+        ↓
+IntervalArtifactClassifier
+        ├─ extra-peak split / merge
+        ├─ missed-beat multiple
+        ├─ long-short compensating pair
+        ├─ isolated unresolved outlier
+        └─ coherent real rate transition
+        ↓
+corrected NN timeline
+        ↓
+时域 / 频率 HRV
+```
+
+核心原则：
+
+- 双 detector 同意不再自动等于“这一搏一定正确”；
+- single-detector 候选不会在第一轮拒绝后丢失，长间期可由 sequence resolver 重新审查真实波形候选；
+- raw Beat 时间戳永久保留，修复只发生在独立的 corrected NN 层；
+- 已解决的结构异常与 unresolved evidence 分开计数；
+- 时域 HRV 只使用原始连续可信 NN pair，不用修复值制造 RMSSD；
+- 频率分析可使用 corrected NN，因此修复负担仍会降低 SpectralReliability。
+
+v0.4.2 同时修复成熟 5 分钟窗口边界、研究 baseline 提前建立、LIMITED
+相似度数学死区、历史研究轨迹使用未来数据，以及分析时间戳倒退。
+
+## 2. v0.4.1 间期核心
 
 ```text
 PPG filtered waveform
@@ -48,11 +81,11 @@ Welch/Lomb 等方法不一致表示“频率解释受限”，不再反向证明
 本版设计参考了 PPG-beats / MSPTDfast、Elgendi-style detector 与 pyPPG
 Aboy++ 的公开设计原则；实现为项目内独立代码，没有复制第三方实现。
 
-## 2. v0.4.0 研究层（保留）
+## 3. v0.4.0 研究层（保留）
 
 研究原型、一小时体验和来源可追溯 UI 继续位于正式 HRV 结果之后。
 
-## 3. 研究原型状态机
+## 4. 研究原型状态机
 
 当前急性原型：
 
@@ -79,7 +112,7 @@ Q6_STATE_EXITING
 
 个人基线使用当前会话的稳健 median / MAD，不使用固定人群常模。
 
-## 4. 文献事实注册表
+## 5. 文献事实注册表
 
 每个原型包含：
 
@@ -105,7 +138,7 @@ UI 采用：
 
 作者和文献名直接显示在编号后。
 
-## 5. 一小时级体验
+## 6. 一小时级体验
 
 过去一小时分成：
 
@@ -138,7 +171,7 @@ H5  >60 min      扩展会话
 
 专业页新增 6 条研究原型匹配轨迹。
 
-## 6. 长期身份层
+## 7. 长期身份层
 
 v0.4.0 固定：
 
@@ -157,7 +190,7 @@ T0_TRAIT_UNKNOWN
 
 后续需要跨天本地历史后再启用长期层。
 
-## 7. 数据质量
+## 8. 数据质量
 
 当正式数据质量门失败：
 
@@ -175,7 +208,7 @@ UI 提示：
 继续积累稳定窗口
 ```
 
-## 8. 导出
+## 9. 导出
 
 ```text
 research_prototype_snapshot.json
@@ -187,23 +220,27 @@ research_state_timeline.csv
 
 `summary.json` 同步包含研究原型与一小时体验。
 
-## 9. 自动验收
+## 10. 自动验收
 
 ```text
 Python compileall    PASS
-pytest               105 passed
-最新静止实测回放  PASS
+pytest               119 passed
+v0.4.1 → v0.4.2 两份长实测 interval A/B replay  PASS
 ```
 
-同一份约 20.7 分钟静止实测，在 v0.4.0 gate 逻辑下完整 5 分钟窗口为
-`0 VALID / 23 LIMITED / 23 INVALID`；v0.4.1 回放为
-`22 VALID / 24 LIMITED / 0 INVALID`。最终 RR 中位数 784 ms，
-相邻 RR 变化 p95 64 ms；末段原始接触质量虽受低端削底影响，
-TransportQuality 仍为 VALID，BeatTimeline 双检测器一致率为 100%。
+`20260910_135448`：旧 cleaner 的最大连续异常为 6，v0.4.2 最大连续
+**未解决**异常降为 1；20 秒级时域回放从 `86 VALID / 7 LIMITED / 17 INVALID`
+变为 `95 VALID / 0 LIMITED / 15 INVALID`，剩余末段 INVALID 主要来自正式心搏峰附近真实 clipping。
 
-## 10. 固件
+`20260910_152745`：v0.4.2 在同一条 formal PPG Beat 时间线上识别并修复
+`336.004 + 407.998 = 744.002 ms` 的 extra-peak split，以及 `1296.004 ms`
+的 missed-beat multiple；unresolved ratio 从约 0.240% 降至约 0.040%。
 
-v0.4.1 的 `firmware/` 与 v0.4.0 保持不变。
+这些实测没有同步 ECG，因此以上结论验证的是结构逻辑和 gate 行为，不能替代 ECG ground truth。
+
+## 11. 固件
+
+v0.4.2 的 `firmware/` 与 v0.4.1 保持不变。
 
 协议：
 
@@ -213,7 +250,7 @@ v4
 
 **无需重新烧录 ESP32。**
 
-## 11. 文档
+## 12. 文档
 
 ```text
 docs/RESEARCH_PROTOTYPE_STATE_MACHINE_v0.4.0.md
@@ -224,4 +261,45 @@ docs/VALIDATION_v0.4.0_RESEARCH_STATE.md
 docs/INTERVAL_CORE_REWRITE_v0.4.1.md
 docs/VALIDATION_v0.4.1_INTERVAL_CORE.md
 docs/VALIDATION_v0.4.1_INTERVAL_CORE.json
+docs/INTERVAL_ARTIFACT_REWRITE_v0.4.2.md
+docs/VALIDATION_v0.4.2_INTERVAL_ARTIFACT.md
+docs/VALIDATION_v0.4.2_INTERVAL_ARTIFACT.json
+```
+
+## 13. ECG / 公开数据基准验证
+
+v0.4.1 现在包含独立于 UI / 研究原型 / Firmware Beat 的 interval benchmark：
+
+```text
+同步 PPG + ECG / 参考 R-peak
+        ↓
+双 ECG QRS detector 共识（若已有参考标注则直接使用）
+        ↓
+ECG→PPG 脉搏传导延迟 / 慢漂移对齐
+        ↓
+生产版 v0.4.1 IntervalCore
+        ↓
+Sensitivity / PPV / F1
+RR MAE / p95 / correlation
+RMSSD / SDNN error
+执行时间 / real-time ratio
+```
+
+默认采用 ±150 ms beat correctness tolerance，并允许每 300 s 重新估计 ECG→PPG
+lag。没有把任何单次实测阈值硬编码成科学验收标准；CI 阈值必须显式指定。
+
+内置：
+
+```bash
+cd desktop
+python -m hrv_app.benchmark synthetic
+python -m hrv_app.benchmark bidmc --records 01-05
+```
+
+`bidmc` 会直接缓存 PhysioNet 开放的 BIDMC CSV（53 条、每条 8 min、125 Hz、
+同步 PPG + ECG）。另外支持 `csv-pair` 用于腕带与外部 ECG 同步实测，以及 `npz`
+用于已有参考 R-peak 的离线回放。详见：
+
+```text
+docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md
 ```

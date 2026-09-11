@@ -112,6 +112,31 @@ def research_state_display_name(code: str) -> str:
     }.get(str(code), str(code))
 
 
+def _coalesce_meaningful_segments(segments: Sequence[dict]) -> list[dict]:
+    """Remove non-research gaps and merge the same research state across them.
+
+    A -> neutral/unavailable -> A is one interrupted observation of A, not a
+    physiological transition from A to A.  Keep the raw ``segments`` for
+    audit/UI shading, but use this coalesced view for transition language.
+    """
+    merged: list[dict] = []
+    for raw in segments:
+        code = str(raw.get("code", ""))
+        if code in {"STABLE_NEUTRAL", "DATA_UNSTABLE"}:
+            continue
+        segment = dict(raw)
+        if merged and str(merged[-1].get("code", "")) == code:
+            merged[-1]["end_t_us"] = int(segment.get("end_t_us", merged[-1].get("end_t_us", 0)))
+            merged[-1]["minutes"] = float(merged[-1].get("minutes", 0.0)) + float(segment.get("minutes", 0.0))
+            merged[-1]["max_score"] = max(
+                float(merged[-1].get("max_score", 0.0)),
+                float(segment.get("max_score", 0.0)),
+            )
+        else:
+            merged.append(segment)
+    return merged
+
+
 def _hour_trajectory_summary(
     elapsed_minutes: float,
     state_minutes: dict[str, float],
@@ -137,15 +162,7 @@ def _hour_trajectory_summary(
         and float(minutes) > 0.0
     ]
 
-    meaningful_segments = [
-        segment
-        for segment in segments
-        if segment.get("code")
-        not in {
-            "STABLE_NEUTRAL",
-            "DATA_UNSTABLE",
-        }
-    ]
+    meaningful_segments = _coalesce_meaningful_segments(segments)
 
     if not meaningful_distribution:
         unstable_minutes = float(
@@ -466,8 +483,17 @@ def _valid_research_row(
         if transport_score > 0.0
         else True
     )
+    # A LIMITED status during initial five-minute accumulation is not a usable
+    # spectral observation.  v0.4.2 stores frequency_ready explicitly; legacy
+    # rows fall back to the presence of finite spectral power.
+    if "frequency_ready" in row:
+        frequency_ready = bool(row.get("frequency_ready"))
+    else:
+        frequency_ready = _finite(row.get("total_power_ms2", np.nan))
+
     return bool(
-        row.get("frequency_status") in {"VALID", "LIMITED"}
+        frequency_ready
+        and row.get("frequency_status") in {"VALID", "LIMITED"}
         and row.get("time_status") in {"VALID", "LIMITED"}
         and transport_ok
     )
@@ -958,6 +984,7 @@ def _score_phased_pattern(
                 )
             )
             >= start_us
+            and int(row.get("t_us", 0)) <= int(current_t_us)
             and _valid_research_row(
                 row
             )
@@ -1277,8 +1304,7 @@ def _score_row(
             )
         )
         return (
-            score
-            * quality,
+            score,
             evidence,
         )
 
@@ -1368,8 +1394,7 @@ def _score_row(
         )
 
         return (
-            score
-            * quality,
+            score,
             [
                 f"HF z*={z_hf:+.2f}",
                 f"RMSSD z*={z_rmssd:+.2f}",
@@ -1395,8 +1420,7 @@ def _score_row(
         )
 
         return (
-            score
-            * quality,
+            score,
             [
                 f"HFnu z*={z_hf_nu:+.2f}",
                 f"0.06–0.10 Hz THM z*={z_thm:+.2f}",
@@ -1440,8 +1464,7 @@ def _score_row(
         )
 
         return (
-            score
-            * quality,
+            score,
             [
                 f"HF z*={z_hf:+.2f}",
                 f"HR z*={z_hr:+.2f}",
@@ -1562,8 +1585,7 @@ def _score_row(
         )
 
         return (
-            score
-            * quality,
+            score,
             [
                 f"HF当前 z*={z_hf:+.2f}",
                 f"LF/HF当前 z*={z_lf_hf:+.2f}",
@@ -1585,8 +1607,7 @@ def _score_row(
             )
         )
         return (
-            score
-            * quality,
+            score,
             evidence,
         )
 
@@ -1620,6 +1641,9 @@ def _current_row_from_snapshot(
         "frequency_status": (
             frequency.status
         ),
+        "frequency_ready": bool(frequency.valid),
+        "frequency_progress": float(frequency.progress),
+        "frequency_duration_seconds": float(frequency.duration_seconds),
         "total_power_ms2": (
             float(
                 frequency.total_power_ms2
@@ -1887,25 +1911,21 @@ def evaluate_research_state(
         score_series: list[float] = []
         latest_evidence: list[str] = []
 
-        for row in recent_rows[
-            -5:
-        ]:
-            score, evidence = (
-                _score_row(
-                    code,
-                    row,
-                    baseline,
-                    history_rows,
-                )
+        for row in recent_rows[-5:]:
+            row_t_us = int(row.get("t_us", 0))
+            causal_history = [
+                item for item in history_rows
+                if int(item.get("t_us", 0)) <= row_t_us
+            ]
+            causal_baseline = _build_personal_baseline(causal_history, row_t_us)
+            score, evidence = _score_row(
+                code,
+                row,
+                causal_baseline,
+                causal_history,
             )
-            score_series.append(
-                float(
-                    score
-                )
-            )
-            latest_evidence = (
-                evidence
-            )
+            score_series.append(float(score))
+            latest_evidence = evidence
 
         current_score = (
             score_series[-1]
@@ -1938,14 +1958,13 @@ def evaluate_research_state(
             ),
         )
 
-        # ---- 观测：质量系数、乘质量前得分 —— 只读，不改逻辑 ----
+        # ---- 观测：相似度与证据质量分开记录 —— 只读，不改逻辑 ----
         quality_multiplier = float(_quality_multiplier(
             snapshot
         ))
-        provisional_score = (
-            float(current_score) /
-            max(quality_multiplier, 1e-9)
-        )
+        # v0.4.2: similarity and evidence quality are separate axes.  LIMITED
+        # evidence no longer imposes a mathematical score ceiling below 0.70.
+        provisional_score = float(current_score)
         # 计算 NO_MATCH 原因的字段
         no_match_reason = ""
         if lifecycle in ("ACTIVE", "CANDIDATE", "EXITING"):
@@ -1953,10 +1972,7 @@ def evaluate_research_state(
         elif not baseline["ready"] and code != "RESONANCE_0P1":
             no_match_reason = "NO_MATCH: BASELINE_NOT_READY"
         elif quality_multiplier <= 0:
-            no_match_reason = (
-                "NO_MATCH: QUALITY_CEILING %.2f < %.2f"
-                % (quality_multiplier, _MATCH_THRESHOLD_ACTIVE)
-            )
+            no_match_reason = "NO_MATCH: DATA_UNAVAILABLE"
         elif "HF_MISSING" in str(latest_evidence):
             no_match_reason = "NO_MATCH: HF_MISSING"
         elif current_score < _MATCH_THRESHOLD_ACTIVE:
@@ -2222,154 +2238,87 @@ def _session_stage(
 
 def _timeline_score_rows(
     history: Sequence[dict],
-    baseline: dict,
+    baseline: dict | None = None,
 ) -> list[dict]:
+    """Score the last hour causally.
+
+    ``baseline`` is accepted for API compatibility but intentionally ignored.
+    Each historical point receives a baseline built only from data available at
+    or before that point, so the displayed trajectory cannot change because of
+    future observations.
+    """
+    del baseline
     if not history:
         return []
 
-    latest_t_us = int(
-        history[-1].get(
-            "t_us",
-            0,
-        )
-    )
-    start_us = (
-        latest_t_us
-        - 60
-        * 60
-        * 1_000_000
-    )
-
+    latest_t_us = int(history[-1].get("t_us", 0))
+    start_us = latest_t_us - 60 * 60 * 1_000_000
     rows = [
-        row
-        for row in history
-        if int(
-            row.get(
-                "t_us",
-                0,
-            )
-        )
-        >= start_us
+        row for row in history
+        if int(row.get("t_us", 0)) >= start_us
     ]
-
     timeline: list[dict] = []
 
     for row in rows:
-        quality = _row_quality_multiplier(
-            row
-        )
-        scores: dict[
-            str,
-            float,
-        ] = {}
+        row_t_us = int(row.get("t_us", 0))
+        causal_history = [
+            item for item in history
+            if int(item.get("t_us", 0)) <= row_t_us
+        ]
+        row_baseline = _build_personal_baseline(causal_history, row_t_us)
+        quality = _row_quality_multiplier(row)
+        scores: dict[str, float] = {}
 
         if quality <= 0:
-            # “当前无法评价”不是“与所有原型相似度都等于 0”。
-            # 用 NaN 保留时间点，让 UI 画成缺口而不是误导性的坠零尖峰。
-            scores = {
-                code: float("nan")
-                for code in PROTOTYPE_DEFINITIONS
-            }
+            scores = {code: float("nan") for code in PROTOTYPE_DEFINITIONS}
             ranked: list[tuple[str, float]] = []
         else:
             for code in PROTOTYPE_DEFINITIONS:
                 score, _ = _score_row(
                     code,
                     row,
-                    baseline,
-                    rows,
+                    row_baseline,
+                    causal_history,
                 )
-                scores[
-                    code
-                ] = float(
-                    score
-                )
-
+                scores[code] = float(score)
             ranked = sorted(
                 scores.items(),
                 key=lambda item: (
                     item[1],
-                    PROTOTYPE_DEFINITIONS[
-                        item[0]
-                    ][
-                        "priority"
-                    ],
+                    PROTOTYPE_DEFINITIONS[item[0]]["priority"],
                 ),
                 reverse=True,
             )
 
-        if (
-            quality <= 0
-        ):
-            primary_code = (
-                "DATA_UNSTABLE"
-            )
+        if quality <= 0:
+            primary_code = "DATA_UNSTABLE"
             primary_score = 0.0
-        elif (
-            ranked
-            and ranked[0][1]
-            >= 0.70
-        ):
-            primary_code = (
-                ranked[0][0]
-            )
-            primary_score = float(
-                ranked[0][1]
-            )
+        elif ranked and ranked[0][1] >= _MATCH_THRESHOLD_ACTIVE:
+            primary_code = ranked[0][0]
+            primary_score = float(ranked[0][1])
         else:
-            primary_code = (
-                "STABLE_NEUTRAL"
-            )
-            primary_score = (
-                ranked[0][1]
-                if ranked
-                else 0.0
-            )
+            primary_code = "STABLE_NEUTRAL"
+            primary_score = ranked[0][1] if ranked else 0.0
 
+        baseline_rows = list(row_baseline.get("rows", []) or [])
+        baseline_version = int(baseline_rows[-1].get("t_us", 0)) if baseline_rows else 0
         timeline_row = {
-            "t_us": int(
-                row.get(
-                    "t_us",
-                    0,
-                )
-            ),
-            "quality_multiplier": float(
-                quality
-            ),
+            "t_us": row_t_us,
+            "latest_data_t_us": row_t_us,
+            "baseline_version": baseline_version,
+            "baseline_ready": bool(row_baseline.get("ready")),
+            "quality_multiplier": float(quality),
             "primary_code": primary_code,
-            "primary_score": float(
-                primary_score
-            ),
+            "primary_score": float(primary_score),
         }
-
         for code, score in scores.items():
-            timeline_row[
-                f"score_{code}"
-            ] = float(
-                score
-            )
-
-        timeline.append(
-            timeline_row
-        )
+            timeline_row[f"score_{code}"] = float(score)
+        timeline.append(timeline_row)
 
     if timeline:
-        t0 = timeline[0][
-            "t_us"
-        ]
+        t0 = timeline[0]["t_us"]
         for row in timeline:
-            row[
-                "elapsed_minutes"
-            ] = float(
-                (
-                    row[
-                        "t_us"
-                    ]
-                    - t0
-                )
-                / 60e6
-            )
-
+            row["elapsed_minutes"] = float((row["t_us"] - t0) / 60e6)
     return timeline
 
 
@@ -2541,17 +2490,7 @@ def build_hour_experience(
                 ],
             )
 
-    meaningful_segments = [
-        segment
-        for segment in segments
-        if segment[
-            "code"
-        ]
-        not in {
-            "STABLE_NEUTRAL",
-            "DATA_UNSTABLE",
-        }
-    ]
+    meaningful_segments = _coalesce_meaningful_segments(segments)
 
     transitions = max(
         len(

@@ -1,0 +1,109 @@
+{
+  "version": "0.4.2",
+  "scope": "interval artifact / sequence resolver structural validation",
+  "ecg_ground_truth_available": false,
+  "validation_semantics": "structural A/B replay on identical v0.4.1 formal PPG beat timestamps; not sensitivity/PPV/F1 against cardiac electrical truth",
+  "automated": {
+    "python_compileall": "passed",
+    "pytest": "119 passed",
+    "git_diff_check": "passed",
+    "fresh_baseline_patch_apply": "passed; 119 tests + compileall"
+  },
+  "replay": {
+    "20260910_135448": {
+      "raw_rr_count": 2831,
+      "old": {
+        "accepted_nn_count": 2816,
+        "detected_artifact_ratio": 0.005298481102084069,
+        "unresolved_suspect_ratio": 0.005298481102084069,
+        "max_consecutive_artifacts": 6,
+        "time_snapshot_counts": {
+          "VALID": 86,
+          "LIMITED": 7,
+          "INVALID": 17
+        }
+      },
+      "v0_4_2": {
+        "accepted_nn_count": 2830,
+        "detected_artifact_ratio": 0.00035323207347227127,
+        "unresolved_suspect_ratio": 0.00035323207347227127,
+        "max_consecutive_artifacts": 1,
+        "max_consecutive_unresolved": 1,
+        "time_snapshot_counts": {
+          "VALID": 95,
+          "LIMITED": 0,
+          "INVALID": 15
+        }
+      },
+      "interpretation": "old local-outlier reject cascade removed; remaining late invalid windows are dominated by beat-local clipping evidence"
+    },
+    "20260910_152745": {
+      "raw_rr_count": 2496,
+      "old": {
+        "accepted_nn_count": 2487,
+        "unresolved_suspect_ratio": 0.002403846153846154,
+        "max_consecutive_artifacts": 2,
+        "time_snapshot_counts": {
+          "VALID": 79,
+          "LIMITED": 11,
+          "INVALID": 8
+        }
+      },
+      "v0_4_2": {
+        "accepted_nn_count": 2492,
+        "detected_artifact_ratio": 0.0016025641025641025,
+        "corrected_interval_ratio": 0.0012024048096192384,
+        "unresolved_suspect_ratio": 0.00040064102564102563,
+        "resolved_artifact_ratio": 0.001201923076923077,
+        "max_consecutive_artifacts": 2,
+        "max_consecutive_unresolved": 1,
+        "time_snapshot_counts": {
+          "VALID": 83,
+          "LIMITED": 7,
+          "INVALID": 8
+        }
+      },
+      "key_structural_decisions": [
+        {
+          "session_minute": 14.777600,
+          "rr_raw_ms": 336.004,
+          "reference_rr_ms": 756.000,
+          "artifact_class": "extra_peak_split",
+          "status": "false_peak",
+          "resolved": true,
+          "confidence": 0.955
+        },
+        {
+          "session_minute": 14.784400,
+          "rr_raw_ms": 407.998,
+          "reference_rr_ms": 756.000,
+          "artifact_class": "extra_peak_merge",
+          "status": "false_peak_merged",
+          "resolved": true,
+          "corrected_rr_ms": 744.002,
+          "confidence": 0.955
+        },
+        {
+          "session_minute": 14.933867,
+          "rr_raw_ms": 1296.004,
+          "reference_rr_ms": 620.001,
+          "artifact_class": "missed_beat",
+          "status": "missed_beat_repaired",
+          "resolved": true,
+          "split_count": 2,
+          "corrected_rr_ms": 648.002,
+          "confidence": 0.859
+        },
+        {
+          "session_minute": 30.499733,
+          "rr_raw_ms": 1208.000,
+          "reference_rr_ms": 936.001,
+          "artifact_class": "isolated_outlier",
+          "status": "local_outlier",
+          "resolved": false,
+          "confidence": 0.848
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# The built-in BIDMC CSV adapter and local CSV/NPZ adapters need no dependency
+# beyond the desktop application's normal numpy/scipy stack.
+# wfdb is intentionally not mandatory; add it only when writing/using WFDB adapters.
+# wfdb>=4.1
+pytest>=8

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Sequence
 import numpy as np
 
 from .config import AnalysisConfig
 from .models import BeatFrame, BeatRecord, NNInterval, TimelineQuality
+from .interval_artifacts import IntervalArtifactClassifier, IntervalArtifactDecision
 
 
 @dataclass(slots=True)
@@ -23,6 +24,7 @@ class CleanTimelineResult:
     records: list[BeatRecord]
     nn_intervals: list[NNInterval]
     quality: TimelineQuality
+    artifact_decisions: list[IntervalArtifactDecision] = field(default_factory=list)
 
 
 class BeatTimelineCleaner:
@@ -39,306 +41,161 @@ class BeatTimelineCleaner:
 
     def __init__(self, config: AnalysisConfig | None = None):
         self.config = config or AnalysisConfig()
+        self._artifact_classifier = IntervalArtifactClassifier(self.config)
 
     def clean(self, beats: Sequence[BeatFrame]) -> CleanTimelineResult:
-        cfg = self.config
-        source = [b for b in beats if b.rr_ms > 0]
+        """Build an auditable raw-beat -> artifact -> NN timeline.
 
+        v0.4.2 moves the structural decision into ``IntervalArtifactClassifier``.
+        Detector consensus remains waveform evidence only; every RR is reviewed in
+        sequence context before it is allowed into the NN timeline.
+        """
+        source = [beat for beat in beats if float(beat.rr_ms) > 0]
         if not source:
-            return CleanTimelineResult([], [], TimelineQuality())
+            return CleanTimelineResult([], [], TimelineQuality(), [])
 
-        records = [
-            BeatRecord(
-                seq=b.seq,
-                t_us=b.t_us,
-                rr_raw_ms=float(b.rr_ms),
-                nn_ms=0.0,
-                valid=False,
-                corrected=False,
-                reason="待判定",
-                hr_bpm=float(b.hr_bpm),
-                flags=b.flags,
-                score=float(getattr(b, "score", 0.0)),
-                rescued=bool(b.flags & 0x10),
-                source_t_us=int(
-                    getattr(b, "source_t_us", 0)
-                ),
-                timing_shift_ms=float(
-                    getattr(b, "timing_shift_ms", 0.0)
-                ),
-                timing_quality=float(
-                    getattr(b, "timing_quality", 1.0)
-                ),
-                timing_uncertainty_ms=float(
-                    getattr(b, "timing_uncertainty_ms", 0.0)
-                ),
-                timing_recovered=bool(
-                    getattr(b, "timing_recovered", False)
-                ),
-                refined=bool(
-                    getattr(b, "refined", False)
-                ),
-                correction_method=str(
-                    getattr(
-                        b,
-                        "correction_method",
-                        "",
-                    )
-                ),
-                waveform_score=float(
-                    getattr(
-                        b,
-                        "waveform_score",
-                        0.0,
-                    )
-                ),
-                reference_rr_ms=float(
-                    getattr(
-                        b,
-                        "reference_rr_ms",
-                        0.0,
-                    )
-                ),
-                matched_firmware_t_us=int(
-                    getattr(
-                        b,
-                        "matched_firmware_t_us",
-                        0,
-                    )
-                ),
-                inserted_by_smoother=bool(
-                    getattr(
-                        b,
-                        "inserted_by_smoother",
-                        False,
-                    )
-                ),
-                low_prominence_rescue=bool(
-                    getattr(
-                        b,
-                        "low_prominence_rescue",
-                        False,
-                    )
-                ),
-                detector_support_count=int(getattr(b, "detector_support_count", 0) or 0),
-                detector_names=str(getattr(b, "detector_names", "") or ""),
-                detector_consensus=float(getattr(b, "detector_consensus", 0.0) or 0.0),
-                detector_time_spread_ms=float(getattr(b, "detector_time_spread_ms", 0.0) or 0.0),
-                single_detector=bool(getattr(b, "single_detector", False)),
-                sequence_rescued=bool(getattr(b, "sequence_rescued", False)),
-                firmware_unmatched=bool(getattr(b, "firmware_unmatched", False)),
-                local_clipped=bool(getattr(b, "local_clipped", False)),
-                status="unresolved",
-                metric_eligible=False,
+        decisions = self._artifact_classifier.classify(source)
+        decision_by_index = {decision.index: decision for decision in decisions}
+
+        records: list[BeatRecord] = []
+        for index, beat in enumerate(source):
+            decision = decision_by_index[index]
+            records.append(
+                BeatRecord(
+                    seq=beat.seq,
+                    t_us=beat.t_us,
+                    rr_raw_ms=float(beat.rr_ms),
+                    nn_ms=0.0,
+                    valid=False,
+                    corrected=False,
+                    reason=decision.reason or "待判定",
+                    hr_bpm=float(beat.hr_bpm),
+                    flags=beat.flags,
+                    score=float(getattr(beat, "score", 0.0)),
+                    rescued=bool(beat.flags & 0x10),
+                    source_t_us=int(getattr(beat, "source_t_us", 0)),
+                    timing_shift_ms=float(getattr(beat, "timing_shift_ms", 0.0)),
+                    timing_quality=float(getattr(beat, "timing_quality", 1.0)),
+                    timing_uncertainty_ms=float(getattr(beat, "timing_uncertainty_ms", 0.0)),
+                    timing_recovered=bool(getattr(beat, "timing_recovered", False)),
+                    refined=bool(getattr(beat, "refined", False)),
+                    correction_method=str(getattr(beat, "correction_method", "")),
+                    waveform_score=float(getattr(beat, "waveform_score", 0.0)),
+                    reference_rr_ms=float(getattr(beat, "reference_rr_ms", 0.0)),
+                    matched_firmware_t_us=int(getattr(beat, "matched_firmware_t_us", 0)),
+                    inserted_by_smoother=bool(getattr(beat, "inserted_by_smoother", False)),
+                    low_prominence_rescue=bool(getattr(beat, "low_prominence_rescue", False)),
+                    detector_support_count=int(getattr(beat, "detector_support_count", 0) or 0),
+                    detector_names=str(getattr(beat, "detector_names", "") or ""),
+                    detector_consensus=float(getattr(beat, "detector_consensus", 0.0) or 0.0),
+                    detector_time_spread_ms=float(getattr(beat, "detector_time_spread_ms", 0.0) or 0.0),
+                    single_detector=bool(getattr(beat, "single_detector", False)),
+                    sequence_rescued=bool(getattr(beat, "sequence_rescued", False)),
+                    firmware_unmatched=bool(getattr(beat, "firmware_unmatched", False)),
+                    local_clipped=bool(getattr(beat, "local_clipped", False)),
+                    artifact_class=decision.artifact_class,
+                    artifact_confidence=float(decision.confidence),
+                    artifact_reference_rr_ms=float(decision.reference_rr_ms),
+                    artifact_evidence=decision.evidence,
+                    status=decision.status,
+                    metric_eligible=False,
+                )
             )
-            for b in source
-        ]
 
         nn_intervals: list[NNInterval] = []
-        rhythm_history: deque[float] = deque(maxlen=cfg.rr_local_history)
-
         artifact_flags = [False] * len(source)
         corrected_flags = [False] * len(source)
         unresolved_flags = [False] * len(source)
 
-        i = 0
-        while i < len(source):
-            beat = source[i]
-            rr = float(beat.rr_ms)
-            wear = bool(beat.flags & 0x01) if beat.flags else True
+        for decision in decisions:
+            index = decision.index
+            record = records[index]
+            status = decision.status
 
-            expected, robust_scale = self._expected_rr(
-                source,
-                i,
-                rhythm_history,
-            )
-
-            # 未佩戴或数值本身无效时不尝试插值。
-            if not wear:
-                self._reject(records[i], "no_wear", "未佩戴")
-                artifact_flags[i] = True
-                unresolved_flags[i] = True
-                i += 1
-                continue
-
-            if not np.isfinite(rr) or rr <= 0:
-                self._reject(records[i], "hard_outlier", "RR 无效")
-                artifact_flags[i] = True
-                unresolved_flags[i] = True
-                i += 1
-                continue
-
-            # ----------------------------------------------------------------
-            # 1) 伪峰拆分识别
-            #
-            # 例：局部节律约 820 ms，出现 639 + 311 ≈ 950 ms，
-            # 且后一个 RR 又回到约 820 ms。中间 Peak 很可能是额外伪峰。
-            # 此判定必须先于“RR<300”硬过滤，否则只会删掉其中一半。
-            # ----------------------------------------------------------------
-            if i + 1 < len(source):
-                next_rr = float(source[i + 1].rr_ms)
-                merged = rr + next_rr
-
-                next_wear = (
-                    bool(source[i + 1].flags & 0x01)
-                    if source[i + 1].flags
-                    else True
+            if status == "accepted":
+                record.nn_ms = float(decision.corrected_rr_ms)
+                record.valid = True
+                record.corrected = False
+                record.metric_eligible = True
+                record.reason = ""
+                nn_intervals.append(
+                    NNInterval(
+                        t_us=record.t_us,
+                        nn_ms=record.nn_ms,
+                        corrected=False,
+                        metric_eligible=True,
+                        source="raw",
+                    )
                 )
+                continue
 
-                if (
-                    next_wear
-                    and rr > 0
-                    and next_rr > 0
-                    and self._is_false_peak_pair(
-                        source,
-                        i,
-                        rr,
-                        next_rr,
-                        merged,
-                        expected,
+            artifact_flags[index] = True
+
+            if status == "false_peak":
+                self._reject(record, status, decision.reason)
+                # Resolved as a pair: this record is the extra beat itself, so it
+                # emits no NN interval.
+                continue
+
+            if status == "false_peak_merged":
+                record.nn_ms = float(decision.corrected_rr_ms)
+                record.valid = True
+                record.corrected = True
+                record.metric_eligible = False
+                record.reason = decision.reason
+                corrected_flags[index] = True
+                nn_intervals.append(
+                    NNInterval(
+                        t_us=record.t_us,
+                        nn_ms=record.nn_ms,
+                        corrected=True,
+                        metric_eligible=False,
+                        source="false_peak_merge",
                     )
-                ):
-                    self._reject(
-                        records[i],
-                        "false_peak",
-                        "伪峰：与下一 RR 合并",
-                    )
-                    artifact_flags[i] = True
+                )
+                continue
 
-                    merged_record = records[i + 1]
-                    merged_record.nn_ms = merged
-                    merged_record.valid = True
-                    merged_record.corrected = True
-                    merged_record.reason = "伪峰合并"
-                    merged_record.status = "false_peak_merged"
+            if status == "missed_beat_repaired":
+                record.nn_ms = float(decision.corrected_rr_ms)
+                record.valid = True
+                record.corrected = True
+                record.metric_eligible = False
+                corrected_flags[index] = True
 
-                    # 修复值用于频域连续性；严格时域 RMSSD 不使用该值。
-                    merged_record.metric_eligible = False
-                    corrected_flags[i + 1] = True
-
+                multiple = max(int(decision.split_count), 2)
+                start_us = record.t_us - int(round(record.rr_raw_ms * 1000.0))
+                step_us = record.rr_raw_ms * 1000.0 / multiple
+                for part in range(1, multiple + 1):
                     nn_intervals.append(
                         NNInterval(
-                            t_us=source[i + 1].t_us,
-                            nn_ms=merged,
+                            t_us=int(round(start_us + part * step_us)),
+                            nn_ms=float(decision.corrected_rr_ms),
                             corrected=True,
                             metric_eligible=False,
-                            source="false_peak_merge",
+                            source="missed_beat_split",
                         )
                     )
-                    rhythm_history.append(merged)
-                    i += 2
-                    continue
-
-            # ----------------------------------------------------------------
-            # 2) 明显硬异常
-            # ----------------------------------------------------------------
-            if rr < cfg.rr_hard_min_ms:
-                self._reject(records[i], "hard_outlier", "RR 过短")
-                artifact_flags[i] = True
-                unresolved_flags[i] = True
-                i += 1
                 continue
 
-            if rr > cfg.rr_hard_max_ms:
-                self._reject(records[i], "hard_outlier", "RR 过长")
-                artifact_flags[i] = True
-                unresolved_flags[i] = True
-                i += 1
-                continue
-
-            # ----------------------------------------------------------------
-            # 3) 漏搏识别
-            #
-            # 若 RR 接近局部节律的 2 倍或 3 倍，且下一搏恢复正常，
-            # 在频域时间轴中补回缺失心搏。严格时域仍跳过这些修复区间。
-            # ----------------------------------------------------------------
-            multiple = int(round(rr / max(expected, 1.0)))
-            if 2 <= multiple <= 3:
-                per_interval = rr / multiple
-                if self._is_missed_beat(
-                    source,
-                    i,
-                    expected,
-                    per_interval,
-                ):
-                    record = records[i]
-                    record.nn_ms = per_interval
-                    record.valid = True
-                    record.corrected = True
-                    record.metric_eligible = False
-                    record.status = "missed_beat_repaired"
-                    record.reason = f"疑似漏搏：拆分为 {multiple} 个 NN"
-                    artifact_flags[i] = True
-                    corrected_flags[i] = True
-
-                    start_us = beat.t_us - int(round(rr * 1000.0))
-                    step_us = rr * 1000.0 / multiple
-
-                    for k in range(1, multiple + 1):
-                        endpoint = int(round(start_us + k * step_us))
-                        nn_intervals.append(
-                            NNInterval(
-                                t_us=endpoint,
-                                nn_ms=per_interval,
-                                corrected=True,
-                                metric_eligible=False,
-                                source="missed_beat_split",
-                            )
-                        )
-                        rhythm_history.append(per_interval)
-
-                    i += 1
-                    continue
-
-            # ----------------------------------------------------------------
-            # 4) 局部难异常
-            #
-            # major deviation 用于捕获 311/328/359 ms 这类仍落在硬范围内的伪值；
-            # MAD 条件负责捕获偏差较小但相对局部节律仍显著的异常。
-            # ----------------------------------------------------------------
-            if len(rhythm_history) >= cfg.rr_local_min_history:
-                relative = abs(rr - expected) / max(expected, 1.0)
-                robust_z = abs(rr - expected) / max(robust_scale, 1.0)
-
-                if (
-                    relative > cfg.rr_major_deviation_limit
-                    or (
-                        relative > cfg.rr_relative_deviation_limit
-                        and robust_z > cfg.rr_mad_z_limit
+            if status == "long_short_repaired":
+                record.nn_ms = float(decision.corrected_rr_ms)
+                record.valid = True
+                record.corrected = True
+                record.metric_eligible = False
+                corrected_flags[index] = True
+                nn_intervals.append(
+                    NNInterval(
+                        t_us=record.t_us,
+                        nn_ms=record.nn_ms,
+                        corrected=True,
+                        metric_eligible=False,
+                        source="long_short_pair",
                     )
-                ):
-                    self._reject(
-                        records[i],
-                        "local_outlier",
-                        "局部 RR 异常",
-                    )
-                    artifact_flags[i] = True
-                    unresolved_flags[i] = True
-                    i += 1
-                    continue
-
-            # ----------------------------------------------------------------
-            # 5) 原始正常 NN
-            # ----------------------------------------------------------------
-            record = records[i]
-            record.nn_ms = rr
-            record.valid = True
-            record.corrected = False
-            record.metric_eligible = True
-            record.status = "accepted"
-            record.reason = ""
-
-            nn_intervals.append(
-                NNInterval(
-                    t_us=beat.t_us,
-                    nn_ms=rr,
-                    corrected=False,
-                    metric_eligible=True,
-                    source="raw",
                 )
-            )
-            rhythm_history.append(rr)
-            i += 1
+                continue
+
+            self._reject(record, status, decision.reason)
+            unresolved_flags[index] = True
 
         quality = self._build_quality(
             records,
@@ -347,7 +204,7 @@ class BeatTimelineCleaner:
             corrected_flags,
             unresolved_flags,
         )
-        return CleanTimelineResult(records, nn_intervals, quality)
+        return CleanTimelineResult(records, nn_intervals, quality, decisions)
 
     def _expected_rr(
         self,
@@ -607,6 +464,15 @@ class BeatTimelineCleaner:
             else:
                 current_run = 0
 
+        max_unresolved_run = 0
+        current_unresolved_run = 0
+        for flag in unresolved_flags:
+            if flag:
+                current_unresolved_run += 1
+                max_unresolved_run = max(max_unresolved_run, current_unresolved_run)
+            else:
+                current_unresolved_run = 0
+
         corrected_intervals = sum(i.corrected for i in nn_intervals)
         interval_total = max(len(nn_intervals), 1)
 
@@ -719,8 +585,8 @@ class BeatTimelineCleaner:
             reasons.append("异常搏比例偏高")
         if unresolved / total > 0.02:
             reasons.append("存在未解决 RR 异常")
-        if max_run > 1:
-            reasons.append("存在连续异常搏")
+        if max_unresolved_run > 1:
+            reasons.append("存在连续未解决 RR 异常")
         if fiducial_unstable_ratio > 0.05:
             reasons.append("心搏时间标志点稳定性偏低")
 
@@ -732,6 +598,8 @@ class BeatTimelineCleaner:
             unresolved_suspect_ratio=unresolved / total,
             valid_nn_ratio=accepted / total,
             max_consecutive_artifacts=max_run,
+            max_consecutive_unresolved=max_unresolved_run,
+            resolved_artifact_ratio=max((detected - unresolved) / total, 0.0),
             fiducial_quality_mean=fiducial_quality_mean,
             fiducial_uncertainty_p95_ms=fiducial_uncertainty_p95_ms,
             fiducial_shift_p95_ms=fiducial_shift_p95_ms,

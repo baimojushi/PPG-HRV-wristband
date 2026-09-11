@@ -224,6 +224,13 @@ class BeatRecord:
     firmware_unmatched: bool = False
     local_clipped: bool = False
 
+    # v0.4.2 sequence-level interval artifact evidence.  These fields describe
+    # the RR ending at this beat; they never overwrite the raw beat timestamp.
+    artifact_class: str = ""
+    artifact_confidence: float = 0.0
+    artifact_reference_rr_ms: float = 0.0
+    artifact_evidence: str = ""
+
     status: str = "accepted"
     metric_eligible: bool = True
 
@@ -252,6 +259,8 @@ class TimelineQuality:
     unresolved_suspect_ratio: float = 1.0
     valid_nn_ratio: float = 0.0
     max_consecutive_artifacts: int = 0
+    max_consecutive_unresolved: int = 0
+    resolved_artifact_ratio: float = 0.0
 
     # PPG fiducial timing quality。
     fiducial_quality_mean: float = 1.0
@@ -329,6 +338,8 @@ class TimeDomainMetrics:
     corrected_ratio: float = 0.0
     unresolved_suspect_ratio: float = 1.0
     max_consecutive_artifacts: int = 0
+    max_consecutive_unresolved: int = 0
+    resolved_artifact_ratio: float = 0.0
 
 
 @dataclass(slots=True)
@@ -358,6 +369,8 @@ class FrequencyDomainMetrics:
     corrected_ratio: float = 0.0
     unresolved_suspect_ratio: float = 1.0
     max_consecutive_artifacts: int = 0
+    max_consecutive_unresolved: int = 0
+    resolved_artifact_ratio: float = 0.0
 
     # v0.4.0 数据链诊断：桌面端波形重建负担。
     # 单纯“整体平移”不会直接扭曲 RR，因此真正进入频域质量门的是
