@@ -95,6 +95,7 @@ def _snapshot(
     hf: float,
     hf_nu: float,
     lf_hf: float,
+    status: str = "VALID",
     freqs: np.ndarray | None = None,
     psd: np.ndarray | None = None,
 ) -> AnalysisSnapshot:
@@ -123,8 +124,8 @@ def _snapshot(
         )
 
     frequency = FrequencyDomainMetrics(
-        valid=True,
-        status="VALID",
+        valid=(status != "INVALID"),
+        status=status,
         progress=1.0,
         duration_seconds=300.0,
         total_power_ms2=(
@@ -165,8 +166,8 @@ def _snapshot(
         ),
         hr_bpm=hr,
         time=TimeDomainMetrics(
-            valid=True,
-            status="VALID",
+            valid=(status != "INVALID"),
+            status=status,
             rmssd_ms=rmssd,
             nn_count=300,
             detected_artifact_ratio=0.01,
@@ -175,13 +176,13 @@ def _snapshot(
         frequency=frequency,
         signal_quality=SignalQuality(
             sqi=0.95,
-            status="VALID",
+            status=status,
         ),
         quality=QualityAssessment(
             sqi=0.95,
-            status="VALID",
-            time_status="VALID",
-            frequency_status="VALID",
+            status=status,
+            time_status=status,
+            frequency_status=status,
         ),
     )
 
@@ -201,9 +202,10 @@ def test_literature_registry_contains_clickable_number_and_subject_identity():
     assert ">[1]</a>" in html
     assert source.authors in html
     assert source.title in html
-    assert len(
-        sources_to_dict()
-    ) >= 8
+    sources = sources_to_dict()
+    assert len(sources) >= 16
+    assert any(item.get("evidence_level") == "systematic_review_meta_analysis" for item in sources)
+    assert any(item.get("condition_detail") for item in sources)
 
 
 def test_literature_reference_uses_linked_number_then_title_and_author():
@@ -247,7 +249,11 @@ def test_user_facing_research_copy_avoids_engineering_jargon():
             assert jargon not in narrative, (code, jargon)
 
     for source in sources_to_dict():
-        public_fact = source["study_detail"] + source["finding_detail"]
+        public_fact = (
+            source["study_detail"]
+            + source["finding_detail"]
+            + source.get("condition_detail", "")
+        )
         for jargon in forbidden:
             assert jargon not in public_fact, (source["source_id"], jargon)
 
@@ -299,7 +305,7 @@ def test_extract_research_features_detects_narrow_0p1_hz_peak():
     ] > 0.20
 
 
-def test_personal_baseline_does_not_mature_from_short_overlapping_history():
+def test_personal_baseline_forms_provisional_reference_before_mature_reference():
     history = [_row(float(seconds)) for seconds in range(0, 12 * 60, 20)]
     snapshot = _snapshot(
         12 * 60,
@@ -314,9 +320,12 @@ def test_personal_baseline_does_not_mature_from_short_overlapping_history():
 
     result = evaluate_research_state(snapshot, history)
 
-    assert not result["baseline_ready"]
-    assert result["baseline_reference_window_count"] < 4
-    assert "5分钟" in result["baseline_reason"] or "15分钟" in result["baseline_reason"]
+    assert result["baseline_ready"]
+    assert not result["baseline_mature"]
+    assert result["baseline_maturity"] == "PROVISIONAL"
+    assert result["baseline_reference_window_count"] >= 3
+    assert result["baseline"]["span_seconds"] >= 8 * 60
+    assert result["baseline"]["span_seconds"] < 15 * 60
 
 
 def test_inward_quiet_requires_long_baseline_and_sustained_evidence_window():
@@ -642,6 +651,93 @@ def test_hour_research_curve_uses_temporal_state_not_pointwise_jump():
     assert len(timeline) < len(history) / 2
 
 
+def test_normal_collection_has_stable_user_conclusion_by_fifteen_minutes():
+    history = [_row(float(seconds)) for seconds in range(0, 15 * 60, 20)]
+    snapshot = _snapshot(
+        15 * 60,
+        hr=70.0,
+        rmssd=30.0,
+        vlf=200.0,
+        lf=500.0,
+        hf=300.0,
+        hf_nu=37.5,
+        lf_hf=1.67,
+    )
+
+    result = evaluate_research_state(snapshot, history)
+
+    assert result["baseline_ready"]
+    assert result["baseline_maturity"] in {"PROVISIONAL", "MATURE"}
+    assert result["conclusion_status"] == "LIVE"
+    assert result["conclusion_ready"]
+    assert isinstance(result["primary_conclusion"], dict)
+    assert result["primary_conclusion"]["code"] in PROTOTYPE_DEFINITIONS
+    assert result["primary_conclusion"]["name"].strip()
+
+
+def test_similarity_and_confidence_are_separate_and_limited_quality_does_not_shrink_similarity():
+    from hrv_app.research_prototypes import _build_personal_baseline, _score_row
+
+    history = [_row(float(seconds)) for seconds in range(0, 20 * 60, 20)]
+    baseline = _build_personal_baseline(history, 20 * 60 * 1_000_000)
+    assert baseline["ready"]
+
+    valid = _row(20 * 60, rmssd=48.0, lf=760.0, hf=520.0, vlf=280.0, status="VALID")
+    limited = dict(valid)
+    limited["time_status"] = "LIMITED"
+    limited["frequency_status"] = "LIMITED"
+    limited["overall_status"] = "LIMITED"
+
+    valid_score, _ = _score_row("WHOLE_VARIABILITY_RISE", valid, baseline, history)
+    limited_score, _ = _score_row("WHOLE_VARIABILITY_RISE", limited, baseline, history)
+
+    assert np.isfinite(valid_score)
+    assert valid_score == limited_score
+    assert valid_score > 0.20
+
+
+def test_lf_and_hf_can_rise_together_into_whole_variability_rise_case():
+    from hrv_app.research_prototypes import _build_personal_baseline, _score_row
+
+    history = [_row(float(seconds)) for seconds in range(0, 20 * 60, 20)]
+    baseline = _build_personal_baseline(history, 20 * 60 * 1_000_000)
+    row = _row(20 * 60, rmssd=55.0, vlf=260.0, lf=900.0, hf=650.0)
+    score, _ = _score_row("WHOLE_VARIABILITY_RISE", row, baseline, history)
+
+    assert score >= 0.70
+
+
+def test_missing_feature_is_not_treated_as_exactly_at_baseline():
+    from hrv_app.research_prototypes import _build_personal_baseline, _z
+
+    history = [_row(float(seconds)) for seconds in range(0, 20 * 60, 20)]
+    baseline = _build_personal_baseline(history, 20 * 60 * 1_000_000)
+
+    assert np.isnan(_z(baseline, "rmssd_ms", np.nan))
+    assert np.isnan(_z(baseline, "not_a_feature", 1.0))
+
+
+def test_short_bad_signal_holds_last_reliable_conclusion_instead_of_erasing_it():
+    history = [_row(float(seconds)) for seconds in range(0, 17 * 60, 20)]
+    snapshot = _snapshot(
+        17 * 60,
+        hr=70.0,
+        rmssd=30.0,
+        vlf=200.0,
+        lf=500.0,
+        hf=300.0,
+        hf_nu=37.5,
+        lf_hf=1.67,
+        status="INVALID",
+    )
+
+    result = evaluate_research_state(snapshot, history)
+
+    assert result["conclusion_status"] == "HELD"
+    assert isinstance(result["primary_conclusion"], dict)
+    assert result["primary_conclusion"]["held"]
+
+
 def test_ui_contains_hour_research_layer_and_clickable_sources():
     project = (
         Path(__file__)
@@ -667,6 +763,8 @@ def test_ui_contains_hour_research_layer_and_clickable_sources():
     assert "narrativeText" in ui
     assert "primary_source_facts_html" in ui
     assert "研究来源只说明曾有人出现过相似的心跳节律" in ui
+    assert "最近一次可靠结论仍是" in ui
+    assert "继续观察即可" not in ui
     assert "匹配度 {float(primary" not in ui
     assert 'f"{stage_code} · {stage_name}' not in ui
 

@@ -1,4 +1,25 @@
-# PPG / HRV 实时分析系统 v0.4.2
+# PPG / HRV 实时分析系统 v0.4.4
+
+## v0.4.4 · 研究案例库与包容式匹配
+
+v0.4.4 保留 v0.4.2 的 Interval Artifact Core 和 v0.4.3 的长时间状态模型，
+本轮只解决“正常采集到 15 分钟仍然没有用户结论”的产品层缺口。
+
+核心变化：
+
+- 文献注册表从 8 条扩展到 16 条，加入慢呼吸、自我关怀、认知任务、压力后恢复、情绪调节及荟萃分析等来源；
+- 新增“平稳而均匀 / 起伏整体变强 / 起伏整体收窄 / 安抚下来 / 进入专注状态 / 从紧绷中回弹 / 混合过渡中”等日常节律形态；
+- 把 `case_similarity`、`match_confidence`、`state_strength` 三个概念拆开；数据质量只降低可信程度，不再改变生理相似度；
+- 缺失特征不再当作“正好处在个人常态”；
+- 个人参照分为 `PROVISIONAL` 和 `MATURE` 两级；正常连续采集约 15 分钟后必须给出第一版稳定节律结论；
+- 短时信号异常时保留最近可靠结论，不再把长期观察结果瞬间清零；
+- 主界面采用 Top-K 最近研究案例，研究文献只作形态参照，不推断用户的心理诊断或冥想身份。
+
+完整设计与验证见：
+
+- `docs/RESEARCH_CASE_LIBRARY_AND_MATCHING_v0.4.4.md`
+- `docs/VALIDATION_v0.4.4_RESEARCH_CASE_LIBRARY.md`
+
 
 v0.4.2 从 **v0.4.1 interval core** 建立。本版不再继续调 HRV gate 数字，
 而是补齐 `Beat consensus → RR sequence → corrected NN` 的结构性异常层。

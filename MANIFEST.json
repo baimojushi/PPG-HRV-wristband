@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.3",
-  "base_version": "0.4.2",
-  "release_type": "research-temporal-model",
+  "version": "0.4.4",
+  "base_version": "0.4.3",
+  "release_type": "research-case-library-inclusive-matching",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "123 passed",
+    "tests": "135 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -721,7 +721,7 @@
         }
       ]
     },
-    "final_rebuild_tests": "123 passed",
+    "final_rebuild_tests": "135 passed",
     "fixed_lag_specific_tests": "13 passed",
     "protocol_version": 4,
     "annotated_v0_3_6_replay": {
@@ -751,7 +751,7 @@
       "smooth physiological HRV remains present after future-aware RR cleaning"
     ],
     "final_delivery_python_compileall": "passed",
-    "final_delivery_tests": "123 passed",
+    "final_delivery_tests": "135 passed",
     "fresh_baseline_plus_patch_tests": "119 passed",
     "git_apply_check": "passed",
     "responsive_ui_tests": "5 passed",
@@ -873,10 +873,11 @@
           "jump_reduction_percent": 84.6
         }
       }
-    }
+    },
+    "fresh_v0_4_3_plus_patch_tests": "135 passed"
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 274,
+  "file_count": 277,
   "files": [
     "#U542f#U52a8UI.bat",
     "#U7b2c#U4e00#U6b21/hrv_export.zip",
@@ -1151,7 +1152,10 @@
     "tests/test_benchmark_v041.py",
     "docs/RESEARCH_TEMPORAL_MODEL_v0.4.3.md",
     "docs/VALIDATION_v0.4.3_RESEARCH_TEMPORAL.json",
-    "docs/VALIDATION_v0.4.3_RESEARCH_TEMPORAL.md"
+    "docs/VALIDATION_v0.4.3_RESEARCH_TEMPORAL.md",
+    "docs/RESEARCH_CASE_LIBRARY_AND_MATCHING_v0.4.4.md",
+    "docs/VALIDATION_v0.4.4_RESEARCH_CASE_LIBRARY.json",
+    "docs/VALIDATION_v0.4.4_RESEARCH_CASE_LIBRARY.md"
   ],
   "debug_export": [
     "samples_debug.csv",
@@ -1454,5 +1458,64 @@
     ],
     "alignment": "one-to-one beat matching after piecewise ECG-to-PPG lag alignment",
     "docs": "docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md"
+  },
+  "research_case_library_v0_4_4": {
+    "goal": "normal analyzable collection reaches a stable user-facing rhythm conclusion by about 15 minutes without treating a research-paper prototype threshold as the availability of a conclusion",
+    "literature_sources": 16,
+    "case_count": 13,
+    "new_daily_rhythm_cases": [
+      "STEADY_EVEN",
+      "WHOLE_VARIABILITY_RISE",
+      "WHOLE_VARIABILITY_NARROW",
+      "SOOTHING_DOWNSHIFT",
+      "FOCUSED_ENGAGEMENT",
+      "REBOUND_RECOVERY",
+      "MIXED_TRANSITION"
+    ],
+    "matching": {
+      "case_similarity": "physiological resemblance computed from available features; not multiplied by data quality",
+      "match_confidence": "data/feature/time/reference confidence kept separate from physiological resemblance",
+      "state_strength": "slow causal temporal persistence used for trajectory, not as the sole user conclusion gate",
+      "case_mention_threshold": 0.28,
+      "candidate_threshold": 0.35,
+      "active_threshold": 0.58,
+      "conclusion_min_confidence": 0.42,
+      "normal_collection_conclusion_milestone_minutes": 15.0,
+      "missing_features": "removed from the available-feature denominator instead of being treated as exactly at baseline"
+    },
+    "personal_reference": {
+      "PROVISIONAL": ">=3 mature/analyzable anchors, ~4 min spacing, >=8 min span, newest 1 min excluded",
+      "MATURE": ">=4 mature/analyzable anchors, ~5 min spacing, >=15 min span, newest 3 min excluded"
+    },
+    "short_quality_loss": "hold the most recent reliable conclusion for up to 12 minutes instead of erasing a long observation immediately",
+    "real_session_replay": {
+      "source": "current uploaded hrv_export.zip / hrv_windows.csv",
+      "total_hrv_windows": 208,
+      "frequency_ready_windows": 184,
+      "post_15min_timeline_points": 55,
+      "post_15min_analyzable_points": 41,
+      "post_15min_named_conclusion_points": 41,
+      "post_15min_named_conclusion_coverage": 1.0,
+      "first_post_15min": {
+        "elapsed_minutes": 15.2,
+        "code": "STEADY_EVEN",
+        "case_similarity": 0.803,
+        "baseline_maturity": "PROVISIONAL"
+      },
+      "mature_reference_example": {
+        "elapsed_minutes": 23.4,
+        "code": "RESONANCE_0P1",
+        "case_similarity": 0.747,
+        "baseline_maturity": "MATURE"
+      },
+      "terminal_result": {
+        "elapsed_minutes": 70.2,
+        "conclusion_status": "HELD",
+        "code": "STEADY_EVEN",
+        "last_reliable_elapsed_minutes": 64.1
+      },
+      "ecg_ground_truth_available": false
+    },
+    "firmware_changed": false
   }
 }

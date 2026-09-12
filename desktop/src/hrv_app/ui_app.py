@@ -1324,36 +1324,13 @@ class MainWindow(QMainWindow):
         )
 
         prototype_specs = [
-            (
-                "INWARD_QUIET",
-                "向内安静",
-                "#609B7C",
-            ),
-            (
-                "RESONANCE_0P1",
-                "缓慢而规律",
-                "#70869B",
-            ),
-            (
-                "PHASED_VIPASSANA",
-                "分阶段变化",
-                "#7F718D",
-            ),
-            (
-                "TRAINED_VIPASSANA_SHIFT",
-                "呼吸起伏更明显",
-                "#A18B5B",
-            ),
-            (
-                "AROUSAL_MEDITATION",
-                "活跃而有序",
-                "#D67A56",
-            ),
-            (
-                "SLOW_RECOVERY_VLF",
-                "缓慢恢复中",
-                "#9B7B62",
-            ),
+            ("STEADY_EVEN", "平稳而均匀", "#7F8A82"),
+            ("RESONANCE_0P1", "缓慢而规律", "#70869B"),
+            ("WHOLE_VARIABILITY_RISE", "起伏整体变强", "#609B7C"),
+            ("WHOLE_VARIABILITY_NARROW", "起伏整体收窄", "#D67A56"),
+            ("SOOTHING_DOWNSHIFT", "安抚下来", "#8B7FA3"),
+            ("FOCUSED_ENGAGEMENT", "进入专注状态", "#A18B5B"),
+            ("REBOUND_RECOVERY", "从紧绷中回弹", "#9B7B62"),
         ]
 
         self.prototype_score_curves = {}
@@ -1448,15 +1425,15 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(
             QLabel(
-                "过去一小时 · 研究中相似节律的变化"
+                "过去一小时 · 稳定节律形态的变化"
             )
         )
         layout.addWidget(
             self.prototype_score_plot
         )
         self.prototype_score_hint = QLabel(
-            "这张图按不同节律所需的数分钟到数十分钟持续证据计算；"
-            "短暂波动不会立即被当成状态变化。"
+            "曲线先汇总数分钟的身体变化，再判断这种形态是否持续；"
+            "短暂波动不会立即变成新的稳定结论。"
         )
         self.prototype_score_hint.setWordWrap(True)
         self.prototype_score_hint.setObjectName("heroSub")
@@ -2214,49 +2191,43 @@ class MainWindow(QMainWindow):
                 f"再积累约 {float(next_minutes):.1f} 分钟，会得到更完整的观察。"
             )
 
-        primary = research_state.get(
-            "primary_state"
+        primary = (
+            research_state.get("primary_conclusion")
+            or research_state.get("primary_state")
         )
-        quality_state = str(
-            research_state.get(
-                "quality_state",
-                "",
-            )
-        )
+        quality_state = str(research_state.get("quality_state", ""))
+        conclusion_status = str(research_state.get("conclusion_status", "BUILDING"))
 
-        if quality_state == "Q1_DATA_UNSTABLE":
+        if conclusion_status == "HELD" and isinstance(primary, dict):
             self.hour_state_label.setText(
-                "这段记录还不够稳定。让手腕放松、腕带贴合一些，连续的身体节律会更容易看清。"
+                "当前信号暂时不适合刷新判断。最近一次可靠结论仍是："
+                f"{primary.get('name', '稳定节律')}。"
+                f"{primary.get('user_narrative', '')}"
+            )
+        elif conclusion_status == "LIVE" and isinstance(primary, dict):
+            self.hour_state_label.setText(
+                f"当前更接近 {primary.get('name', '稳定节律')}："
+                f"{primary.get('user_narrative', '')}"
+            )
+        elif quality_state == "Q1_DATA_UNSTABLE":
+            self.hour_state_label.setText(
+                "当前这一小段信号不够稳定，暂时不刷新节律判断；前面的可靠记录仍会保留。"
             )
         elif quality_state == "Q0_BUFFERING":
             self.hour_state_label.setText(
-                "还在积累第一段足够长的连续记录，先不急着解释身体节律。"
+                "正在积累第一段连续记录，很快会先给出基础的节律描述。"
             )
         elif quality_state == "Q2_BASELINE_BUILDING":
             self.hour_state_label.setText(
-                "已经能看见连续的心跳变化，正在了解你这次记录里的近期常态。"
+                "已经能看见连续变化，正在形成第一版近期参照；正常连续采集约15分钟后会给出稳定节律结论。"
             )
-        elif isinstance(primary, dict):
-            lifecycle_text = {
-                "CANDIDATE": "这种变化正在出现。",
-                "ACTIVE": "这种变化已经持续了一会儿。",
-                "EXITING": "这种变化正在慢慢淡下去。",
-            }.get(
-                str(primary.get("lifecycle", "")),
-                "",
-            )
+        elif conclusion_status == "UNAVAILABLE":
             self.hour_state_label.setText(
-                f"{primary.get('name', '相似节律')}："
-                f"{primary.get('user_narrative', '')}"
-                + (
-                    f" {lifecycle_text}"
-                    if lifecycle_text
-                    else ""
-                )
+                "已经记录了一段时间，但最近可靠数据覆盖不足，当前不强行更新结论。"
             )
         else:
             self.hour_state_label.setText(
-                "这一段没有出现特别突出的节律组合，先把它当作较平缓的变化继续观察。"
+                "正在把最近几分钟的变化和这次记录里的近期参照放在一起比较。"
             )
 
         hour_summary = str(
@@ -2281,7 +2252,7 @@ class MainWindow(QMainWindow):
                 + hour_sources_html
             )
             if hour_sources_html
-            else "研究依据：目前还没有出现足够清晰、可与研究记录比较的节律。"
+            else "研究依据：当前结论以身体节律本身的描述为主；只有与具体研究条件足够接近时才附上文献。"
         )
 
         baseline_count = int(
@@ -2290,64 +2261,48 @@ class MainWindow(QMainWindow):
                 0,
             )
         )
-        if research_state.get("baseline_ready"):
+        baseline_maturity = str(research_state.get("baseline_maturity", "NONE"))
+        if baseline_maturity == "MATURE":
             self.research_machine_label.setText(
-                f"解读进度：已经了解了你这次记录里的近期常态，参考了 {baseline_count} 段较稳定的记录。"
+                f"解读进度：已经形成较稳定的近期参照，参考了 {baseline_count} 段较稳定记录。"
+            )
+        elif baseline_maturity == "PROVISIONAL":
+            self.research_machine_label.setText(
+                f"解读进度：已经形成第一版近期参照，参考了 {baseline_count} 段记录；后续会继续校准。"
             )
         else:
             self.research_machine_label.setText(
-                f"解读进度：正在了解你这次记录里的近期常态，目前参考了 {baseline_count} 段记录。"
+                f"解读进度：正在形成第一版近期参照，目前参考了 {baseline_count} 段记录。"
             )
 
-        visible_matches = [
-            item
-            for item in research_state.get(
-                "matches",
-                [],
-            )
-            if (
-                item.get("lifecycle")
-                in {
-                    "ACTIVE",
-                    "CANDIDATE",
-                    "EXITING",
-                }
-                or float(item.get("score", 0.0)) >= 0.45
-            )
-        ][:3]
-
+        visible_matches = list(research_state.get("top_cases", []))[:3]
         if visible_matches:
             match_lines = ["研究中出现过的相似节律："]
-            for item in visible_matches:
-                score = float(item.get("score", 0.0))
+            for index, item in enumerate(visible_matches):
+                similarity_score = float(item.get("case_similarity", 0.0))
+                confidence = float(item.get("match_confidence", 0.0))
                 similarity = (
-                    "相似度较高"
-                    if score >= 0.80
+                    "相似特征很清楚"
+                    if similarity_score >= 0.65
                     else (
                         "有较明显相似"
-                        if score >= 0.65
-                        else "有一些相似"
+                        if similarity_score >= 0.45
+                        else "带有一些相似特征"
                     )
                 )
-                lifecycle = {
-                    "CANDIDATE": "正在出现",
-                    "ACTIVE": "已经持续一会儿",
-                    "EXITING": "正在淡下去",
-                }.get(str(item.get("lifecycle", "")), "")
-                suffix = (
-                    f"，{lifecycle}"
-                    if lifecycle
-                    else ""
+                confidence_text = (
+                    "依据较充分"
+                    if confidence >= 0.72
+                    else "目前可作参考"
                 )
+                prefix = "主要" if index == 0 else "同时"
                 match_lines.append(
-                    f"{item.get('name', '相似节律')}：{similarity}{suffix}。"
+                    f"{prefix}接近 {item.get('name', '相似节律')}：{similarity}，{confidence_text}。"
                 )
-            self.research_match_label.setText(
-                "<br/>".join(match_lines)
-            )
+            self.research_match_label.setText("<br/>".join(match_lines))
         else:
             self.research_match_label.setText(
-                "研究中的相似记录：这段暂时没有落入已收录的研究情形，继续观察即可。"
+                "研究中的相似记录：当前以身体节律本身的描述为主，暂时没有足够接近的具体研究案例。"
             )
 
         trait = hour_experience.get(
@@ -2376,7 +2331,7 @@ class MainWindow(QMainWindow):
                 + research_sources_html
             )
             if research_sources_html
-            else "研究依据：等待出现可与研究记录比较的节律"
+            else "研究依据：当前以描述性节律结论为主，暂不把它强行套入某一篇研究。"
         )
 
         research_timeline = hour_experience.get(

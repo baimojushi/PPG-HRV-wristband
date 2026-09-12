@@ -1,0 +1,45 @@
+{
+  "version": "0.4.4",
+  "scope": "research-case-library-inclusive-matching",
+  "automated": {
+    "compileall": "passed",
+    "pytest": "135 passed",
+    "git_diff_check": "passed",
+    "fresh_v0_4_3_patch_apply": "passed",
+    "fresh_v0_4_3_patch_tests": "135 passed"
+  },
+  "real_session_replay": {
+    "source": "current uploaded hrv_export.zip / hrv_windows.csv",
+    "total_windows": 208,
+    "frequency_ready_windows": 184,
+    "v0_4_3_exported_state_minutes": {
+      "STABLE_NEUTRAL": 45.0,
+      "DATA_UNSTABLE": 14.0
+    },
+    "v0_4_4": {
+      "timeline_points_at_or_after_15min": 55,
+      "analyzable_points_at_or_after_15min": 41,
+      "named_conclusion_points_at_or_after_15min": 41,
+      "named_conclusion_coverage": 1.0,
+      "first_post_15min": {
+        "session_elapsed_minutes": 15.2,
+        "code": "STEADY_EVEN",
+        "case_similarity": 0.803,
+        "baseline_maturity": "PROVISIONAL"
+      },
+      "mature_reference_example": {
+        "session_elapsed_minutes": 23.4,
+        "code": "RESONANCE_0P1",
+        "case_similarity": 0.747,
+        "baseline_maturity": "MATURE"
+      },
+      "terminal_result": {
+        "session_elapsed_minutes": 70.2,
+        "conclusion_status": "HELD",
+        "code": "STEADY_EVEN",
+        "last_reliable_session_elapsed_minutes": 64.1
+      }
+    },
+    "ecg_ground_truth_available": false
+  }
+}

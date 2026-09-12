@@ -1536,14 +1536,14 @@ class AnalysisEngine:
                         prototype_id=m["code"],
                         row=current_row,
                         baseline=research_snapshot.get("baseline", {}),
-                        score=m["score"],
+                        score=m.get("case_similarity", m["score"]),
                         evidence=m.get("evidence", []),
                         quality=m["quality_multiplier"],
                         threshold=_MATCH_THRESHOLD_ACTIVE,
                         baseline_ready=research_snapshot.get("baseline_ready", False),
                         match=(
                             m
-                            if m["lifecycle"] in {"ACTIVE", "CANDIDATE"}
+                            if not m.get("no_match_reason")
                             else None
                         ),
                         temporal=m,
@@ -2709,7 +2709,7 @@ class AnalysisEngine:
                         prototype_id=m["code"],
                         row=current_row,
                         baseline=research_snapshot.get("baseline", {}),
-                        score=m["score"],
+                        score=m.get("case_similarity", m["score"]),
                         evidence=m.get("evidence", []),
                         quality=m.get("quality_multiplier", 1.0),
                         threshold=_MATCH_THRESHOLD_ACTIVE,
@@ -2718,9 +2718,10 @@ class AnalysisEngine:
                         ),
                         match=(
                             m
-                            if m["lifecycle"] in {"ACTIVE", "CANDIDATE"}
+                            if not m.get("no_match_reason")
                             else None
                         ),
+                        temporal=m,
                     )
                     for m in research_snapshot["matches"]
                 ],

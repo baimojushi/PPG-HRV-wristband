@@ -1054,6 +1054,9 @@ def build_prototype_score_trace_row(
         baseline_ready,
         threshold,
     )
+    explicit_reason = str((temporal or {}).get("no_match_reason", "") or "")
+    if explicit_reason:
+        no_match_reason = explicit_reason
     if match is not None:
         no_match_reason = ""
 
@@ -1068,8 +1071,13 @@ def build_prototype_score_trace_row(
         "evidence": " | ".join(str(item) for item in evidence),
         "no_match_reason": no_match_reason,
         "raw_score": float((temporal or {}).get("raw_score", score) or 0.0),
+        "case_similarity": float((temporal or {}).get("case_similarity", score) or 0.0),
+        "match_confidence": float((temporal or {}).get("match_confidence", 0.0) or 0.0),
+        "rank_score": float((temporal or {}).get("rank_score", 0.0) or 0.0),
+        "state_strength": float((temporal or {}).get("state_strength", (temporal or {}).get("state_score", score)) or 0.0),
         "evidence_score": float((temporal or {}).get("evidence_score", score) or 0.0),
         "state_score": float((temporal or {}).get("state_score", score) or 0.0),
+        "baseline_maturity": str((temporal or {}).get("baseline_maturity", "NONE") or "NONE"),
         "temporal_ready": 1 if bool((temporal or {}).get("temporal_ready", False)) else 0,
         "observation_minutes": float((temporal or {}).get("observation_minutes", 0.0) or 0.0),
         "observed_span_minutes": float((temporal or {}).get("observed_span_minutes", 0.0) or 0.0),
