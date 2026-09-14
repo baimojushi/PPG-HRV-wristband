@@ -47,6 +47,15 @@ constexpr size_t METRIC_QUEUE_LENGTH = 16;
 constexpr uint32_t SERIAL_BAUD = 115200;
 constexpr const char *BLUETOOTH_DEVICE_NAME = "ESP32-PPG-Monitor";
 
+// ============================================================================
+// 蓝牙输出保护（transport.cpp）
+// ============================================================================
+// 样本在蓝牙侧的抽稀倍率：125Hz / 4 ≈ 31Hz，USB 保持全速率。
+constexpr uint32_t BT_SAMPLE_DECIMATION = 4;
+
+// 蓝牙写失败后的冷却时间（毫秒），冷却期内不尝试蓝牙写。
+constexpr uint64_t BT_COOLDOWN_MS = 3000;
+
 // 历史 CSV 中原始 PPG 的有效上限表现为 1023。
 // 这里只用于“饱和风险”质量标记，不参与原峰值检测算法。
 constexpr int16_t QUALITY_ADC_LOW = 0;

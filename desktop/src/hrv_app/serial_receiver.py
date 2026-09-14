@@ -155,9 +155,12 @@ class SerialReceiver:
 
             except Exception as exc:
                 if not self._stop_event.is_set():
+                    # Log but continue to avoid killing the receiver thread
                     self.on_status(
                         f"串口读取异常：{exc}"
                     )
-                break
+                # continue looping to keep the thread alive
+                time.sleep(0.1)
+                continue
 
         self.on_status("串口已停止")

@@ -9,6 +9,7 @@
 namespace {
 
 BluetoothSerial BTSerial;
+bool g_bt_active = false;   // 经典蓝牙是否已启用
 
 QueueHandle_t g_sample_queue = nullptr;
 QueueHandle_t g_beat_queue = nullptr;
@@ -16,6 +17,18 @@ QueueHandle_t g_metric_queue = nullptr;
 Diagnostics *g_diagnostics = nullptr;
 
 int64_t g_last_diagnostic_us = 0;
+
+// 蓝牙拥塞保护：
+// BluetoothSerial 的 TX 队列只有 32 包（TX_QUEUE_SIZE），队列满时
+// write() 会阻塞最多 SPP_TX_QUEUE_TIMEOUT=1000ms。transportTask 一旦被
+// 卡住 1 秒，USB 与蓝牙输出会同时冻结，采集队列随即溢出。
+// 对策：
+//   1) 蓝牙样本抽稀（每 BT_SAMPLE_DECIMATION 帧发 1 帧），
+//      把蓝牙侧数据量压到 USB 的 1/4；
+//   2) 一旦写失败（返回 0），进入 BT_COOLDOWN_MS 冷却期，
+//      冷却期内完全不尝试蓝牙写，让 BT 栈自行排空。
+uint64_t g_bt_cooldown_until_ms = 0;
+uint32_t g_bt_sample_counter = 0;
 
 // body 和最终 frame 分开，避免 snprintf 输入输出缓冲区重叠。
 char g_body_buffer[224];
@@ -49,17 +62,40 @@ uint16_t crc16Ccitt(const char *data) {
     return crc;
 }
 
-void writeLine(const char *line) {
+// 唯一的出口：USB 必发；蓝牙按冷却/客户端状态选发。
+// allow_bluetooth=false 时只发 USB（用于蓝牙侧样本抽稀）。
+void writeLine(const char *line, bool allow_bluetooth) {
     // USB 与经典蓝牙都在低优先级传输任务。
     // 传输阻塞最多导致队列压力，不允许阻塞 125 Hz 采集任务。
     Serial.println(line);
 
-    if (BTSerial.hasClient()) {
-        BTSerial.println(line);
+    if (!allow_bluetooth) {
+        return;
+    }
+
+    if (!BTSerial.hasClient()) {
+        return;
+    }
+
+    const uint64_t now_ms = static_cast<uint64_t>(
+        esp_timer_get_time() / 1000LL
+    );
+
+    if (now_ms < g_bt_cooldown_until_ms) {
+        return;
+    }
+
+    const size_t written = BTSerial.println(line);
+
+    if (written == 0) {
+        // 队列满或发送失败：这次 write() 已阻塞约 1s，
+        // 继续重试只会让采集队列溢出，进入冷却让 BT 栈排空。
+        g_bt_cooldown_until_ms =
+            now_ms + BT_COOLDOWN_MS;
     }
 }
 
-void writeFramedBody(const char *body) {
+void writeFramedBody(const char *body, bool allow_bluetooth) {
     // v4 格式：
     // @S,seq,t_us,...*ABCD\r\n
     //
@@ -75,14 +111,14 @@ void writeFramedBody(const char *body) {
         static_cast<unsigned>(crc)
     );
 
-    writeLine(g_frame_buffer);
+    writeLine(g_frame_buffer, allow_bluetooth);
 }
 
 void sendProtocolHello() {
     // v4 只扩展 Sample / Beat 字段，帧头和 CRC 机制保持不变。
-    writeLine("#PPGHRV,4");
-    writeLine("#FRAME=@BODY*CRC16_CCITT");
-    writeLine("#S=sample+score+expectedRR,#B=acceptedBeat+score,#M=metric,#D=diagnostic");
+    writeLine("#PPGHRV,4", true);
+    writeLine("#FRAME=@BODY*CRC16_CCITT", true);
+    writeLine("#S=sample+score+expectedRR,#B=acceptedBeat+score,#M=metric,#D=diagnostic", true);
 }
 
 void sendSample(const SampleFrame &s) {
@@ -104,7 +140,12 @@ void sendSample(const SampleFrame &s) {
         static_cast<unsigned>(s.flags)
     );
 
-    writeFramedBody(g_body_buffer);
+    // 蓝牙侧样本抽稀：125Hz / 4 ≈ 31Hz 足够波形可视化，
+    // 同时把 BT 队列压力降到 USB 的 1/4。USB 始终全速率。
+    const bool bt_send_sample =
+        (g_bt_sample_counter++ % BT_SAMPLE_DECIMATION) == 0;
+
+    writeFramedBody(g_body_buffer, bt_send_sample);
 }
 
 void sendBeat(const BeatFrame &b) {
@@ -122,7 +163,7 @@ void sendBeat(const BeatFrame &b) {
         static_cast<unsigned>(b.flags)
     );
 
-    writeFramedBody(g_body_buffer);
+    writeFramedBody(g_body_buffer, true);
 }
 
 void sendMetric(const MetricFrame &m) {
@@ -137,7 +178,7 @@ void sendMetric(const MetricFrame &m) {
         static_cast<unsigned>(m.valid)
     );
 
-    writeFramedBody(g_body_buffer);
+    writeFramedBody(g_body_buffer, true);
 }
 
 void sendDiagnostic(const DiagnosticFrame &d) {
@@ -153,7 +194,7 @@ void sendDiagnostic(const DiagnosticFrame &d) {
         static_cast<unsigned>(d.sample_queue_high_water)
     );
 
-    writeFramedBody(g_body_buffer);
+    writeFramedBody(g_body_buffer, true);
 }
 
 void transportTask(void *param) {
@@ -255,12 +296,14 @@ void startTransportTask(
 
     Serial.begin(SERIAL_BAUD);
 
+    // 蓝牙始终开启：USB 与蓝牙同时可用，
+    // writeLine() 内部做拥塞冷却，不会拖死 transportTask。
     // 蓝牙失败时 USB 仍保持可用，现场调试不会丢失全部诊断通道。
-    const bool bt_ok = BTSerial.begin(
+    g_bt_active = BTSerial.begin(
         BLUETOOTH_DEVICE_NAME
     );
 
-    if (!bt_ok) {
+    if (!g_bt_active) {
         Serial.println(
             "#WARN,BluetoothSerial init failed; USB remains active"
         );

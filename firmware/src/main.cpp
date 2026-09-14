@@ -42,6 +42,7 @@ void setup() {
 
     // 传输任务在 Core 0；采集任务在 Core 1。
     // 启动后 main loop 不再参与 PPG 采样和输出。
+    // 蓝牙在传输层始终开启，USB 与蓝牙同时可用。
     startTransportTask(
         sample_queue,
         beat_queue,
@@ -57,8 +58,8 @@ void setup() {
     );
 }
 
+// Arduino loopTask 只保留为空闲壳。
+// 核心业务全部由明确绑定核心的 FreeRTOS 任务管理。
 void loop() {
-    // Arduino loopTask 只保留为空闲壳。
-    // 核心业务全部由明确绑定核心的 FreeRTOS 任务管理。
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
