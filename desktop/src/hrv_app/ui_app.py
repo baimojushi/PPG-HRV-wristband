@@ -10,7 +10,17 @@ import pyqtgraph as pg
 from serial.tools import list_ports
 
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QKeySequence,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QRadialGradient,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -208,6 +218,205 @@ class MetricCard(QFrame):
         layout.addWidget(self.name_label)
         layout.addWidget(self.value_label)
         layout.addWidget(self.unit_label)
+
+
+class RhythmKeywordCloud(QFrame):
+    """随研究相似语义权重平滑变化的中文关键词云。"""
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumHeight(210)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.setToolTip(
+            "字越大，表示这个意思在当前更相似的研究描述中出现得越集中。"
+        )
+
+        self._target_scores: dict[str, float] = {}
+        self._current_scores: dict[str, float] = {}
+        self._signature: tuple[tuple[str, float], ...] = ()
+        self._animation_timer = QTimer(self)
+        self._animation_timer.setInterval(34)
+        self._animation_timer.timeout.connect(self._animate_step)
+
+    def set_keywords(self, items: list[dict]) -> None:
+        prepared: list[tuple[str, float]] = []
+        for item in items[:12]:
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            weight = float(np.clip(item.get("weight", 0.0) or 0.0, 0.0, 1.0))
+            prepared.append((text, weight))
+
+        signature = tuple((text, round(weight, 4)) for text, weight in prepared)
+        if signature == self._signature:
+            return
+        self._signature = signature
+
+        target = {text: weight for text, weight in prepared}
+        all_words = set(self._current_scores) | set(target)
+        self._target_scores = {word: target.get(word, 0.0) for word in all_words}
+        for word in all_words:
+            self._current_scores.setdefault(word, 0.0)
+
+        if not self._animation_timer.isActive():
+            self._animation_timer.start()
+        self.update()
+
+    def _animate_step(self) -> None:
+        settled = True
+        for word in list(self._current_scores):
+            current = float(self._current_scores.get(word, 0.0))
+            target = float(self._target_scores.get(word, 0.0))
+            next_value = current + (target - current) * 0.20
+            if abs(next_value - target) < 0.004:
+                next_value = target
+            else:
+                settled = False
+            self._current_scores[word] = next_value
+
+            if target <= 0.0 and next_value <= 0.004:
+                self._current_scores.pop(word, None)
+                self._target_scores.pop(word, None)
+
+        self.update()
+        if settled:
+            self._animation_timer.stop()
+
+    @staticmethod
+    def _font_for_weight(weight: float) -> QFont:
+        point_size = 13.0 + 21.0 * (float(np.clip(weight, 0.0, 1.0)) ** 0.72)
+        font = QFont("Microsoft YaHei")
+        font.setPointSizeF(point_size)
+        font.setWeight(
+            QFont.Weight.DemiBold
+            if weight >= 0.72
+            else QFont.Weight.Medium
+        )
+        return font
+
+    def _layout_words(self) -> list[tuple[str, float, QFont, QRectF]]:
+        width = max(120.0, float(self.width()) - 38.0)
+        candidates = [
+            (text, score)
+            for text, score in self._current_scores.items()
+            if score >= 0.035
+        ]
+        candidates.sort(key=lambda item: (item[1], item[0]), reverse=True)
+
+        measured: list[tuple[str, float, QFont, float, float]] = []
+        for text, score in candidates[:12]:
+            font = self._font_for_weight(score)
+            metrics = QFontMetricsF(font)
+            text_width = min(width, metrics.horizontalAdvance(text) + 10.0)
+            text_height = metrics.height() + 5.0
+            measured.append((text, score, font, text_width, text_height))
+
+        rows: list[list[tuple[str, float, QFont, float, float]]] = []
+        current_row: list[tuple[str, float, QFont, float, float]] = []
+        current_width = 0.0
+        horizontal_gap = 17.0
+
+        for item in measured:
+            item_width = item[3]
+            needed = item_width if not current_row else current_width + horizontal_gap + item_width
+            if current_row and needed > width:
+                rows.append(current_row)
+                current_row = [item]
+                current_width = item_width
+            else:
+                current_row.append(item)
+                current_width = needed
+        if current_row:
+            rows.append(current_row)
+
+        if not rows:
+            return []
+
+        row_gap = 12.0
+        row_heights = [max(item[4] for item in row) for row in rows]
+        total_height = sum(row_heights) + row_gap * max(0, len(rows) - 1)
+        y = max(18.0, (float(self.height()) - total_height) / 2.0)
+        placements: list[tuple[str, float, QFont, QRectF]] = []
+
+        for row, row_height in zip(rows, row_heights):
+            row_width = sum(item[3] for item in row) + horizontal_gap * max(0, len(row) - 1)
+            x = max(18.0, (float(self.width()) - row_width) / 2.0)
+            for text, score, font, text_width, text_height in row:
+                rect = QRectF(
+                    x,
+                    y + (row_height - text_height) / 2.0,
+                    text_width,
+                    text_height,
+                )
+                placements.append((text, score, font, rect))
+                x += text_width + horizontal_gap
+            y += row_height + row_gap
+
+        return placements
+
+    def paintEvent(self, event) -> None:
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        background = QLinearGradient(outer.topLeft(), outer.bottomRight())
+        background.setColorAt(0.0, QColor("#FCFAF8"))
+        background.setColorAt(0.55, QColor("#F7F3F5"))
+        background.setColorAt(1.0, QColor("#F4F1EB"))
+        painter.setBrush(background)
+        painter.setPen(QPen(QColor("#E5DDD7"), 1.0))
+        painter.drawRoundedRect(outer, 18.0, 18.0)
+
+        # 两层极淡光晕只做空间层次，不表达任何生理强弱。
+        left_glow = QRadialGradient(outer.left() + 95.0, outer.center().y(), 150.0)
+        left_glow.setColorAt(0.0, QColor(126, 151, 132, 24))
+        left_glow.setColorAt(1.0, QColor(126, 151, 132, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(left_glow)
+        painter.drawEllipse(QRectF(outer.left() - 35.0, outer.center().y() - 150.0, 300.0, 300.0))
+
+        right_glow = QRadialGradient(outer.right() - 80.0, outer.top() + 65.0, 145.0)
+        right_glow.setColorAt(0.0, QColor(132, 116, 146, 22))
+        right_glow.setColorAt(1.0, QColor(132, 116, 146, 0))
+        painter.setBrush(right_glow)
+        painter.drawEllipse(QRectF(outer.right() - 250.0, outer.top() - 75.0, 290.0, 290.0))
+
+        placements = self._layout_words()
+        if not placements:
+            painter.setPen(QColor("#8A827C"))
+            placeholder_font = QFont("Microsoft YaHei")
+            placeholder_font.setPointSizeF(13.0)
+            painter.setFont(placeholder_font)
+            painter.drawText(
+                outer.adjusted(20.0, 20.0, -20.0, -20.0),
+                Qt.AlignmentFlag.AlignCenter,
+                "正在从连续记录中提取状态关键词",
+            )
+            return
+
+        palette = [
+            QColor("#5F5568"),
+            QColor("#68786D"),
+            QColor("#886F61"),
+            QColor("#6B7282"),
+            QColor("#8B7B59"),
+        ]
+        for text, score, font, rect in placements:
+            palette_index = sum(ord(char) for char in text) % len(palette)
+            color = QColor(palette[palette_index])
+            color.setAlpha(int(145 + 110 * float(np.clip(score, 0.0, 1.0))))
+            painter.setPen(color)
+            painter.setFont(font)
+            painter.drawText(
+                rect,
+                Qt.AlignmentFlag.AlignCenter,
+                text,
+            )
 
 
 class MainWindow(QMainWindow):
@@ -1310,7 +1519,7 @@ class MainWindow(QMainWindow):
         self.prototype_score_plot.setLabel(
             "bottom",
             "过去一小时",
-            units="min",
+            units="分钟",
         )
         self.prototype_score_plot.setYRange(
             0.0,
@@ -1349,6 +1558,20 @@ class MainWindow(QMainWindow):
                 ),
                 name=name,
             )
+
+        self.keyword_cloud_title = QLabel(
+            "此刻的状态关键词"
+        )
+        self.keyword_cloud_title.setStyleSheet(
+            "font-size: 16px; font-weight: 650;"
+        )
+        self.keyword_cloud_hint = QLabel(
+            "把当前更相似的研究描述翻成日常中文；字越大，表示这个意思在当前相似研究里出现得越集中。"
+            "它只描述节律形态，不代表对你的心情下结论。"
+        )
+        self.keyword_cloud_hint.setObjectName("heroSub")
+        self.keyword_cloud_hint.setWordWrap(True)
+        self.keyword_cloud = RhythmKeywordCloud()
 
         self.frequency_trend_plot = pg.PlotWidget()
         self._style_plot(self.frequency_trend_plot)
@@ -1425,19 +1648,22 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(
             QLabel(
-                "过去一小时 · 稳定节律形态的变化"
+                "节律心态匹配度 · 过去一小时"
             )
         )
         layout.addWidget(
             self.prototype_score_plot
         )
         self.prototype_score_hint = QLabel(
-            "曲线先汇总数分钟的身体变化，再判断这种形态是否持续；"
-            "短暂波动不会立即变成新的稳定结论。"
+            "这里的匹配度只表示身体节律与研究描述有多相似，不是情绪概率。"
+            "曲线先汇总数分钟的变化，再判断这种形态是否持续；短暂波动不会立即变成新的稳定结论。"
         )
         self.prototype_score_hint.setWordWrap(True)
         self.prototype_score_hint.setObjectName("heroSub")
         layout.addWidget(self.prototype_score_hint)
+        layout.addWidget(self.keyword_cloud_title)
+        layout.addWidget(self.keyword_cloud_hint)
+        layout.addWidget(self.keyword_cloud)
         layout.addWidget(QLabel("不同快慢的心跳起伏趋势"))
         layout.addWidget(self.frequency_trend_plot)
         layout.addWidget(self.freq_trend_hint)
@@ -2148,6 +2374,14 @@ class MainWindow(QMainWindow):
         research_state = hour_experience.get(
             "current_research_state",
             {},
+        )
+        self.keyword_cloud.set_keywords(
+            list(
+                research_state.get(
+                    "keyword_cloud",
+                    [],
+                )
+            )
         )
 
         elapsed_minutes = float(

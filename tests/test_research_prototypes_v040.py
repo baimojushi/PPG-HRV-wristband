@@ -18,6 +18,7 @@ from hrv_app.models import (
 )
 from hrv_app.research_prototypes import (
     PROTOTYPE_DEFINITIONS,
+    build_state_keyword_cloud,
     build_hour_experience,
     evaluate_research_state,
     extract_research_frequency_features,
@@ -849,3 +850,112 @@ def test_hour_timeline_uses_nan_when_research_similarity_is_unavailable():
     ]
     assert score_values
     assert all(np.isnan(value) for value in score_values)
+
+
+def test_keyword_cloud_semantic_weight_tracks_case_similarity():
+    low = build_state_keyword_cloud(
+        None,
+        [
+            {
+                "code": "STEADY_EVEN",
+                "case_similarity": 0.35,
+                "state_strength": 0.40,
+            }
+        ],
+    )
+    high = build_state_keyword_cloud(
+        None,
+        [
+            {
+                "code": "STEADY_EVEN",
+                "case_similarity": 0.80,
+                "state_strength": 0.75,
+            }
+        ],
+    )
+
+    low_score = next(item["semantic_score"] for item in low if item["text"] == "平稳")
+    high_score = next(item["semantic_score"] for item in high if item["text"] == "平稳")
+    assert high_score > low_score
+
+
+def test_keyword_cloud_accumulates_shared_meaning_across_similar_cases():
+    cloud = build_state_keyword_cloud(
+        {
+            "code": "STEADY_EVEN",
+            "case_similarity": 0.78,
+            "state_strength": 0.74,
+        },
+        [
+            {
+                "code": "STEADY_EVEN",
+                "case_similarity": 0.78,
+                "state_strength": 0.74,
+            },
+            {
+                "code": "INWARD_QUIET",
+                "case_similarity": 0.70,
+                "state_strength": 0.66,
+            },
+            {
+                "code": "SOOTHING_DOWNSHIFT",
+                "case_similarity": 0.62,
+                "state_strength": 0.60,
+            },
+        ],
+    )
+
+    steady = next(item for item in cloud if item["text"] == "平稳")
+    assert steady["support_count"] == 3
+    assert steady["weight"] >= 0.90
+
+
+def test_keyword_cloud_user_phrases_are_chinese_and_culture_neutral():
+    forbidden = ("Vipassana", "Zen", "mindfulness", "冥想", "禅修", "正念")
+    for definition in PROTOTYPE_DEFINITIONS.values():
+        phrases = definition.get("semantic_phrases", [])
+        assert phrases
+        for phrase, _ in phrases:
+            assert not any("a" <= char.lower() <= "z" for char in phrase)
+            assert not any(term in phrase for term in forbidden)
+
+
+def test_analysis_ui_places_dynamic_keyword_cloud_below_match_plot():
+    project = Path(__file__).resolve().parents[1]
+    ui = (
+        project
+        / "desktop"
+        / "src"
+        / "hrv_app"
+        / "ui_app.py"
+    ).read_text(encoding="utf-8")
+
+    assert "节律心态匹配度 · 过去一小时" in ui
+    assert "此刻的状态关键词" in ui
+    assert "class RhythmKeywordCloud" in ui
+    assert "self.keyword_cloud.set_keywords" in ui
+    assert "字越大，表示这个意思" in ui
+
+    layout_section = ui[ui.index('"节律心态匹配度 · 过去一小时"'):]
+    assert layout_section.index("self.prototype_score_plot") < layout_section.index("self.keyword_cloud")
+    assert layout_section.index("self.keyword_cloud") < layout_section.index('QLabel("不同快慢的心跳起伏趋势")')
+
+
+def test_research_state_exports_auditable_keyword_cloud():
+    history = [_row(float(seconds)) for seconds in range(0, 16 * 60, 20)]
+    snapshot = _snapshot(
+        16 * 60,
+        hr=70.0,
+        rmssd=30.0,
+        vlf=200.0,
+        lf=500.0,
+        hf=300.0,
+        hf_nu=37.5,
+        lf_hf=1.67,
+    )
+
+    result = evaluate_research_state(snapshot, history)
+    assert result["keyword_cloud"]
+    assert all(item["text"] for item in result["keyword_cloud"])
+    assert all(0.0 < item["weight"] <= 1.0 for item in result["keyword_cloud"])
+    assert all(item["support_count"] >= 1 for item in result["keyword_cloud"])

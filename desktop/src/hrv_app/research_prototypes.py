@@ -28,6 +28,13 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "向内安静",
         "priority": 40,
         "source_ids": [1, 5],
+        "semantic_phrases": [
+            ("平稳", 1.00),
+            ("慢下来", 0.92),
+            ("呼吸相关起伏明显", 0.90),
+            ("注意向内", 0.84),
+            ("舒缓", 0.66),
+        ],
         "test_state": (
             "静止、注意向内时，心率趋缓，RMSSD与HF相对个人近期稳定基线增强，"
             "同时LF/HF谱形比下降。"
@@ -41,6 +48,13 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "缓慢而规律",
         "priority": 100,
         "source_ids": [2, 6],
+        "semantic_phrases": [
+            ("有规律", 1.00),
+            ("缓慢", 0.96),
+            ("节奏清楚", 0.90),
+            ("平稳", 0.82),
+            ("呼吸节律明显", 0.72),
+        ],
         "test_state": (
             "Welch在约0.075–0.11 Hz形成窄而突出的主峰，"
             "连续窗口主峰频率稳定，表现为低频规则振荡结构。"
@@ -54,6 +68,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "分阶段重组",
         "priority": 80,
         "source_ids": [4],
+        "semantic_phrases": [
+            ("逐步调整", 1.00),
+            ("过渡中", 0.92),
+            ("起伏先收后放", 0.90),
+            ("变化分明", 0.82),
+        ],
         "test_state": (
             "十几到几十分钟内出现可重复的阶段结构：早段频带能量下降、"
             "中段LF与HF共同增强、后段再次回落。"
@@ -67,6 +87,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "呼吸相关起伏突出",
         "priority": 55,
         "source_ids": [3],
+        "semantic_phrases": [
+            ("呼吸相关起伏明显", 1.00),
+            ("重心移动", 0.92),
+            ("起伏重新分配", 0.88),
+            ("逐步调整", 0.62),
+        ],
         "test_state": (
             "HF标准化贡献相对近期基线增加，同时0.06–0.10 Hz "
             "Traube–Hering–Mayer子带功率下降。"
@@ -80,6 +106,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "活跃而有序",
         "priority": 70,
         "source_ids": [5],
+        "semantic_phrases": [
+            ("清醒", 1.00),
+            ("有序", 0.96),
+            ("集中", 0.78),
+            ("呼吸相关起伏减弱", 0.88),
+        ],
         "test_state": (
             "数据稳定时HF相对个人基线下降，心率没有同步减慢，"
             "形成与安静高频增强型不同的有组织状态。"
@@ -93,6 +125,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "慢慢恢复中",
         "priority": 50,
         "source_ids": [7],
+        "semantic_phrases": [
+            ("恢复", 1.00),
+            ("逐渐回稳", 0.96),
+            ("慢变化仍在", 0.94),
+            ("平稳", 0.46),
+        ],
         "test_state": (
             "较快的HF和LF/HF已回到个人基线附近，"
             "VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。"
@@ -106,6 +144,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "平稳而均匀",
         "priority": 35,
         "source_ids": [],
+        "semantic_phrases": [
+            ("平稳", 1.00),
+            ("均匀", 0.96),
+            ("有序", 0.82),
+            ("少游移", 0.76),
+        ],
         "test_state": (
             "多个主要节律指标长期接近个人近期参照，没有明显单方向偏移，且窗口内部变化较小。"
         ),
@@ -118,6 +162,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "起伏整体变强",
         "priority": 62,
         "source_ids": [9, 10],
+        "semantic_phrases": [
+            ("起伏更丰富", 1.00),
+            ("快慢一起增强", 0.96),
+            ("弹性增加", 0.82),
+            ("呼吸相关起伏明显", 0.56),
+        ],
         "test_state": (
             "RMSSD与总功率相对个人参照共同上升，LF/HF绝对功率可以同向增强。"
         ),
@@ -130,6 +180,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "起伏整体收窄",
         "priority": 61,
         "source_ids": [11, 13],
+        "semantic_phrases": [
+            ("起伏收窄", 1.00),
+            ("集中", 0.88),
+            ("少游移", 0.82),
+            ("有序", 0.66),
+        ],
         "test_state": (
             "RMSSD与总功率相对个人参照共同下降，多个快慢成分整体收窄。"
         ),
@@ -142,6 +198,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "安抚下来",
         "priority": 76,
         "source_ids": [10],
+        "semantic_phrases": [
+            ("舒缓", 1.00),
+            ("慢下来", 0.96),
+            ("平稳", 0.86),
+            ("起伏更丰富", 0.66),
+        ],
         "test_state": (
             "心率相对近期参照下降，同时RMSSD与较快起伏增强，形成低唤醒方向的组合。"
         ),
@@ -154,6 +216,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "进入专注状态",
         "priority": 58,
         "source_ids": [13, 11],
+        "semantic_phrases": [
+            ("集中", 1.00),
+            ("少游移", 0.96),
+            ("有序", 0.86),
+            ("持续投入", 0.84),
+        ],
         "test_state": (
             "心跳间隔总体起伏收窄，并在数分钟内持续；心率不要求同步升高。"
         ),
@@ -166,6 +234,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "从紧绷中回弹",
         "priority": 82,
         "source_ids": [12, 14, 15],
+        "semantic_phrases": [
+            ("恢复", 1.00),
+            ("逐渐回稳", 0.92),
+            ("松开", 0.86),
+            ("起伏更丰富", 0.72),
+        ],
         "test_state": (
             "此前存在心率上移或HRV收窄，随后数分钟内RMSSD/总功率回升且心率回落。"
         ),
@@ -178,6 +252,12 @@ PROTOTYPE_DEFINITIONS: dict[str, dict] = {
         "name": "混合过渡中",
         "priority": 20,
         "source_ids": [11, 16],
+        "semantic_phrases": [
+            ("过渡中", 1.00),
+            ("逐步调整", 0.92),
+            ("多种变化并存", 0.90),
+            ("尚未定型", 0.76),
+        ],
         "test_state": (
             "多个指标发生中等幅度偏移，但方向不形成单一一致模式；作为可靠数据下的过渡性兜底形态。"
         ),
@@ -2348,6 +2428,102 @@ def _case_rank_score(
     )
 
 
+def build_state_keyword_cloud(
+    primary_conclusion: dict | None,
+    top_cases: Sequence[dict],
+    *,
+    conclusion_status: str = "LIVE",
+    max_terms: int = 12,
+) -> list[dict]:
+    """把最接近的研究形态压缩成普通用户可读的中文语义词云。
+
+    这里刻意不从论文原文做自动分词。论文里同一个概念可能出现完全不同的
+    专业词、文化词或翻译，直接统计字面频次会把噪声当成“高频语义”。
+    因此每个研究形态先由人工维护一组通俗中文语义短句，再按照当前形态的
+    case_similarity 聚合；相同语义被多个高相似形态同时支持时会自然变大。
+    """
+
+    ranked: list[tuple[dict, bool]] = []
+    seen_codes: set[str] = set()
+
+    if isinstance(primary_conclusion, dict):
+        code = str(primary_conclusion.get("code", ""))
+        if code in PROTOTYPE_DEFINITIONS:
+            ranked.append((primary_conclusion, True))
+            seen_codes.add(code)
+
+    for item in top_cases:
+        code = str(item.get("code", ""))
+        if code not in PROTOTYPE_DEFINITIONS or code in seen_codes:
+            continue
+        ranked.append((item, False))
+        seen_codes.add(code)
+
+    semantic_scores: dict[str, float] = defaultdict(float)
+    support_counts: dict[str, int] = defaultdict(int)
+    supporting_states: dict[str, list[str]] = defaultdict(list)
+
+    for rank, (item, is_primary) in enumerate(ranked):
+        code = str(item.get("code", ""))
+        definition = PROTOTYPE_DEFINITIONS.get(code)
+        if not definition:
+            continue
+
+        similarity = float(np.clip(item.get("case_similarity", 0.0) or 0.0, 0.0, 1.0))
+        if similarity <= 0.0:
+            continue
+
+        state_strength = float(np.clip(item.get("state_strength", similarity) or 0.0, 0.0, 1.0))
+
+        # “匹配度高 -> 语义权重高”是主规则；持续状态只做轻微稳定化，
+        # 不用数据质量去改变语义相似本身。
+        case_weight = (similarity ** 1.35) * (0.88 + 0.12 * state_strength)
+        case_weight *= max(0.72, 1.0 - 0.07 * rank)
+        if is_primary:
+            case_weight *= 1.16
+        if is_primary and conclusion_status == "HELD":
+            case_weight *= 0.92
+
+        for phrase, phrase_weight in definition.get("semantic_phrases", []):
+            phrase = str(phrase).strip()
+            if not phrase:
+                continue
+            semantic_scores[phrase] += case_weight * float(phrase_weight)
+            support_counts[phrase] += 1
+            state_name = str(definition.get("name", ""))
+            if state_name and state_name not in supporting_states[phrase]:
+                supporting_states[phrase].append(state_name)
+
+    if not semantic_scores:
+        return []
+
+    ordered = sorted(
+        semantic_scores.items(),
+        key=lambda item: (item[1], support_counts[item[0]], len(item[0])),
+        reverse=True,
+    )[: max(1, int(max_terms))]
+    peak = max(score for _, score in ordered)
+    if peak <= 0.0:
+        return []
+
+    cloud: list[dict] = []
+    for phrase, score in ordered:
+        relative = float(np.clip(score / peak, 0.0, 1.0))
+        # 保留弱语义的可读性，同时让最常出现/最相似的语义明显更大。
+        display_weight = float(0.22 + 0.78 * (relative ** 0.72))
+        cloud.append(
+            {
+                "text": phrase,
+                "weight": display_weight,
+                "semantic_score": float(score),
+                "support_count": int(support_counts[phrase]),
+                "supporting_states": list(supporting_states[phrase]),
+            }
+        )
+
+    return cloud
+
+
 def _recent_valid_coverage(
     history: Sequence[dict],
     current_t_us: int,
@@ -2841,6 +3017,12 @@ def evaluate_research_state(
     if not primary_source_ids and source_ids:
         primary_source_ids = source_ids[:3]
 
+    keyword_cloud = build_state_keyword_cloud(
+        primary_conclusion,
+        top_cases,
+        conclusion_status=conclusion_status,
+    )
+
     return {
         "state_machine_state": state_machine_state,
         "quality_state": quality_state,
@@ -2857,6 +3039,7 @@ def evaluate_research_state(
         "primary_conclusion": primary_conclusion,
         "primary_state": primary_state,
         "top_cases": top_cases,
+        "keyword_cloud": keyword_cloud,
         "matches": matches,
         "source_ids": source_ids,
         "source_facts_html": render_source_facts_html(source_ids) if source_ids else "",
@@ -3458,6 +3641,16 @@ def research_state_table() -> list[dict]:
             ],
             "user_narrative": definition[
                 "user_narrative"
+            ],
+            "semantic_phrases": [
+                {
+                    "text": str(text),
+                    "base_weight": float(weight),
+                }
+                for text, weight in definition.get(
+                    "semantic_phrases",
+                    [],
+                )
             ],
             "source_ids": list(
                 definition[
