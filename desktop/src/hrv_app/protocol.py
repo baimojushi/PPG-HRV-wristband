@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Union
 
 from .models import (
@@ -319,6 +320,7 @@ class ProtocolStreamDecoder:
         self._last_sample_seq: (
             int | None
         ) = None
+        self._sample_seq_delta_counts: Counter[int] = Counter()
 
         self._framed_seen = False
 
@@ -328,9 +330,33 @@ class ProtocolStreamDecoder:
             ProtocolHealth()
         )
         self._last_sample_seq = None
+        self._sample_seq_delta_counts.clear()
         self._framed_seen = False
 
     def health(self) -> ProtocolHealth:
+        stride = 1
+        stride_confidence = 0.0
+        intentional_decimation = False
+        gaps = 0
+
+        total = sum(self._sample_seq_delta_counts.values())
+        if total > 0:
+            candidate, count = max(
+                self._sample_seq_delta_counts.items(),
+                key=lambda item: (item[1], -item[0]),
+            )
+            stride_confidence = count / total
+            if candidate > 1 and count >= 4 and stride_confidence >= 0.80:
+                stride = int(candidate)
+                intentional_decimation = True
+
+            for delta, occurrences in self._sample_seq_delta_counts.items():
+                if delta <= stride:
+                    continue
+                # sample_seq_gaps now counts missing *forwarded S frames*.
+                # stride=4 makes +4 complete and +8 one missing frame.
+                gaps += int(max(round(delta / stride) - 1, 0)) * occurrences
+
         return ProtocolHealth(
             mode=self._health.mode,
             ok_frames=(
@@ -345,9 +371,10 @@ class ProtocolStreamDecoder:
             resync_count=(
                 self._health.resync_count
             ),
-            sample_seq_gaps=(
-                self._health.sample_seq_gaps
-            ),
+            sample_seq_gaps=int(gaps),
+            sample_seq_stride=int(stride),
+            sample_stride_confidence=float(stride_confidence),
+            intentional_sample_decimation=bool(intentional_decimation),
             legacy_frames=(
                 self._health.legacy_frames
             ),
@@ -658,24 +685,9 @@ class ProtocolStreamDecoder:
             message,
             SampleFrame,
         ):
-            if (
-                self._last_sample_seq
-                is not None
-            ):
-                expected = (
-                    self._last_sample_seq
-                    + 1
-                )
+            if self._last_sample_seq is not None:
+                delta = int(message.seq) - int(self._last_sample_seq)
+                if delta > 0:
+                    self._sample_seq_delta_counts[delta] += 1
 
-                if (
-                    message.seq
-                    > expected
-                ):
-                    self._health.sample_seq_gaps += (
-                        message.seq
-                        - expected
-                    )
-
-            self._last_sample_seq = (
-                message.seq
-            )
+            self._last_sample_seq = message.seq

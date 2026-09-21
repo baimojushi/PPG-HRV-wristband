@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.5",
-  "base_version": "0.4.4",
-  "release_type": "semantic-keyword-cloud-ui",
+  "version": "0.4.6",
+  "base_version": "0.4.5",
+  "release_type": "daily-wear-sampling-contract",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "140 collected; 14 research/UI regression tests passed in this patch validation",
+    "tests": "147 passed",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -877,7 +877,7 @@
     "fresh_v0_4_3_plus_patch_tests": "135 passed"
   },
   "historical_docs_note": "PATCH_v0.2.x and CHEEZPPG_SOURCE_REVIEW.md are retained only as evolution records",
-  "file_count": 279,
+  "file_count": 283,
   "files": [
     "#U542f#U52a8UI.bat",
     "#U7b2c#U4e00#U6b21/hrv_export.zip",
@@ -1157,7 +1157,11 @@
     "docs/VALIDATION_v0.4.4_RESEARCH_CASE_LIBRARY.json",
     "docs/VALIDATION_v0.4.4_RESEARCH_CASE_LIBRARY.md",
     "docs/SEMANTIC_KEYWORD_CLOUD_v0.4.5.md",
-    "docs/VALIDATION_v0.4.5_SEMANTIC_KEYWORD_CLOUD.md"
+    "docs/VALIDATION_v0.4.5_SEMANTIC_KEYWORD_CLOUD.md",
+    "desktop/src/hrv_app/sampling_contract.py",
+    "tests/test_bluetooth_interval_resampling_v046.py",
+    "docs/DAILY_WEAR_SAMPLING_CONTRACT_v0.4.6.md",
+    "docs/VALIDATION_v0.4.6_DAILY_WEAR.md"
   ],
   "debug_export": [
     "samples_debug.csv",
@@ -1543,5 +1547,32 @@
       "audit_export": "current_research_state.keyword_cloud + research_state_table.semantic_phrases"
     },
     "firmware_changed": false
+  },
+  "daily_wear_sampling_contract_v0_4_6": {
+    "goal": "Make desktop analysis honor the device source-sampling versus received-stream contract during daily Bluetooth wear, without changing firmware or protocol frame format.",
+    "source_sample_rate_hz": 125.0,
+    "bluetooth_received_rate_hz": 31.25,
+    "bluetooth_sample_stride": 4,
+    "transport_quality": {
+      "sequence_loss_unit": "forwarded sample frames relative to inferred stable stride",
+      "timing_residual": "abs(delta_t_ms - delta_seq * source_period_ms)",
+      "stable_stride_min_confidence": 0.8,
+      "source_rate_tolerance_ratio": 0.05
+    },
+    "interval_waveform": {
+      "native_low_rate_min_hz": 25.0,
+      "bandlimited_resample_target_hz": 125.0,
+      "max_resample_factor": 6.0,
+      "native_timing_uncertainty_floor": "half of the received-stream sample period"
+    },
+    "frequency_quality": {
+      "strict_max_corrected_ratio": 0.05,
+      "limited_max_corrected_ratio": 0.15,
+      "limited_max_unresolved_ratio": 0.05,
+      "limited_max_consecutive_unresolved": 2,
+      "limited_min_usable_interval_ratio": 0.9
+    },
+    "firmware_changed": false,
+    "protocol_frame_format_changed": false
   }
 }

@@ -99,6 +99,13 @@ v0.4.2 正式 HRV 继续以桌面 interval core 为准；双检测器共识之�
     interval_single_detector_uncertainty_ms: float = 28.0
     interval_max_timing_uncertainty_ms: float = 60.0
 
+    # v0.4.6：蓝牙会把 125 Hz 波形规则抽样为约 31.25 Hz。原始 filtered
+    # 通道已经限带，interval core 可先在实际接收采样率上完成去基线/带通，
+    # 再带限重采样回分析网格，避免 32 ms 量化把 RR 差分放大。
+    interval_resample_low_rate_min_hz: float = 25.0
+    interval_resample_target_tolerance_ratio: float = 0.15
+    interval_resample_max_factor: float = 6.0
+
     # 稳定 RR 先验只从“双检测器一致且窗口内部自洽”的波形间期更新。
     # 低质量窗口保留上一稳定先验，不允许一轮坏峰把后续搜索尺度拖跑。
     interval_reference_min_dual_ratio: float = 0.75
@@ -203,9 +210,13 @@ v0.4.2 正式 HRV 继续以桌面 interval core 为准；双检测器共识之�
 
     # v0.3.4 受限频域：
     # 小比例孤立异常可以通过不规则时间 Lomb–Scargle 与 Welch 互证后输出 LIMITED。
-    frequency_limited_max_corrected_ratio: float = 0.08
+    # v0.4.6 日常佩戴：修复负担 5% 以上仍降级为 LIMITED，但不再在 8%
+    # 立即整窗作废。只有修复负担超过 15%、未解决异常过多或连续异常过长
+    # 才禁止正式频域输出。这样保留不确定性，而不是把“可修复”与“不可用”混为一谈。
+    frequency_limited_max_corrected_ratio: float = 0.15
     frequency_limited_max_unresolved_ratio: float = 0.05
     frequency_limited_max_consecutive_artifacts: int = 2
+    frequency_limited_min_usable_interval_ratio: float = 0.90
 
     # v0.4.1：以下三个旧字段只保留导出兼容，不再进入频域 hard gate。
     # 旧版把“firmware 未匹配”误当成桌面波形补搏，导致参考源倒置。

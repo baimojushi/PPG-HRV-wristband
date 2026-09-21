@@ -68,6 +68,9 @@ class IntervalCoreDiagnostics:
     reference_update_reason: str = ""
     rejected_candidate_count: int = 0
     long_gap_rescue_count: int = 0
+    input_sample_rate_hz: float = 0.0
+    analysis_sample_rate_hz: float = 0.0
+    waveform_resampled: bool = False
 
 
 class IntervalCore:
@@ -313,12 +316,27 @@ class IntervalCore:
                 self._consumed_firmware_t_us.add(match_t)
                 matched_count += 1
 
-            sample_index = int(np.searchsorted(ppg.t_us, item.t_us))
-            sample_index = min(max(sample_index, 0), len(window) - 1)
-            local_radius = max(1, int(round(0.120 * ppg.sample_rate_hz)))
-            local_left = max(0, sample_index - local_radius)
-            local_right = min(len(window), sample_index + local_radius + 1)
-            local_samples = window[local_left:local_right]
+            # ppg may be a band-limited 125 Hz analysis grid reconstructed from a
+            # 31.25 Hz BT stream.  Map the selected timestamp back to the nearest
+            # *real received sample* instead of treating the analysis-grid index as
+            # a window index.
+            window_times = np.asarray([sample.t_us for sample in window], dtype=np.int64)
+            insertion = int(np.searchsorted(window_times, int(item.t_us)))
+            nearby = [
+                index
+                for index in (insertion - 1, insertion)
+                if 0 <= index < len(window)
+            ]
+            sample_index = (
+                min(nearby, key=lambda index: abs(int(window_times[index]) - int(item.t_us)))
+                if nearby
+                else 0
+            )
+            local_samples = [
+                sample
+                for sample in window
+                if abs(int(sample.t_us) - int(item.t_us)) <= 120_000
+            ]
             local_clipped = any(
                 (sample.raw <= self.config.adc_low)
                 or (sample.raw >= self.config.adc_high)
@@ -330,8 +348,16 @@ class IntervalCore:
             spread = float(item.detector_time_spread_ms)
             if not np.isfinite(spread):
                 spread = self.config.interval_single_detector_uncertainty_ms
+            native_resolution_floor_ms = (
+                0.5 * 1000.0 / ppg.input_sample_rate_hz
+                if ppg.input_sample_rate_hz > 0
+                else 5.0
+            )
             uncertainty = float(np.clip(
-                5.0 + 0.55 * spread + (10.0 if item.support_count == 1 else 0.0),
+                max(
+                    5.0 + 0.55 * spread + (10.0 if item.support_count == 1 else 0.0),
+                    native_resolution_floor_ms,
+                ),
                 5.0,
                 self.config.interval_max_timing_uncertainty_ms,
             ))
@@ -404,5 +430,8 @@ class IntervalCore:
                 }
                 for decision in candidate_decisions
             ),
+            input_sample_rate_hz=float(ppg.input_sample_rate_hz),
+            analysis_sample_rate_hz=float(ppg.sample_rate_hz),
+            waveform_resampled=bool(ppg.resampled_for_interval),
         )
         return proposals

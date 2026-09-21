@@ -31,6 +31,7 @@ from .models import (
 )
 from .rr_cleaner import BeatTimelineCleaner
 from .signal_quality import evaluate_signal_quality
+from .sampling_contract import infer_sampling_contract
 from .spwvd import compute_spwvd
 from .provenance import (
     ProvenanceRecorder,
@@ -1432,6 +1433,18 @@ class AnalysisEngine:
                     "firmware_unmatched_ratio": getattr(
                         frequency_metrics, "firmware_unmatched_ratio", 0.0
                     ),
+                    "corrected_ratio": getattr(
+                        frequency_metrics, "corrected_ratio", 0.0
+                    ),
+                    "unresolved_suspect_ratio": getattr(
+                        frequency_metrics, "unresolved_suspect_ratio", 0.0
+                    ),
+                    "direct_interval_ratio": getattr(
+                        frequency_metrics, "direct_interval_ratio", 0.0
+                    ),
+                    "usable_interval_ratio": getattr(
+                        frequency_metrics, "usable_interval_ratio", 0.0
+                    ),
                     "transport_status": getattr(
                         self._last_snapshot.signal_quality, "transport_status", ""
                     ),
@@ -2201,46 +2214,22 @@ class AnalysisEngine:
             else 0.0
         )
 
-        if (
-            len(sample_times_us) >= 2
-            and duration_s > 0
-        ):
-            effective_sample_rate_hz = (
-                (len(sample_times_us) - 1)
-                / duration_s
-            )
-
-            dt_ms = (
-                np.diff(
-                    sample_times_us.astype(float)
-                )
-                / 1000.0
-            )
-
-            expected_ms = (
-                1000.0
-                / self.config.sample_rate_hz
-            )
-
-            timing_jitter_p95_ms = float(
-                np.percentile(
-                    np.abs(
-                        dt_ms - expected_ms
-                    ),
-                    95,
-                )
-            )
-
-            timing_overrun_ratio = float(
-                np.mean(
-                    dt_ms
-                    > expected_ms * 1.5
-                )
-            )
-        else:
-            effective_sample_rate_hz = 0.0
-            timing_jitter_p95_ms = 0.0
-            timing_overrun_ratio = 0.0
+        sampling_contract = infer_sampling_contract(
+            selected,
+            self.config.sample_rate_hz,
+        )
+        effective_sample_rate_hz = float(
+            sampling_contract.received_sample_rate_hz
+        )
+        source_sample_rate_hz = float(
+            sampling_contract.source_sample_rate_hz
+        )
+        timing_jitter_p95_ms = float(
+            sampling_contract.timing_jitter_p95_ms
+        )
+        timing_overrun_ratio = float(
+            sampling_contract.timing_overrun_ratio
+        )
 
         candidate_count = int(
             np.count_nonzero(
@@ -2415,6 +2404,16 @@ class AnalysisEngine:
                 "fiducial_shift_p95_ms": fiducial_shift_p95_ms,
                 "effective_sample_rate_hz": float(
                     effective_sample_rate_hz
+                ),
+                "source_sample_rate_hz": float(
+                    source_sample_rate_hz
+                ),
+                "sample_stride": int(sampling_contract.sample_stride),
+                "sample_stride_confidence": float(
+                    sampling_contract.stride_confidence
+                ),
+                "sample_decimated": bool(
+                    sampling_contract.intentional_decimation
                 ),
                 "timing_jitter_p95_ms": float(
                     timing_jitter_p95_ms
@@ -2999,6 +2998,22 @@ class AnalysisEngine:
                     if frequency.interpolation_agreement > 0
                     else None
                 ),
+                "corrected_ratio": round(
+                    frequency.corrected_ratio,
+                    5,
+                ),
+                "unresolved_suspect_ratio": round(
+                    frequency.unresolved_suspect_ratio,
+                    5,
+                ),
+                "direct_interval_ratio": round(
+                    frequency.direct_interval_ratio,
+                    5,
+                ),
+                "usable_interval_ratio": round(
+                    frequency.usable_interval_ratio,
+                    5,
+                ),
                 "max_consecutive_artifacts": (
                     frequency.max_consecutive_artifacts
                 ),
@@ -3108,6 +3123,20 @@ class AnalysisEngine:
                 "effective_sample_rate_hz": round(
                     snapshot.signal_quality.effective_sample_rate_hz,
                     3,
+                ),
+                "source_sample_rate_hz": round(
+                    snapshot.signal_quality.source_sample_rate_hz,
+                    3,
+                ),
+                "sample_stride": int(
+                    snapshot.signal_quality.sample_stride
+                ),
+                "sample_stride_confidence": round(
+                    snapshot.signal_quality.sample_stride_confidence,
+                    4,
+                ),
+                "sample_decimated": bool(
+                    snapshot.signal_quality.sample_decimated
                 ),
                 "timing_jitter_p95_ms": round(
                     snapshot.signal_quality.timing_jitter_p95_ms,
@@ -3221,6 +3250,16 @@ class AnalysisEngine:
                 ),
                 "sample_seq_gaps": (
                     snapshot.protocol_health.sample_seq_gaps
+                ),
+                "sample_seq_stride": int(
+                    snapshot.protocol_health.sample_seq_stride
+                ),
+                "sample_stride_confidence": round(
+                    snapshot.protocol_health.sample_stride_confidence,
+                    4,
+                ),
+                "intentional_sample_decimation": bool(
+                    snapshot.protocol_health.intentional_sample_decimation
                 ),
                 "error_ratio": round(
                     snapshot.protocol_health.error_ratio,

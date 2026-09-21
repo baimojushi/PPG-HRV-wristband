@@ -2186,6 +2186,15 @@ class MainWindow(QMainWindow):
         effective_hz = debug_stats[
             "effective_sample_rate_hz"
         ]
+        source_hz = float(
+            debug_stats.get("source_sample_rate_hz", 0.0)
+        )
+        sample_stride = int(
+            debug_stats.get("sample_stride", 1) or 1
+        )
+        sample_decimated = bool(
+            debug_stats.get("sample_decimated", False)
+        )
         timing_p95 = debug_stats[
             "timing_jitter_p95_ms"
         ]
@@ -2317,11 +2326,18 @@ class MainWindow(QMainWindow):
                 "如果你看到波形明显不对，可以在3秒内按F8留下标记。"
             )
 
+        sampling_text = (
+            f" 波形流 {effective_hz:.2f} Hz，设备采样时钟 {source_hz:.1f} Hz，"
+            f"规则抽样 ×{sample_stride}。"
+            if sample_decimated and source_hz > 0
+            else ""
+        )
         self.signal_debug_label.setText(
             f"近 {duration:.1f} 秒找到 {accepted_count} 次心跳，"
             f"约 {accepted_bpm:.0f} 次/分。"
             f"设备原始识别 {firmware_count} 次，软件根据波形补充 {correction_inserted} 次。"
-            "这一区域只用于排查漏算或多算，日常使用无需关注。"
+            + sampling_text
+            + "这一区域只用于排查漏算或多算，日常使用无需关注。"
         )
 
         # --------------------------------------------------------------

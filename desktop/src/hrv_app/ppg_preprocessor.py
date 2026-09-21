@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from collections.abc import Sequence
 
 import numpy as np
@@ -8,6 +9,7 @@ from scipy import signal
 
 from .config import AnalysisConfig
 from .models import SampleFrame
+from .sampling_contract import infer_sampling_contract
 
 
 @dataclass(slots=True)
@@ -24,6 +26,8 @@ class PreprocessedPPG:
     sample_rate_hz: float
     polarity: int
     robust_amplitude: float
+    input_sample_rate_hz: float = 0.0
+    resampled_for_interval: bool = False
 
 
 def _infer_sample_rate_hz(t_us: np.ndarray, fallback: float) -> float:
@@ -104,10 +108,66 @@ def preprocess_ppg(
     scale = max(1.4826 * mad, robust_amplitude / 6.0, 1e-6)
     normalized = (oriented - median) / scale
 
+    # v0.4.6 Bluetooth sampling contract.  The firmware keeps a 125 Hz source
+    # clock but forwards one waveform sample every four source samples over BT.
+    # The filtered channel is already comfortably band-limited below the 31.25 Hz
+    # Nyquist frequency.  Reconstructing a regular analysis grid before the two
+    # waveform detectors removes the 32 ms timestamp quantisation from RR
+    # differences without inventing content above the observed bandwidth.
+    analysis_t_us = t_us
+    analysis_signal = normalized.astype(float)
+    analysis_fs = float(fs)
+    resampled = False
+
+    contract = infer_sampling_contract(samples, cfg.sample_rate_hz)
+    ratio = cfg.sample_rate_hz / max(fs, 1e-9)
+    should_resample = bool(
+        contract.intentional_decimation
+        and contract.sample_stride > 1
+        and fs >= cfg.interval_resample_low_rate_min_hz
+        and ratio > 1.0 + cfg.interval_resample_target_tolerance_ratio
+        and ratio <= cfg.interval_resample_max_factor
+    )
+
+    if should_resample and t_us.size >= 16:
+        rational = Fraction(float(ratio)).limit_denominator(16)
+        up = max(int(rational.numerator), 1)
+        down = max(int(rational.denominator), 1)
+        candidate_fs = fs * up / down
+
+        if (
+            abs(candidate_fs - cfg.sample_rate_hz)
+            / cfg.sample_rate_hz
+            <= 0.02
+        ):
+            native_step_us = 1e6 / fs
+            native_count = max(
+                int(np.floor((float(t_us[-1]) - float(t_us[0])) / native_step_us)) + 1,
+                2,
+            )
+            regular_t = float(t_us[0]) + np.arange(native_count, dtype=float) * native_step_us
+            regular_signal = np.interp(
+                regular_t,
+                t_us.astype(float),
+                analysis_signal,
+            )
+            rebuilt = signal.resample_poly(regular_signal, up, down)
+            rebuilt_t = regular_t[0] + np.arange(rebuilt.size, dtype=float) * (1e6 / candidate_fs)
+
+            # resample_poly can add one endpoint sample because of ceil(N*up/down).
+            keep = rebuilt_t <= float(t_us[-1]) + 0.5 * (1e6 / candidate_fs)
+            if np.count_nonzero(keep) >= 24:
+                analysis_t_us = np.rint(rebuilt_t[keep]).astype(np.int64)
+                analysis_signal = np.asarray(rebuilt[keep], dtype=float)
+                analysis_fs = float(candidate_fs)
+                resampled = True
+
     return PreprocessedPPG(
-        t_us=t_us,
-        signal=normalized.astype(float),
-        sample_rate_hz=float(fs),
+        t_us=analysis_t_us,
+        signal=analysis_signal,
+        sample_rate_hz=analysis_fs,
         polarity=int(polarity),
         robust_amplitude=float(robust_amplitude / scale),
+        input_sample_rate_hz=float(fs),
+        resampled_for_interval=bool(resampled),
     )

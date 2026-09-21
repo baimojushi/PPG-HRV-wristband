@@ -135,6 +135,13 @@ class SerialReceiver:
                     "format_errors": int(health.format_errors),
                     "resync_count": int(health.resync_count),
                     "sample_seq_gaps": int(health.sample_seq_gaps),
+                    "sample_seq_stride": int(health.sample_seq_stride),
+                    "sample_stride_confidence": float(
+                        health.sample_stride_confidence
+                    ),
+                    "intentional_sample_decimation": int(
+                        health.intentional_sample_decimation
+                    ),
                 })
 
                 # 避免每个坏帧都刷 UI，只在累计错误跨越 10 的整数段时提示。

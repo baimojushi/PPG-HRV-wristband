@@ -567,8 +567,25 @@ def build_signal_input_trace_row(
         "firmware_hr_zero_ratio": float(
             np.mean(~np.isfinite(firmware_hr) | (firmware_hr <= 0))
         ),
-        "effective_sample_rate_hz": effective_rate,
-        "timing_jitter_p95_ms": jitter_p95,
+        "effective_sample_rate_hz": float(
+            getattr(signal_quality, "effective_sample_rate_hz", effective_rate)
+            or effective_rate
+        ),
+        "source_sample_rate_hz": float(
+            getattr(signal_quality, "source_sample_rate_hz", 0.0) or 0.0
+        ),
+        "sample_stride": int(
+            getattr(signal_quality, "sample_stride", 1) or 1
+        ),
+        "sample_stride_confidence": float(
+            getattr(signal_quality, "sample_stride_confidence", 0.0) or 0.0
+        ),
+        "sample_decimated": int(
+            bool(getattr(signal_quality, "sample_decimated", False))
+        ),
+        "timing_jitter_p95_ms": float(
+            getattr(signal_quality, "timing_jitter_p95_ms", jitter_p95)
+        ),
         "sqi": float(signal_quality.sqi),
         "sqi_wear_ratio": float(signal_quality.wear_ratio),
         "sqi_clip_low_ratio": float(signal_quality.clip_low_ratio),
@@ -587,6 +604,12 @@ def build_signal_input_trace_row(
         ),
         "protocol_error_ratio": float(protocol_health.error_ratio),
         "protocol_seq_gaps": int(protocol_health.sample_seq_gaps),
+        "protocol_sample_stride": int(
+            getattr(protocol_health, "sample_seq_stride", 1) or 1
+        ),
+        "protocol_stride_confidence": float(
+            getattr(protocol_health, "sample_stride_confidence", 0.0) or 0.0
+        ),
         "sample_drop_count": int(
             latest_diag.sample_drop_count if latest_diag else 0
         ),
@@ -614,6 +637,15 @@ def build_signal_input_trace_row(
         ),
         "corrector_firmware_matched_count": int(
             getattr(diag, "firmware_matched_count", 0) or 0
+        ),
+        "interval_input_sample_rate_hz": float(
+            getattr(diag, "input_sample_rate_hz", 0.0) or 0.0
+        ),
+        "interval_analysis_sample_rate_hz": float(
+            getattr(diag, "analysis_sample_rate_hz", 0.0) or 0.0
+        ),
+        "interval_waveform_resampled": int(
+            bool(getattr(diag, "waveform_resampled", False))
         ),
         "multiscale_peak_count": int(
             getattr(diag, "primary_count", 0) or 0
@@ -923,6 +955,18 @@ def build_spectrum_5min_trace_row(
         ),
         "firmware_unmatched_ratio": float(
             stats.get("firmware_unmatched_ratio", 0.0) or 0.0
+        ),
+        "corrected_ratio": float(
+            stats.get("corrected_ratio", 0.0) or 0.0
+        ),
+        "unresolved_suspect_ratio": float(
+            stats.get("unresolved_suspect_ratio", 0.0) or 0.0
+        ),
+        "direct_interval_ratio": float(
+            stats.get("direct_interval_ratio", 0.0) or 0.0
+        ),
+        "usable_interval_ratio": float(
+            stats.get("usable_interval_ratio", 0.0) or 0.0
         ),
         "transport_status": str(stats.get("transport_status", "") or ""),
         "contact_status": str(stats.get("contact_status", "") or ""),

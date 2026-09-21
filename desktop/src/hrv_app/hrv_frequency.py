@@ -635,15 +635,13 @@ def compute_frequency_domain(
         else:
             current_run = 0
 
-    corrected_ratio = (
-        sum(
-            interval.corrected
-            for interval in usable
-        )
-        / max(
-            len(usable),
-            1,
-        )
+    corrected_count = sum(interval.corrected for interval in usable)
+    corrected_ratio = corrected_count / max(len(usable), 1)
+    direct_interval_ratio = (
+        (len(usable) - corrected_count) / max(len(usable), 1)
+    )
+    usable_interval_ratio = (
+        len(usable) / max(len(usable) + unresolved_records, 1)
     )
 
     # -------------------------------------------------------------------
@@ -1118,6 +1116,15 @@ def compute_frequency_domain(
         )
 
     if (
+        usable_interval_ratio
+        < cfg.frequency_limited_min_usable_interval_ratio
+    ):
+        hard_reasons.append(
+            f"频域可用间期覆盖 {usable_interval_ratio * 100:.1f}% < "
+            f"{cfg.frequency_limited_min_usable_interval_ratio * 100:.1f}%"
+        )
+
+    if (
         unresolved_ratio
         > cfg.frequency_limited_max_unresolved_ratio
     ):
@@ -1165,6 +1172,8 @@ def compute_frequency_domain(
             unresolved_suspect_ratio=(
                 unresolved_ratio
             ),
+            direct_interval_ratio=float(direct_interval_ratio),
+            usable_interval_ratio=float(usable_interval_ratio),
             max_consecutive_artifacts=max_consecutive,
             max_consecutive_unresolved=max_consecutive,
             resolved_artifact_ratio=float(resolved_artifact_ratio),
@@ -1349,6 +1358,8 @@ def compute_frequency_domain(
         unresolved_suspect_ratio=(
             unresolved_ratio
         ),
+        direct_interval_ratio=float(direct_interval_ratio),
+        usable_interval_ratio=float(usable_interval_ratio),
         max_consecutive_artifacts=max_consecutive,
         max_consecutive_unresolved=max_consecutive,
         resolved_artifact_ratio=float(resolved_artifact_ratio),

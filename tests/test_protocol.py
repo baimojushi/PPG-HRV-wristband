@@ -137,3 +137,38 @@ def test_diagnostic_frame():
     assert isinstance(diag, DiagnosticFrame)
     assert diag.sample_drop_count == 2
     assert diag.sample_queue_high_water == 40
+
+
+def test_stream_decoder_recognizes_regular_bluetooth_stride_without_fake_gaps():
+    decoder = ProtocolStreamDecoder()
+    payload = b"#PPGHRV,4\r\n"
+    for index in range(12):
+        seq = index * 4
+        t_us = index * 32_000
+        payload += build_framed_body(
+            f"S,{seq},{t_us},300,300,60,0,0.8,800.0,75.0,1"
+        )
+
+    messages = decoder.feed(payload)
+    assert len(messages) == 12
+
+    health = decoder.health()
+    assert health.sample_seq_stride == 4
+    assert health.sample_stride_confidence == 1.0
+    assert health.intentional_sample_decimation
+    assert health.sample_seq_gaps == 0
+
+
+def test_stream_decoder_counts_missing_forwarded_frame_relative_to_stride():
+    decoder = ProtocolStreamDecoder()
+    seqs = [0, 4, 8, 12, 16, 20, 24, 32, 36, 40, 44, 48]
+    payload = b"#PPGHRV,4\r\n"
+    for seq in seqs:
+        payload += build_framed_body(
+            f"S,{seq},{seq * 8000},300,300,60,0,0.8,800.0,75.0,1"
+        )
+
+    decoder.feed(payload)
+    health = decoder.health()
+    assert health.sample_seq_stride == 4
+    assert health.sample_seq_gaps == 1

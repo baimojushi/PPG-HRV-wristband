@@ -168,6 +168,9 @@ class SessionRecorder:
                 "format_errors",
                 "resync_count",
                 "sample_seq_gaps",
+                "sample_seq_stride",
+                "sample_stride_confidence",
+                "intentional_sample_decimation",
             ],
         )
 
@@ -219,6 +222,9 @@ class SessionRecorder:
                 row.get("format_errors", 0),
                 row.get("resync_count", 0),
                 row.get("sample_seq_gaps", 0),
+                row.get("sample_seq_stride", 1),
+                row.get("sample_stride_confidence", 0.0),
+                row.get("intentional_sample_decimation", 0),
             ])
 
     def record(
@@ -1143,6 +1149,9 @@ def export_engine_results(
                 "format_errors": protocol.format_errors,
                 "resync_count": protocol.resync_count,
                 "sample_seq_gaps": protocol.sample_seq_gaps,
+                "sample_seq_stride": protocol.sample_seq_stride,
+                "sample_stride_confidence": protocol.sample_stride_confidence,
+                "intentional_sample_decimation": protocol.intentional_sample_decimation,
                 "legacy_frames": protocol.legacy_frames,
                 "error_ratio": protocol.error_ratio,
             },

@@ -148,7 +148,7 @@ class ProtocolHealth:
     串口 / 蓝牙协议健康状态。
 
     error_ratio 不是概率置信度，只表示当前会话中已观察到的协议错误占比。
-    sample_seq_gaps 独立记录 S 帧序号缺口，便于区分“协议坏帧”和“固件队列丢样”。
+    sample_seq_gaps 记录相对已识别发送步长的 S 帧缺口；规则抽样本身不计丢包。
     """
     mode: str = "unknown"
     ok_frames: int = 0
@@ -156,6 +156,11 @@ class ProtocolHealth:
     format_errors: int = 0
     resync_count: int = 0
     sample_seq_gaps: int = 0
+    # v0.4.6: S 帧 seq 属于设备原始采样时钟。蓝牙可以规则抽样发送，
+    # 因此 stride=4 不等价于丢失 3 个传输帧。
+    sample_seq_stride: int = 1
+    sample_stride_confidence: float = 0.0
+    intentional_sample_decimation: bool = False
     legacy_frames: int = 0
 
     @property
@@ -294,8 +299,13 @@ class SignalQuality:
     clip_high_ratio: float = 0.0
     sequence_drop_ratio: float = 0.0
 
-    # t_us 直接反推的真实采样时基。
+    # t_us 直接反推的接收波形流速率；source_sample_rate_hz 则利用 seq/t_us
+    # 反推设备原始采样时钟。蓝牙规则抽样时两者可以分别约 31.25 / 125 Hz。
     effective_sample_rate_hz: float = 0.0
+    source_sample_rate_hz: float = 0.0
+    sample_stride: int = 1
+    sample_stride_confidence: float = 0.0
+    sample_decimated: bool = False
     timing_jitter_p95_ms: float = 0.0
     timing_overrun_ratio: float = 0.0
 
@@ -368,6 +378,8 @@ class FrequencyDomainMetrics:
 
     corrected_ratio: float = 0.0
     unresolved_suspect_ratio: float = 1.0
+    direct_interval_ratio: float = 0.0
+    usable_interval_ratio: float = 0.0
     max_consecutive_artifacts: int = 0
     max_consecutive_unresolved: int = 0
     resolved_artifact_ratio: float = 0.0

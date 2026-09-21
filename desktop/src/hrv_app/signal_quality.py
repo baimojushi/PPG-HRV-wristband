@@ -12,6 +12,7 @@ from .models import (
     SampleFrame,
     SignalQuality,
 )
+from .sampling_contract import infer_sampling_contract
 
 
 def evaluate_signal_quality(
@@ -42,8 +43,6 @@ def evaluate_signal_quality(
         )
 
     raw = np.asarray([s.raw for s in samples], dtype=float)
-    seq = np.asarray([s.seq for s in samples], dtype=np.int64)
-    t_us = np.asarray([s.t_us for s in samples], dtype=np.int64)
     flags = np.asarray([s.flags for s in samples], dtype=np.int64)
 
     wear = (flags & 0x01) != 0
@@ -56,41 +55,15 @@ def evaluate_signal_quality(
     clip_high_ratio = float(np.mean(clip_high))
     clipping_ratio = min(clip_low_ratio + clip_high_ratio, 1.0)
 
-    # seq 直接计算当前 SQI 窗口内的缺样比例。
-    expected_count = max(int(seq[-1] - seq[0] + 1), len(seq))
-    missing = max(expected_count - len(seq), 0)
-    sequence_drop_ratio = float(missing / max(expected_count, 1))
-
-    dt_ms = np.diff(t_us.astype(float)) / 1000.0
-    expected_ms = 1000.0 / cfg.sample_rate_hz
-    timing_error = np.abs(dt_ms - expected_ms)
-    timing_jitter_p95_ms = (
-        float(np.percentile(timing_error, 95))
-        if timing_error.size
-        else 0.0
-    )
-
-    if t_us.size >= 2 and t_us[-1] > t_us[0]:
-        effective_sample_rate_hz = float(
-            (len(t_us) - 1)
-            / (
-                (t_us[-1] - t_us[0])
-                / 1e6
-            )
-        )
-    else:
-        effective_sample_rate_hz = 0.0
-
-    timing_overrun_ratio = (
-        float(
-            np.mean(
-                dt_ms
-                > expected_ms * 1.5
-            )
-        )
-        if dt_ms.size
-        else 0.0
-    )
+    # v0.4.6：seq 属于设备 125 Hz 原始采样时钟，而“收到的 S 帧”可以是
+    # 规则抽样后的流（当前蓝牙为每 4 点发送 1 点）。完整性必须同时看
+    # seq 和 t_us 的关系，不能把 +4 / 32 ms 误判成 75% 丢包与 24 ms 抖动。
+    contract = infer_sampling_contract(samples, cfg.sample_rate_hz)
+    sequence_drop_ratio = float(contract.sequence_drop_ratio)
+    effective_sample_rate_hz = float(contract.received_sample_rate_hz)
+    source_sample_rate_hz = float(contract.source_sample_rate_hz)
+    timing_jitter_p95_ms = float(contract.timing_jitter_p95_ms)
+    timing_overrun_ratio = float(contract.timing_overrun_ratio)
 
     protocol_error_ratio = float(protocol.error_ratio)
 
@@ -139,11 +112,11 @@ def evaluate_signal_quality(
     # -------------------------------------------------------------------
     effective_rate_error = (
         abs(
-            effective_sample_rate_hz
+            source_sample_rate_hz
             - cfg.sample_rate_hz
         )
         / cfg.sample_rate_hz
-        if effective_sample_rate_hz > 0
+        if source_sample_rate_hz > 0
         else 1.0
     )
 
@@ -219,7 +192,7 @@ def evaluate_signal_quality(
         reasons.append(
             "采样时基抖动偏高"
             f"（p95 {timing_jitter_p95_ms:.1f} ms，"
-            f"有效 {effective_sample_rate_hz:.1f} Hz）"
+            f"设备时钟 {source_sample_rate_hz:.1f} Hz）"
         )
 
     if (
@@ -227,8 +200,8 @@ def evaluate_signal_quality(
         > cfg.sqi_effective_rate_warn_ratio
     ):
         reasons.append(
-            "有效采样率偏离目标 "
-            f"{effective_sample_rate_hz:.1f}/"
+            "设备采样时钟偏离目标 "
+            f"{source_sample_rate_hz:.1f}/"
             f"{cfg.sample_rate_hz:.0f} Hz"
         )
 
@@ -255,6 +228,10 @@ def evaluate_signal_quality(
         clip_high_ratio=clip_high_ratio,
         sequence_drop_ratio=sequence_drop_ratio,
         effective_sample_rate_hz=effective_sample_rate_hz,
+        source_sample_rate_hz=source_sample_rate_hz,
+        sample_stride=int(contract.sample_stride),
+        sample_stride_confidence=float(contract.stride_confidence),
+        sample_decimated=bool(contract.intentional_decimation),
         timing_jitter_p95_ms=timing_jitter_p95_ms,
         timing_overrun_ratio=timing_overrun_ratio,
         protocol_error_ratio=protocol_error_ratio,

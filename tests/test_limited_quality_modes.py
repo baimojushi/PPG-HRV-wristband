@@ -376,3 +376,46 @@ def test_time_domain_moderate_fiducial_uncertainty_is_limited():
     assert result.valid
     assert result.status == "LIMITED"
     assert result.fiducial_uncertainty_p95_ms == 36.0
+
+
+def test_frequency_daily_wear_ten_percent_repair_is_limited_not_invalid():
+    records, intervals = build_frequency_case()
+    for index, interval in enumerate(intervals):
+        if index % 10 == 0:
+            interval.corrected = True
+            interval.metric_eligible = False
+            interval.source = "daily_wear_repair"
+
+    result = compute_frequency_domain(
+        records,
+        intervals,
+        make_signal_quality(),
+        ProtocolHealth(),
+    )
+
+    assert result.valid
+    assert result.status == "LIMITED"
+    assert 0.08 <= result.corrected_ratio <= 0.12
+    assert result.direct_interval_ratio < 0.95
+    assert result.usable_interval_ratio > 0.90
+
+
+def test_frequency_excessive_repair_load_stays_invalid():
+    records, intervals = build_frequency_case()
+    for index, interval in enumerate(intervals):
+        if index % 5 == 0:
+            interval.corrected = True
+            interval.metric_eligible = False
+            interval.source = "heavy_repair"
+
+    result = compute_frequency_domain(
+        records,
+        intervals,
+        make_signal_quality(),
+        ProtocolHealth(),
+    )
+
+    assert not result.valid
+    assert result.status == "INVALID"
+    assert result.corrected_ratio > 0.15
+    assert "频域修复比例" in result.validity_reason
