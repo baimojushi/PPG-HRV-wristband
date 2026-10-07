@@ -1,0 +1,13 @@
+{
+  "mode": "framed",
+  "ok_frames": 96831,
+  "crc_errors": 8,
+  "format_errors": 0,
+  "resync_count": 8,
+  "sample_seq_gaps": 8,
+  "sample_seq_stride": 4,
+  "sample_stride_confidence": 0.9999137131393318,
+  "intentional_sample_decimation": true,
+  "legacy_frames": 0,
+  "error_ratio": 8.26113446028976e-05
+}

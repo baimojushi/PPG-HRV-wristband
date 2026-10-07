@@ -43,6 +43,8 @@ import threading
 from collections import defaultdict
 from typing import Any
 
+import numpy as np
+
 from .models import (
     AnalysisSnapshot,
     BeatFrame,
@@ -231,6 +233,25 @@ def build_beat_provenance_row(
         "waveform_t_us": waveform_t_us,
         "final_t_us": final_t_us,
         "timing_shift_ms": timing_shift_ms,
+        "timing_quality": float(getattr(beat, "timing_quality", 1.0) or 0.0),
+        "detector_timing_quality": float(
+            getattr(beat, "detector_timing_quality", 1.0) or 0.0
+        ),
+        "timing_provenance_quality": float(
+            getattr(beat, "timing_provenance_quality", 1.0) or 0.0
+        ),
+        "timing_quality_reason": str(
+            getattr(beat, "timing_quality_reason", "") or ""
+        ),
+        "firmware_alignment_available": int(
+            bool(getattr(beat, "firmware_alignment_available", False))
+        ),
+        "firmware_alignment_quality": float(
+            getattr(beat, "firmware_alignment_quality", 0.0) or 0.0
+        ),
+        "firmware_alignment_reason": str(
+            getattr(beat, "firmware_alignment_reason", "") or ""
+        ),
         "no_firmware_match": no_firmware_match,
         "inserted_by_smoother": int(inserted_by_smoother),
         "timing_recovered": int(timing_recovered),
@@ -528,6 +549,19 @@ def build_signal_input_trace_row(
     def _p(values: np.ndarray, q: float) -> float:
         return float(np.percentile(values, q)) if values.size else 0.0
 
+    def _slope_per_second(values: np.ndarray) -> float:
+        if values.size < 3 or t_us.size != values.size:
+            return 0.0
+        seconds = (t_us.astype(float) - float(t_us[0])) / 1e6
+        if seconds[-1] <= seconds[0]:
+            return 0.0
+        centered_t = seconds - float(np.mean(seconds))
+        denominator = float(np.dot(centered_t, centered_t))
+        if denominator <= 0:
+            return 0.0
+        centered_v = values - float(np.mean(values))
+        return float(np.dot(centered_t, centered_v) / denominator)
+
     finite_rr = expected_rr[np.isfinite(expected_rr) & (expected_rr > 0)]
     finite_hr = firmware_hr[np.isfinite(firmware_hr) & (firmware_hr > 0)]
 
@@ -541,6 +575,7 @@ def build_signal_input_trace_row(
         "raw_p50": _p(raw, 50),
         "raw_p95": _p(raw, 95),
         "raw_max": float(np.max(raw)),
+        "raw_slope_per_s": _slope_per_second(raw),
         "avg_p05": _p(avg, 5),
         "avg_p50": _p(avg, 50),
         "avg_p95": _p(avg, 95),
@@ -549,6 +584,8 @@ def build_signal_input_trace_row(
         "filtered_p95": _p(filtered, 95),
         "filtered_std": float(np.std(filtered)),
         "filtered_peak_to_peak": float(np.ptp(filtered)),
+        "filtered_negative_ratio": float(np.mean(filtered < 0.0)),
+        "filtered_slope_per_s": _slope_per_second(filtered),
         "clip_low_ratio": float(np.mean(clip_low)),
         "clip_high_ratio": float(np.mean(clip_high)),
         "wear_ratio": float(np.mean(wear)),
@@ -647,6 +684,33 @@ def build_signal_input_trace_row(
         "interval_waveform_resampled": int(
             bool(getattr(diag, "waveform_resampled", False))
         ),
+        "interval_input_dt_mean_ms": float(
+            getattr(diag, "input_dt_mean_ms", 0.0) or 0.0
+        ),
+        "interval_input_dt_std_ms": float(
+            getattr(diag, "input_dt_std_ms", 0.0) or 0.0
+        ),
+        "interval_input_jitter_p95_ms": float(
+            getattr(diag, "input_jitter_p95_ms", 0.0) or 0.0
+        ),
+        "interval_resample_ratio": float(
+            getattr(diag, "resample_ratio", 1.0) or 1.0
+        ),
+        "interval_resample_up": int(
+            getattr(diag, "resample_up", 1) or 1
+        ),
+        "interval_resample_down": int(
+            getattr(diag, "resample_down", 1) or 1
+        ),
+        "interval_regularization_backprojection_rms": float(
+            getattr(diag, "regularization_backprojection_rms", 0.0) or 0.0
+        ),
+        "interval_resample_backprojection_rms": float(
+            getattr(diag, "resample_backprojection_rms", 0.0) or 0.0
+        ),
+        "interval_resample_backprojection_max_abs": float(
+            getattr(diag, "resample_backprojection_max_abs", 0.0) or 0.0
+        ),
         "multiscale_peak_count": int(
             getattr(diag, "primary_count", 0) or 0
         ),
@@ -707,157 +771,206 @@ def build_hrv_window_provenance_row(
     prior_beats: list[BeatRecord],
     firmware_beats: list[BeatFrame],
     window_t_us: int,
+    unstable_timing_threshold: float = 0.62,
 ) -> dict[str, Any]:
-    """从 20 秒窗口的心搏构建 hrv_window_provenance 行。
+    """Build one auditable short-window beat-integrity row.
 
-    关键字段：
-      window_start_t_us / window_end_t_us  窗口起止
-      beat_count                            窗口内最终心搏数
-      firmware_beat_count                   窗口内固件心搏数
-      insertion_ratio                       补搏比例
-      recovery_ratio                        恢复比例
-      offset_p50_ms / offset_p95_ms         偏移 p50/p95
-      adjacent_offset_change_p95_ms        相邻偏移变化 p95
-      firmware_rr_rmssd_ms / firmware_rr_sdnn_ms
-      final_rr_rmssd_ms / final_rr_sdnn_ms
-      clipping_ratio                        削底比例
+    ``prior_beats`` is the immediately preceding non-overlapping window.  The
+    delta fields make abrupt detector/firmware phase transitions visible without
+    changing any HRV decision rule.
     """
-    if not window_beats:
+
+    def _window_stats(beats: list[BeatRecord]) -> dict[str, Any]:
+        if not beats:
+            return {
+                "beat_count": 0,
+                "window_start_t_us": 0,
+                "window_end_t_us": 0,
+                "insertion_ratio": 0.0,
+                "recovery_ratio": 0.0,
+                "dual_detector_ratio": 0.0,
+                "single_detector_ratio": 0.0,
+                "detector_consensus_mean": 0.0,
+                "detector_time_spread_p95_ms": 0.0,
+                "sequence_rescue_ratio": 0.0,
+                "local_clip_ratio": 0.0,
+                "firmware_unmatched_ratio": 0.0,
+                "firmware_match_ratio": 0.0,
+                "timing_quality_mean": 0.0,
+                "timing_quality_p05": 0.0,
+                "timing_uncertainty_p95_ms": 0.0,
+                "timing_degraded_ratio": 0.0,
+                "firmware_alignment_quality_mean": 0.0,
+                "firmware_alignment_available_ratio": 0.0,
+                "offset_p50_ms": 0.0,
+                "offset_p95_ms": 0.0,
+                "offset_signed_p50_ms": 0.0,
+                "adjacent_offset_change_p95_ms": 0.0,
+                "final_rr_rmssd_ms": 0.0,
+                "final_rr_sdnn_ms": 0.0,
+            }
+
+        final_rrs = [
+            (beats[i].t_us - beats[i - 1].t_us) / 1000.0
+            for i in range(1, len(beats))
+        ]
+        insertion_ratio = sum(bool(b.inserted_by_smoother) for b in beats) / len(beats)
+        recovery_ratio = sum(bool(b.timing_recovered) for b in beats) / len(beats)
+        interval_evidence = [
+            b for b in beats
+            if int(getattr(b, "detector_support_count", 0) or 0) > 0
+        ]
+        evidence_count = max(1, len(interval_evidence))
+        dual_detector_ratio = (
+            sum(int(getattr(b, "detector_support_count", 0) or 0) >= 2 for b in interval_evidence)
+            / evidence_count
+            if interval_evidence else 0.0
+        )
+        single_detector_ratio = (
+            sum(
+                bool(getattr(b, "single_detector", False))
+                or int(getattr(b, "detector_support_count", 0) or 0) == 1
+                for b in interval_evidence
+            )
+            / evidence_count
+            if interval_evidence else 0.0
+        )
+        consensus_values = [
+            float(getattr(b, "detector_consensus", 0.0) or 0.0)
+            for b in interval_evidence
+        ]
+        spread_values = [
+            float(getattr(b, "detector_time_spread_ms", 0.0) or 0.0)
+            for b in interval_evidence
+            if int(getattr(b, "detector_support_count", 0) or 0) >= 2
+        ]
+        sequence_rescue_ratio = (
+            sum(bool(getattr(b, "sequence_rescued", False)) for b in interval_evidence)
+            / evidence_count
+            if interval_evidence else 0.0
+        )
+        local_clip_ratio = (
+            sum(bool(getattr(b, "local_clipped", False)) for b in interval_evidence)
+            / evidence_count
+            if interval_evidence else 0.0
+        )
+        firmware_unmatched_ratio = (
+            sum(bool(getattr(b, "firmware_unmatched", False)) for b in interval_evidence)
+            / evidence_count
+            if interval_evidence else 0.0
+        )
+        timing_quality_values = [
+            float(getattr(b, "timing_quality", 1.0))
+            for b in beats
+            if np.isfinite(float(getattr(b, "timing_quality", 1.0)))
+        ]
+        timing_uncertainties = [
+            float(getattr(b, "timing_uncertainty_ms", 0.0))
+            for b in beats
+            if np.isfinite(float(getattr(b, "timing_uncertainty_ms", 0.0)))
+        ]
+        firmware_alignment = [
+            float(getattr(b, "firmware_alignment_quality", 0.0))
+            for b in beats
+            if bool(getattr(b, "firmware_alignment_available", False))
+            and np.isfinite(float(getattr(b, "firmware_alignment_quality", 0.0)))
+        ]
+        offsets_signed = [
+            float(b.timing_shift_ms)
+            for b in beats
+            if int(getattr(b, "matched_firmware_t_us", 0) or 0) > 0
+        ]
+        offsets_abs = [abs(value) for value in offsets_signed]
+        adjacent_changes = [
+            abs(offsets_signed[i] - offsets_signed[i - 1])
+            for i in range(1, len(offsets_signed))
+        ]
+
         return {
-            "t_us": window_t_us,
-            "window_start_t_us": 0,
-            "window_end_t_us": 0,
-            "beat_count": 0,
-            "firmware_beat_count": 0,
-            "insertion_ratio": 0.0,
-            "recovery_ratio": 0.0,
-            "dual_detector_ratio": 0.0,
-            "single_detector_ratio": 0.0,
-            "detector_consensus_mean": 0.0,
-            "detector_time_spread_p95_ms": 0.0,
-            "sequence_rescue_ratio": 0.0,
-            "local_clip_ratio": 0.0,
-            "firmware_unmatched_ratio": 0.0,
-            "offset_p50_ms": 0.0,
-            "offset_p95_ms": 0.0,
-            "offset_signed_p50_ms": 0.0,
-            "adjacent_offset_change_p95_ms": 0.0,
-            "firmware_rr_rmssd_ms": 0.0,
-            "firmware_rr_sdnn_ms": 0.0,
-            "final_rr_rmssd_ms": 0.0,
-            "final_rr_sdnn_ms": 0.0,
-            "clipping_ratio": 0.0,
+            "beat_count": len(beats),
+            "window_start_t_us": int(beats[0].t_us),
+            "window_end_t_us": int(beats[-1].t_us),
+            "insertion_ratio": float(insertion_ratio),
+            "recovery_ratio": float(recovery_ratio),
+            "dual_detector_ratio": float(dual_detector_ratio),
+            "single_detector_ratio": float(single_detector_ratio),
+            "detector_consensus_mean": (
+                float(sum(consensus_values) / len(consensus_values))
+                if consensus_values else 0.0
+            ),
+            "detector_time_spread_p95_ms": _percentile(spread_values, 95),
+            "sequence_rescue_ratio": float(sequence_rescue_ratio),
+            "local_clip_ratio": float(local_clip_ratio),
+            "firmware_unmatched_ratio": float(firmware_unmatched_ratio),
+            "firmware_match_ratio": float(1.0 - firmware_unmatched_ratio)
+            if interval_evidence else 0.0,
+            "timing_quality_mean": (
+                float(sum(timing_quality_values) / len(timing_quality_values))
+                if timing_quality_values else 0.0
+            ),
+            "timing_quality_p05": _percentile(timing_quality_values, 5),
+            "timing_uncertainty_p95_ms": _percentile(timing_uncertainties, 95),
+            "timing_degraded_ratio": (
+                sum(value < unstable_timing_threshold for value in timing_quality_values)
+                / len(timing_quality_values)
+                if timing_quality_values else 0.0
+            ),
+            "firmware_alignment_quality_mean": (
+                float(sum(firmware_alignment) / len(firmware_alignment))
+                if firmware_alignment else 0.0
+            ),
+            "firmware_alignment_available_ratio": (
+                len(firmware_alignment) / len(beats) if beats else 0.0
+            ),
+            "offset_p50_ms": _percentile(offsets_abs, 50),
+            "offset_p95_ms": _percentile(offsets_abs, 95),
+            "offset_signed_p50_ms": _percentile(offsets_signed, 50),
+            "adjacent_offset_change_p95_ms": _percentile(adjacent_changes, 95),
+            "final_rr_rmssd_ms": _rmssd(final_rrs),
+            "final_rr_sdnn_ms": _sdnn(final_rrs),
         }
-    window_start = int(window_beats[0].t_us)
-    window_end = int(window_beats[-1].t_us)
-    final_rrs = [
-        (window_beats[i].t_us - window_beats[i - 1].t_us) / 1000.0
-        for i in range(1, len(window_beats))
-    ]
+
+    current = _window_stats(window_beats)
+    previous = _window_stats(prior_beats)
+
+    if window_beats:
+        window_start = int(window_beats[0].t_us)
+        window_end = int(window_beats[-1].t_us)
+    else:
+        window_start = 0
+        window_end = 0
+
     firmware_window = [
-        beat
-        for beat in firmware_beats
+        beat for beat in firmware_beats
         if window_start <= beat.t_us <= window_end
-    ]
+    ] if window_beats else []
     firmware_rrs = [
         (firmware_window[i].t_us - firmware_window[i - 1].t_us) / 1000.0
         for i in range(1, len(firmware_window))
     ]
-    insertion_ratio = (
-        sum(1 for b in window_beats if b.inserted_by_smoother)
-        / max(1, len(window_beats))
-    )
-    recovery_ratio = (
-        sum(1 for b in window_beats if bool(b.timing_recovered))
-        / max(1, len(window_beats))
-    )
-    interval_evidence = [
-        b for b in window_beats
-        if int(getattr(b, "detector_support_count", 0) or 0) > 0
-    ]
-    evidence_count = max(1, len(interval_evidence))
-    dual_detector_ratio = (
-        sum(int(getattr(b, "detector_support_count", 0) or 0) >= 2 for b in interval_evidence)
-        / evidence_count
-        if interval_evidence else 0.0
-    )
-    single_detector_ratio = (
-        sum(
-            bool(getattr(b, "single_detector", False))
-            or int(getattr(b, "detector_support_count", 0) or 0) == 1
-            for b in interval_evidence
-        )
-        / evidence_count
-        if interval_evidence else 0.0
-    )
-    consensus_values = [
-        float(getattr(b, "detector_consensus", 0.0) or 0.0)
-        for b in interval_evidence
-    ]
-    spread_values = [
-        float(getattr(b, "detector_time_spread_ms", 0.0) or 0.0)
-        for b in interval_evidence
-        if int(getattr(b, "detector_support_count", 0) or 0) >= 2
-    ]
-    sequence_rescue_ratio = (
-        sum(bool(getattr(b, "sequence_rescued", False)) for b in interval_evidence)
-        / evidence_count
-        if interval_evidence else 0.0
-    )
-    local_clip_ratio = (
-        sum(bool(getattr(b, "local_clipped", False)) for b in interval_evidence)
-        / evidence_count
-        if interval_evidence else 0.0
-    )
-    firmware_unmatched_ratio = (
-        sum(bool(getattr(b, "firmware_unmatched", False)) for b in interval_evidence)
-        / evidence_count
-        if interval_evidence else 0.0
-    )
-    offsets_signed = [
-        float(b.timing_shift_ms)
-        for b in window_beats
-        if int(getattr(b, "matched_firmware_t_us", 0) or 0) > 0
-    ]
-    offsets_abs = [abs(value) for value in offsets_signed]
-    adjacent_changes = [
-        abs(offsets_signed[i] - offsets_signed[i - 1])
-        for i in range(1, len(offsets_signed))
-    ]
-    # 原始 ADC 削底由 signal_input_trace / SignalQuality 记录；
-    # low_prominence_rescue 不是削底，不能再借它冒充 clipping_ratio。
-    clipping_ratio = 0.0
-    return {
-        "t_us": window_t_us,
-        "window_start_t_us": window_start,
-        "window_end_t_us": window_end,
-        "beat_count": len(window_beats),
+
+    row = {
+        "t_us": int(window_t_us),
+        **current,
         "firmware_beat_count": len(firmware_window),
-        "insertion_ratio": float(insertion_ratio),
-        "recovery_ratio": float(recovery_ratio),
-        "dual_detector_ratio": float(dual_detector_ratio),
-        "single_detector_ratio": float(single_detector_ratio),
-        "detector_consensus_mean": (
-            float(sum(consensus_values) / len(consensus_values))
-            if consensus_values else 0.0
-        ),
-        "detector_time_spread_p95_ms": _percentile(spread_values, 95),
-        "sequence_rescue_ratio": float(sequence_rescue_ratio),
-        "local_clip_ratio": float(local_clip_ratio),
-        "firmware_unmatched_ratio": float(firmware_unmatched_ratio),
-        # 兼容旧列名：offset_p50/p95 继续表示固件相位诊断；不再作为 HRV hard gate。
-        "offset_p50_ms": _percentile(offsets_abs, 50),
-        "offset_p95_ms": _percentile(offsets_abs, 95),
-        "offset_signed_p50_ms": _percentile(offsets_signed, 50),
-        "adjacent_offset_change_p95_ms": _percentile(
-            adjacent_changes, 95
-        ),
         "firmware_rr_rmssd_ms": _rmssd(firmware_rrs),
         "firmware_rr_sdnn_ms": _sdnn(firmware_rrs),
-        "final_rr_rmssd_ms": _rmssd(final_rrs),
-        "final_rr_sdnn_ms": _sdnn(final_rrs),
-        "clipping_ratio": float(clipping_ratio),
+        "previous_beat_count": int(previous["beat_count"]),
+        "previous_firmware_match_ratio": float(previous["firmware_match_ratio"]),
+        "firmware_match_ratio_delta": float(
+            current["firmware_match_ratio"] - previous["firmware_match_ratio"]
+        ),
+        "previous_offset_p95_ms": float(previous["offset_p95_ms"]),
+        "offset_p95_delta_ms": float(
+            current["offset_p95_ms"] - previous["offset_p95_ms"]
+        ),
+        "previous_timing_quality_mean": float(previous["timing_quality_mean"]),
+        "timing_quality_mean_delta": float(
+            current["timing_quality_mean"] - previous["timing_quality_mean"]
+        ),
+        "clipping_ratio": 0.0,
     }
+    return row
 
 
 def _dominant_freq(freqs: Any, psd: Any) -> float:

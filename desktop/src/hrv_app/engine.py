@@ -15,6 +15,7 @@ from .research_prototypes import (
     research_state_table,
 )
 from .interval_core import IntervalCore
+from .interval_quality import evaluate_beat_timing_quality
 from .hrv_frequency import compute_frequency_domain
 from .hrv_time import compute_time_domain
 from .models import (
@@ -881,6 +882,11 @@ class AnalysisEngine:
                     1.0,
                 )
             )
+            timing_evidence = evaluate_beat_timing_quality(
+                proposal,
+                timing_shift_ms=timing_shift_ms,
+                config=self.config,
+            )
 
             refined = BeatFrame(
                 seq=int(
@@ -902,11 +908,29 @@ class AnalysisEngine:
                 timing_shift_ms=float(
                     timing_shift_ms
                 ),
-                timing_quality=(
-                    waveform_score
+                timing_quality=float(
+                    timing_evidence.timing_quality
                 ),
                 timing_uncertainty_ms=float(
                     proposal.timing_uncertainty_ms
+                ),
+                detector_timing_quality=float(
+                    timing_evidence.detector_timing_quality
+                ),
+                timing_provenance_quality=float(
+                    timing_evidence.provenance_quality
+                ),
+                firmware_alignment_quality=float(
+                    timing_evidence.firmware_alignment_quality
+                ),
+                firmware_alignment_available=bool(
+                    timing_evidence.firmware_alignment_available
+                ),
+                timing_quality_reason=str(
+                    timing_evidence.timing_quality_reason
+                ),
+                firmware_alignment_reason=str(
+                    timing_evidence.firmware_alignment_reason
                 ),
                 # v0.4.1: recovery means waveform/sequence evidence needed rescue.
                 # Firmware phase disagreement is diagnostic and must not mark an
@@ -1332,7 +1356,11 @@ class AnalysisEngine:
                     window_beats=recent_beats,
                     prior_beats=[
                         r for r in records
-                        if r.t_us <= self._last_proposal_ref_t_us
+                        if (
+                            now_us - 2 * window_days
+                            < int(r.t_us)
+                            <= now_us - window_days
+                        )
                     ],
                     firmware_beats=firmware_beats,
                     window_t_us=now_us,
@@ -1341,6 +1369,12 @@ class AnalysisEngine:
                 row["clipping_ratio"] = float(
                     signal_quality.clip_low_ratio
                     + signal_quality.clip_high_ratio
+                )
+                row["time_status"] = str(time_metrics.status)
+                row["time_validity_reason"] = str(time_metrics.validity_reason)
+                row["frequency_status"] = str(frequency_metrics.status)
+                row["frequency_validity_reason"] = str(
+                    frequency_metrics.validity_reason
                 )
                 self._provenance.record_hrv_window_provenance(row)
             except Exception:

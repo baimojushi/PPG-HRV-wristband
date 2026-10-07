@@ -28,6 +28,15 @@ class PreprocessedPPG:
     robust_amplitude: float
     input_sample_rate_hz: float = 0.0
     resampled_for_interval: bool = False
+    input_dt_mean_ms: float = 0.0
+    input_dt_std_ms: float = 0.0
+    input_jitter_p95_ms: float = 0.0
+    resample_ratio: float = 1.0
+    resample_up: int = 1
+    resample_down: int = 1
+    regularization_backprojection_rms: float = 0.0
+    resample_backprojection_rms: float = 0.0
+    resample_backprojection_max_abs: float = 0.0
 
 
 def _infer_sample_rate_hz(t_us: np.ndarray, fallback: float) -> float:
@@ -83,6 +92,22 @@ def preprocess_ppg(
         values = np.interp(idx, idx[finite], values[finite])
 
     fs = _infer_sample_rate_hz(t_us, cfg.sample_rate_hz)
+    dt_ms = np.diff(t_us.astype(float)) / 1000.0
+    positive_dt_ms = dt_ms[dt_ms > 0]
+    input_dt_mean_ms = (
+        float(np.mean(positive_dt_ms)) if positive_dt_ms.size else 0.0
+    )
+    input_dt_std_ms = (
+        float(np.std(positive_dt_ms)) if positive_dt_ms.size else 0.0
+    )
+    input_dt_median_ms = (
+        float(np.median(positive_dt_ms)) if positive_dt_ms.size else 0.0
+    )
+    input_jitter_p95_ms = (
+        float(np.percentile(np.abs(positive_dt_ms - input_dt_median_ms), 95))
+        if positive_dt_ms.size
+        else 0.0
+    )
 
     # 去除常量偏置；如果 filtfilt 需要的点数不够，则退化为稳健中心化。
     centered = values - float(np.median(values))
@@ -118,6 +143,12 @@ def preprocess_ppg(
     analysis_signal = normalized.astype(float)
     analysis_fs = float(fs)
     resampled = False
+    resample_up = 1
+    resample_down = 1
+    regularization_backprojection_rms = 0.0
+    resample_backprojection_rms = 0.0
+    resample_backprojection_max_abs = 0.0
+    original_analysis_signal = np.asarray(analysis_signal, dtype=float).copy()
 
     contract = infer_sampling_contract(samples, cfg.sample_rate_hz)
     ratio = cfg.sample_rate_hz / max(fs, 1e-9)
@@ -151,6 +182,16 @@ def preprocess_ppg(
                 t_us.astype(float),
                 analysis_signal,
             )
+            regular_back = np.interp(
+                t_us.astype(float),
+                regular_t,
+                regular_signal,
+            )
+            regularization_error = regular_back - original_analysis_signal
+            regularization_backprojection_rms = float(
+                np.sqrt(np.mean(regularization_error ** 2))
+            )
+
             rebuilt = signal.resample_poly(regular_signal, up, down)
             rebuilt_t = regular_t[0] + np.arange(rebuilt.size, dtype=float) * (1e6 / candidate_fs)
 
@@ -161,6 +202,21 @@ def preprocess_ppg(
                 analysis_signal = np.asarray(rebuilt[keep], dtype=float)
                 analysis_fs = float(candidate_fs)
                 resampled = True
+                resample_up = int(up)
+                resample_down = int(down)
+
+                rebuilt_back = np.interp(
+                    t_us.astype(float),
+                    analysis_t_us.astype(float),
+                    analysis_signal,
+                )
+                resample_error = rebuilt_back - original_analysis_signal
+                resample_backprojection_rms = float(
+                    np.sqrt(np.mean(resample_error ** 2))
+                )
+                resample_backprojection_max_abs = float(
+                    np.max(np.abs(resample_error))
+                )
 
     return PreprocessedPPG(
         t_us=analysis_t_us,
@@ -170,4 +226,13 @@ def preprocess_ppg(
         robust_amplitude=float(robust_amplitude / scale),
         input_sample_rate_hz=float(fs),
         resampled_for_interval=bool(resampled),
+        input_dt_mean_ms=float(input_dt_mean_ms),
+        input_dt_std_ms=float(input_dt_std_ms),
+        input_jitter_p95_ms=float(input_jitter_p95_ms),
+        resample_ratio=float(analysis_fs / max(fs, 1e-9)),
+        resample_up=int(resample_up),
+        resample_down=int(resample_down),
+        regularization_backprojection_rms=float(regularization_backprojection_rms),
+        resample_backprojection_rms=float(resample_backprojection_rms),
+        resample_backprojection_max_abs=float(resample_backprojection_max_abs),
     )

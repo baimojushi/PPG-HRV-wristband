@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.6",
-  "base_version": "0.4.5",
-  "release_type": "daily-wear-sampling-contract",
+  "version": "0.4.7",
+  "base_version": "0.4.6",
+  "release_type": "beat-evidence-and-resampling-audit-hardening",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "147 passed",
+    "tests": "153 passed (31 modules; executed in regression groups)",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -1161,7 +1161,10 @@
     "desktop/src/hrv_app/sampling_contract.py",
     "tests/test_bluetooth_interval_resampling_v046.py",
     "docs/DAILY_WEAR_SAMPLING_CONTRACT_v0.4.6.md",
-    "docs/VALIDATION_v0.4.6_DAILY_WEAR.md"
+    "docs/VALIDATION_v0.4.6_DAILY_WEAR.md",
+    "tests/test_evidence_hardening_v047.py",
+    "docs/EVIDENCE_HARDENING_v0.4.7.md",
+    "docs/VALIDATION_v0.4.7_EVIDENCE_HARDENING.md"
   ],
   "debug_export": [
     "samples_debug.csv",
@@ -1177,7 +1180,11 @@
     "annotation_context_1s.csv: waveform correction statistics",
     "raw_session/interval_candidate_trace.csv",
     "raw_session/interval_artifact_trace.csv",
-    "beats_cleaned.csv: interval artifact evidence"
+    "beats_cleaned.csv: interval artifact evidence",
+    "beats_refined.csv: timing-quality components + firmware alignment diagnostics",
+    "beats_cleaned.csv: timing-quality components + firmware alignment diagnostics",
+    "raw_session/signal_input_trace.csv: resampling backprojection audit",
+    "raw_session/hrv_window_provenance.csv: adjacent 20 s transition deltas + formal validity"
   ],
   "firmware_changed": false,
   "protocol_version": 4,
@@ -1571,6 +1578,60 @@
       "limited_max_unresolved_ratio": 0.05,
       "limited_max_consecutive_unresolved": 2,
       "limited_min_usable_interval_ratio": 0.9
+    },
+    "firmware_changed": false,
+    "protocol_frame_format_changed": false
+  },
+  "beat_evidence_hardening_v0_4_7": {
+    "goal": "Separate formal waveform beat timing confidence from waveform morphology score and from diagnostic-only firmware phase agreement; add auditable resampling and adjacent-window transition evidence.",
+    "formal_timing_quality": {
+      "components": [
+        "waveform_quality",
+        "detector_timing_quality",
+        "timing_provenance_quality"
+      ],
+      "provenance_penalties": [
+        "single_detector",
+        "sequence_rescued",
+        "low_prominence_rescue",
+        "local_clip_near_fiducial"
+      ],
+      "firmware_phase_is_gate": false
+    },
+    "firmware_alignment_diagnostic": {
+      "fields": [
+        "firmware_alignment_available",
+        "firmware_alignment_quality",
+        "firmware_alignment_reason"
+      ],
+      "large_phase_offset_logged": true
+    },
+    "resampling_audit": {
+      "input_clock": [
+        "input_dt_mean_ms",
+        "input_dt_std_ms",
+        "input_jitter_p95_ms"
+      ],
+      "transform": [
+        "resample_ratio",
+        "resample_up",
+        "resample_down"
+      ],
+      "backprojection": [
+        "regularization_backprojection_rms",
+        "resample_backprojection_rms",
+        "resample_backprojection_max_abs"
+      ]
+    },
+    "window_transition_audit": {
+      "window_seconds": 20,
+      "previous_window": "immediately preceding non-overlapping 20 s beat window",
+      "deltas": [
+        "firmware_match_ratio_delta",
+        "offset_p95_delta_ms",
+        "timing_quality_mean_delta"
+      ],
+      "formal_validity_exported": true
     },
     "firmware_changed": false,
     "protocol_frame_format_changed": false

@@ -71,6 +71,15 @@ class IntervalCoreDiagnostics:
     input_sample_rate_hz: float = 0.0
     analysis_sample_rate_hz: float = 0.0
     waveform_resampled: bool = False
+    input_dt_mean_ms: float = 0.0
+    input_dt_std_ms: float = 0.0
+    input_jitter_p95_ms: float = 0.0
+    resample_ratio: float = 1.0
+    resample_up: int = 1
+    resample_down: int = 1
+    regularization_backprojection_rms: float = 0.0
+    resample_backprojection_rms: float = 0.0
+    resample_backprojection_max_abs: float = 0.0
 
 
 class IntervalCore:
@@ -433,5 +442,18 @@ class IntervalCore:
             input_sample_rate_hz=float(ppg.input_sample_rate_hz),
             analysis_sample_rate_hz=float(ppg.sample_rate_hz),
             waveform_resampled=bool(ppg.resampled_for_interval),
+            input_dt_mean_ms=float(ppg.input_dt_mean_ms),
+            input_dt_std_ms=float(ppg.input_dt_std_ms),
+            input_jitter_p95_ms=float(ppg.input_jitter_p95_ms),
+            resample_ratio=float(ppg.resample_ratio),
+            resample_up=int(ppg.resample_up),
+            resample_down=int(ppg.resample_down),
+            regularization_backprojection_rms=float(
+                ppg.regularization_backprojection_rms
+            ),
+            resample_backprojection_rms=float(ppg.resample_backprojection_rms),
+            resample_backprojection_max_abs=float(
+                ppg.resample_backprojection_max_abs
+            ),
         )
         return proposals

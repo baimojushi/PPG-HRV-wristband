@@ -90,6 +90,12 @@ class BeatFrame:
     timing_shift_ms: float = 0.0
     timing_quality: float = 1.0
     timing_uncertainty_ms: float = 0.0
+    detector_timing_quality: float = 1.0
+    timing_provenance_quality: float = 1.0
+    firmware_alignment_quality: float = 0.0
+    firmware_alignment_available: bool = False
+    timing_quality_reason: str = ""
+    firmware_alignment_reason: str = ""
 
     # v0.3.5：
     # recovered=True 表示常规 ±120 ms 模板搜索失败后，
@@ -208,6 +214,12 @@ class BeatRecord:
     timing_shift_ms: float = 0.0
     timing_quality: float = 1.0
     timing_uncertainty_ms: float = 0.0
+    detector_timing_quality: float = 1.0
+    timing_provenance_quality: float = 1.0
+    firmware_alignment_quality: float = 0.0
+    firmware_alignment_available: bool = False
+    timing_quality_reason: str = ""
+    firmware_alignment_reason: str = ""
     timing_recovered: bool = False
     refined: bool = False
 

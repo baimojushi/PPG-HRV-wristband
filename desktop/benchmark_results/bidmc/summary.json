@@ -1,0 +1,246 @@
+{
+  "schema_version": "benchmark-v0.4.1",
+  "method": {
+    "correctness_tolerance_ms": 150,
+    "ecg_reference": "two independent ECG detectors; only agreement windows are scored unless annotations are supplied",
+    "ppg_detector": "production v0.4.1 interval core",
+    "alignment": "piecewise ECG-to-PPG lag with 300 s default windows"
+  },
+  "aggregate": {
+    "record_count": 5,
+    "valid_record_count": 5,
+    "reference_coverage": {
+      "median": 0.16666388893533599,
+      "q25": 0.09999833336120159,
+      "q75": 0.999983333612016
+    },
+    "sensitivity_percent": {
+      "median": 93.54838709677419,
+      "q25": 60.33057851239669,
+      "q75": 94.8509485094851
+    },
+    "ppv_percent": {
+      "median": 93.54838709677419,
+      "q25": 60.33057851239669,
+      "q75": 98.03921568627452
+    },
+    "f1_percent": {
+      "median": 93.54838709677419,
+      "q25": 60.33057851239669,
+      "q75": 96.41873278236916
+    },
+    "timing_mae_ms": {
+      "median": 15.659781716668,
+      "q25": 14.623991785745163,
+      "q75": 23.721034611196757
+    },
+    "timing_p95_ms": {
+      "median": 36.25637496477267,
+      "q25": 31.009562460596726,
+      "q75": 62.652199999604356
+    },
+    "rr_mae_ms": {
+      "median": 10.991734459560973,
+      "q25": 8.46520909216574,
+      "q75": 13.746300944449358
+    },
+    "rr_p95_ms": {
+      "median": 27.499999999625743,
+      "q25": 22.49999999965908,
+      "q75": 30.000000000181416
+    },
+    "rr_correlation": {
+      "median": 0.9734355256980168,
+      "q25": 0.7809905512443245,
+      "q75": 0.9999953120947382
+    },
+    "rmssd_abs_error_ms": {
+      "median": 3.342221251695051,
+      "q25": 1.5818879644884873,
+      "q75": 10.454255492337117
+    },
+    "sdnn_abs_error_ms": {
+      "median": 1.2405813902195177,
+      "q25": 0.5482514888508945,
+      "q75": 4.724261635405086
+    },
+    "lag_median_ms": {
+      "median": 252.50000026608578,
+      "q25": 40.00000021563393,
+      "q75": 505.62500030173663
+    },
+    "lag_iqr_ms": {
+      "median": 3.7500000304288506,
+      "q25": 1.3926950259701698e-07,
+      "q75": 109.37499991394414
+    },
+    "lag_drift_ms_per_min": {
+      "median": 0.0,
+      "q25": 0.0,
+      "q75": 7.427706744006244e-08
+    },
+    "realtime_ratio_percent": {
+      "median": 0.1444542924308804,
+      "q25": 0.14270827152911558,
+      "q75": 0.14801684971949586
+    }
+  },
+  "records": [
+    {
+      "record_id": "bidmc01",
+      "duration_s": 600.0099999994543,
+      "reference_method": "dual_ecg_consensus",
+      "reference_coverage": 0.16666388893533599,
+      "n_reference": 121,
+      "n_ppg": 121,
+      "n_correct": 73,
+      "sensitivity_percent": 60.33057851239669,
+      "ppv_percent": 60.33057851239669,
+      "f1_percent": 60.33057851239669,
+      "lag_median_ms": 385.0000002897194,
+      "lag_iqr_ms": 415.00000003028146,
+      "lag_drift_ms_per_min": 166.00000001211262,
+      "timing_mae_ms": 46.66279455304976,
+      "timing_p95_ms": 130.60880005555188,
+      "rr_pair_count": 71,
+      "rr_mae_ms": 15.211267607086763,
+      "rr_p95_ms": 30.00000000000466,
+      "rr_correlation": 0.9999969933903998,
+      "rmssd_reference_ms": 17041.36774124147,
+      "rmssd_ppg_ms": 17041.358854099715,
+      "rmssd_abs_error_ms": 0.008887141753803007,
+      "sdnn_reference_ms": 11879.29735098264,
+      "sdnn_ppg_ms": 11879.293382504096,
+      "sdnn_abs_error_ms": 0.003968478544265963,
+      "execution_seconds": 0.8667402000137372,
+      "realtime_ratio_percent": 0.1444542924308804,
+      "ppg_detector_count": 121,
+      "error": ""
+    },
+    {
+      "record_id": "bidmc02",
+      "duration_s": 600.0099999994543,
+      "reference_method": "dual_ecg_consensus",
+      "reference_coverage": 0.0,
+      "n_reference": 0,
+      "n_ppg": 0,
+      "n_correct": 0,
+      "sensitivity_percent": 0.0,
+      "ppv_percent": 0.0,
+      "f1_percent": 0.0,
+      "lag_median_ms": null,
+      "lag_iqr_ms": null,
+      "lag_drift_ms_per_min": 0.0,
+      "timing_mae_ms": null,
+      "timing_p95_ms": null,
+      "rr_pair_count": 0,
+      "rr_mae_ms": null,
+      "rr_p95_ms": null,
+      "rr_correlation": null,
+      "rmssd_reference_ms": null,
+      "rmssd_ppg_ms": null,
+      "rmssd_abs_error_ms": null,
+      "sdnn_reference_ms": null,
+      "sdnn_ppg_ms": null,
+      "sdnn_abs_error_ms": null,
+      "execution_seconds": 0.8881159000011394,
+      "realtime_ratio_percent": 0.14801684971949586,
+      "ppg_detector_count": 0,
+      "error": ""
+    },
+    {
+      "record_id": "bidmc03",
+      "duration_s": 600.0099999994543,
+      "reference_method": "dual_ecg_consensus",
+      "reference_coverage": 0.09999833336120159,
+      "n_reference": 62,
+      "n_ppg": 62,
+      "n_correct": 58,
+      "sensitivity_percent": 93.54838709677419,
+      "ppv_percent": 93.54838709677419,
+      "f1_percent": 93.54838709677419,
+      "lag_median_ms": -199.99999986482067,
+      "lag_iqr_ms": 0.0,
+      "lag_drift_ms_per_min": 0.0,
+      "timing_mae_ms": 12.758620734709925,
+      "timing_p95_ms": 26.499999996616438,
+      "rr_pair_count": 51,
+      "rr_mae_ms": 8.725490195551725,
+      "rr_p95_ms": 15.000000000895852,
+      "rr_correlation": 0.9999947516628511,
+      "rmssd_reference_ms": 8495.991342318894,
+      "rmssd_ppg_ms": 8493.885120746827,
+      "rmssd_abs_error_ms": 2.1062215720667155,
+      "sdnn_reference_ms": 5642.6809300520845,
+      "sdnn_ppg_ms": 5640.929446430599,
+      "sdnn_abs_error_ms": 1.7514836214859315,
+      "execution_seconds": 0.7979314999975031,
+      "realtime_ratio_percent": 0.13298636689358992,
+      "ppg_detector_count": 62,
+      "error": ""
+    },
+    {
+      "record_id": "bidmc04",
+      "duration_s": 600.0099999994543,
+      "reference_method": "dual_ecg_consensus",
+      "reference_coverage": 0.999983333612016,
+      "n_reference": 738,
+      "n_ppg": 714,
+      "n_correct": 700,
+      "sensitivity_percent": 94.8509485094851,
+      "ppv_percent": 98.03921568627452,
+      "f1_percent": 96.41873278236916,
+      "lag_median_ms": 867.5000003377883,
+      "lag_iqr_ms": 7.499999875165031,
+      "lag_drift_ms_per_min": -2.999999950065982,
+      "timing_mae_ms": 15.245782136090243,
+      "timing_p95_ms": 32.512749948590155,
+      "rr_pair_count": 678,
+      "rr_mae_ms": 7.684365782007785,
+      "rr_p95_ms": 24.999999999246825,
+      "rr_correlation": 0.9468762997331825,
+      "rmssd_reference_ms": 40.7700499103686,
+      "rmssd_ppg_ms": 36.19182897904521,
+      "rmssd_abs_error_ms": 4.578220931323386,
+      "sdnn_reference_ms": 37.212856822534874,
+      "sdnn_ppg_ms": 36.48317766358177,
+      "sdnn_abs_error_ms": 0.729679158953104,
+      "execution_seconds": 0.8562639000010677,
+      "realtime_ratio_percent": 0.14270827152911558,
+      "ppg_detector_count": 714,
+      "error": ""
+    },
+    {
+      "record_id": "bidmc05",
+      "duration_s": 600.0099999994543,
+      "reference_method": "dual_ecg_consensus",
+      "reference_coverage": 0.999983333612016,
+      "n_reference": 784,
+      "n_ppg": 773,
+      "n_correct": 759,
+      "sensitivity_percent": 96.81122448979592,
+      "ppv_percent": 98.1888745148771,
+      "f1_percent": 97.495183044316,
+      "lag_median_ms": 120.00000024245213,
+      "lag_iqr_ms": 1.8569267012935597e-07,
+      "lag_drift_ms_per_min": 7.427706744006244e-08,
+      "timing_mae_ms": 16.07378129724576,
+      "timing_p95_ms": 39.99999998095518,
+      "rr_pair_count": 752,
+      "rr_mae_ms": 13.257978723570222,
+      "rr_p95_ms": 30.00000000071168,
+      "rr_correlation": 0.28333330577775,
+      "rmssd_reference_ms": 8.291057423473768,
+      "rmssd_ppg_ms": 36.373416598852074,
+      "rmssd_abs_error_ms": 28.082359175378308,
+      "sdnn_reference_ms": 8.994232395940234,
+      "sdnn_ppg_ms": 22.636828073102784,
+      "sdnn_abs_error_ms": 13.64259567716255,
+      "execution_seconds": 0.888302899998962,
+      "realtime_ratio_percent": 0.14804801586636387,
+      "ppg_detector_count": 773,
+      "error": ""
+    }
+  ],
+  "run_metadata": {}
+}

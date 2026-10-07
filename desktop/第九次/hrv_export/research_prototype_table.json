@@ -1,0 +1,665 @@
+[
+  {
+    "code": "INWARD_QUIET",
+    "name": "向内安静",
+    "priority": 40,
+    "test_state": "静止、注意向内时，心率趋缓，RMSSD与HF相对个人近期稳定基线增强，同时LF/HF谱形比下降。",
+    "user_narrative": "这段时间，心跳整体稍慢，较快、常跟呼吸一起变化的起伏更明显，较慢与较快起伏的相对比例也在下降。研究中，静坐并把注意力转向身体内部时出现过相似组合。",
+    "semantic_phrases": [
+      {
+        "text": "平稳",
+        "base_weight": 1.0
+      },
+      {
+        "text": "慢下来",
+        "base_weight": 0.92
+      },
+      {
+        "text": "呼吸相关起伏明显",
+        "base_weight": 0.9
+      },
+      {
+        "text": "注意向内",
+        "base_weight": 0.84
+      },
+      {
+        "text": "舒缓",
+        "base_weight": 0.66
+      }
+    ],
+    "source_ids": [
+      1,
+      5
+    ],
+    "sources": [
+      {
+        "source_id": 1,
+        "authors": "Shr-Da Wu, Pei-Chen Lo",
+        "title": "Inward-attention meditation increases parasympathetic activity: a study based on heart rate variability",
+        "year": 2008,
+        "journal": "Biomedical Research",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/18997439/",
+        "study_detail": "10名有Zen禅修经验者与10名无禅修经验对照，比较内向注意冥想与正常休息",
+        "finding_detail": "有经验组冥想时，较快、常跟呼吸一起变化的心率起伏增强，较慢起伏所占的比重下降，并观察到更规则的心率起伏",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      },
+      {
+        "source_id": 5,
+        "authors": "Ido Amihai, Maria Kozhevnikov",
+        "title": "Arousal vs. Relaxation: A Comparison of the Neurophysiological and Cognitive Correlates of Vajrayana and Theravada Meditative Practices",
+        "year": 2014,
+        "journal": "PLOS ONE",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0102990",
+        "study_detail": "10名长期Theravada练习者（2女，平均41.4岁、8年经验，泰国Yannawa Temple）与9名长期Vajrayana练习者（1女，平均47.5岁、7.4年经验，尼泊尔Shechen Monastery）",
+        "finding_detail": "Theravada Vipassana时，较快、常跟呼吸一起变化的起伏增强，较慢与较快起伏的相对比例下降；Vajrayana的两种练习则出现较快起伏减弱",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "RESONANCE_0P1",
+    "name": "缓慢而规律",
+    "priority": 100,
+    "test_state": "Welch在约0.075–0.11 Hz形成窄而突出的主峰，连续窗口主峰频率稳定，表现为低频规则振荡结构。",
+    "user_narrative": "心跳起伏逐渐集中成一个缓慢而规律的节奏，大约每10秒完成一次起伏。慢呼吸和部分冥想研究里出现过相似节律。",
+    "semantic_phrases": [
+      {
+        "text": "有规律",
+        "base_weight": 1.0
+      },
+      {
+        "text": "缓慢",
+        "base_weight": 0.96
+      },
+      {
+        "text": "节奏清楚",
+        "base_weight": 0.9
+      },
+      {
+        "text": "平稳",
+        "base_weight": 0.82
+      },
+      {
+        "text": "呼吸节律明显",
+        "base_weight": 0.72
+      }
+    ],
+    "source_ids": [
+      2,
+      6
+    ],
+    "sources": [
+      {
+        "source_id": 2,
+        "authors": "C-K Peng, Isaac C Henry, Joseph E Mietus, Jeffrey M Hausdorff, Gurucharan Khalsa, Herbert Benson, Ary L Goldberger",
+        "title": "Heart rate dynamics during three forms of meditation",
+        "year": 2004,
+        "journal": "International Journal of Cardiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/15159033/",
+        "study_detail": "10名有经验冥想者（4女6男，29–55岁，平均42岁）依次完成放松反应、火呼吸和分段呼吸",
+        "finding_detail": "放松反应与分段呼吸时，出现约每10–20秒一次的较强心率起伏，心率与呼吸也更同步；火呼吸时平均心率升高，同步程度下降",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      },
+      {
+        "source_id": 6,
+        "authors": "Caroline Peressutti, Juan M Martín-González, Juan M García-Manso, Denkô Mesa",
+        "title": "Heart rate dynamics in different levels of Zen meditation",
+        "year": 2010,
+        "journal": "International Journal of Cardiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19631997/",
+        "study_detail": "19名Soto-Zen坐禅练习者（7女12男，平均43.8岁，练习经验2个月–20年），其中4人同步记录呼吸",
+        "finding_detail": "研究同时比较不同快慢的心率起伏和它们随时间的变化，观察到呼吸带来的心率起伏会随练习经验不同而变化",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "PHASED_VIPASSANA",
+    "name": "分阶段重组",
+    "priority": 80,
+    "test_state": "十几到几十分钟内出现可重复的阶段结构：早段频带能量下降、中段LF与HF共同增强、后段再次回落。",
+    "user_narrative": "过去十几分钟出现了明显的阶段变化：前段起伏收窄，中段较慢和较快的起伏一起变明显，随后再次回落。",
+    "semantic_phrases": [
+      {
+        "text": "逐步调整",
+        "base_weight": 1.0
+      },
+      {
+        "text": "过渡中",
+        "base_weight": 0.92
+      },
+      {
+        "text": "起伏先收后放",
+        "base_weight": 0.9
+      },
+      {
+        "text": "变化分明",
+        "base_weight": 0.82
+      }
+    ],
+    "source_ids": [
+      4
+    ],
+    "sources": [
+      {
+        "source_id": 4,
+        "authors": "Luis Carlos Delgado-Pastor, Pandelis Perakakis, Pailoor Subramanya, Shirley Telles, Jaime Vila",
+        "title": "Mindfulness (Vipassana) meditation: effects on P3b event-related potential and heart rate variability",
+        "year": 2013,
+        "journal": "International Journal of Psychophysiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23892096/",
+        "study_detail": "10名男性Vipassana经验者（20–61岁，至少2年练习，平均7.5年、每周约15小时）完成30分钟结构化冥想；因信号干扰排除3人：Anapana 10分钟、Vipassana 15分钟、Metta 5分钟",
+        "finding_detail": "前10分钟整体心率起伏减弱，中间15分钟较慢和较快的起伏一起增强，最后5分钟再次回落；中间阶段的节律变化最明显",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "TRAINED_VIPASSANA_SHIFT",
+    "name": "呼吸相关起伏突出",
+    "priority": 55,
+    "test_state": "HF标准化贡献相对近期基线增加，同时0.06–0.10 Hz Traube–Hering–Mayer子带功率下降。",
+    "user_narrative": "与刚才相比，较快、常跟呼吸一起变化的起伏更明显，同时一部分较慢起伏减弱，整个节律的重心正在移动。",
+    "semantic_phrases": [
+      {
+        "text": "呼吸相关起伏明显",
+        "base_weight": 1.0
+      },
+      {
+        "text": "重心移动",
+        "base_weight": 0.92
+      },
+      {
+        "text": "起伏重新分配",
+        "base_weight": 0.88
+      },
+      {
+        "text": "逐步调整",
+        "base_weight": 0.62
+      }
+    ],
+    "source_ids": [
+      3
+    ],
+    "sources": [
+      {
+        "source_id": 3,
+        "authors": "Jonathan R Krygier, James A J Heathers, Sara Shahrestani, Maree Abbott, James J Gross, Andrew H Kemp",
+        "title": "Mindfulness meditation, well-being, and heart rate variability: a preliminary investigation into the impact of intensive Vipassana meditation",
+        "year": 2013,
+        "journal": "International Journal of Psychophysiology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/23797150/",
+        "study_detail": "36名首次参加10天S. N. Goenka传统Vipassana密集课程的参与者（16男20女，平均43.8岁）在训练前后各比较5分钟静息与5分钟冥想",
+        "finding_detail": "训练前冥想时，较快、常跟呼吸一起变化的心率起伏增强；训练后这类起伏仍增强，同时一部分约每10–17秒一次的较慢起伏减弱",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "AROUSAL_MEDITATION",
+    "name": "活跃而有序",
+    "priority": 70,
+    "test_state": "数据稳定时HF相对个人基线下降，心率没有同步减慢，形成与安静高频增强型不同的有组织状态。",
+    "user_narrative": "较快、常跟呼吸一起变化的起伏变弱，心率没有一起变慢，整体节律仍较有组织。研究中的部分清醒、活跃冥想练习出现过相似组合。",
+    "semantic_phrases": [
+      {
+        "text": "清醒",
+        "base_weight": 1.0
+      },
+      {
+        "text": "有序",
+        "base_weight": 0.96
+      },
+      {
+        "text": "集中",
+        "base_weight": 0.78
+      },
+      {
+        "text": "呼吸相关起伏减弱",
+        "base_weight": 0.88
+      }
+    ],
+    "source_ids": [
+      5
+    ],
+    "sources": [
+      {
+        "source_id": 5,
+        "authors": "Ido Amihai, Maria Kozhevnikov",
+        "title": "Arousal vs. Relaxation: A Comparison of the Neurophysiological and Cognitive Correlates of Vajrayana and Theravada Meditative Practices",
+        "year": 2014,
+        "journal": "PLOS ONE",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0102990",
+        "study_detail": "10名长期Theravada练习者（2女，平均41.4岁、8年经验，泰国Yannawa Temple）与9名长期Vajrayana练习者（1女，平均47.5岁、7.4年经验，尼泊尔Shechen Monastery）",
+        "finding_detail": "Theravada Vipassana时，较快、常跟呼吸一起变化的起伏增强，较慢与较快起伏的相对比例下降；Vajrayana的两种练习则出现较快起伏减弱",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "SLOW_RECOVERY_VLF",
+    "name": "慢慢恢复中",
+    "priority": 50,
+    "test_state": "较快的HF和LF/HF已回到个人基线附近，VLF仍持续偏离，形成更慢时间尺度的恢复拖尾。",
+    "user_narrative": "较快的起伏已经接近你这次记录里的近期常态，最慢的背景变化还没有完全回来，身体可能仍处在一个更慢的恢复过程里。",
+    "semantic_phrases": [
+      {
+        "text": "恢复",
+        "base_weight": 1.0
+      },
+      {
+        "text": "逐渐回稳",
+        "base_weight": 0.96
+      },
+      {
+        "text": "慢变化仍在",
+        "base_weight": 0.94
+      },
+      {
+        "text": "平稳",
+        "base_weight": 0.46
+      }
+    ],
+    "source_ids": [
+      7
+    ],
+    "sources": [
+      {
+        "source_id": 7,
+        "authors": "Harunobu Usui, Yusuke Nishida",
+        "title": "The very low-frequency band of heart rate variability represents the slow recovery component after a mental stress task",
+        "year": 2017,
+        "journal": "PLOS ONE",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/28806776/",
+        "study_detail": "19名健康年轻受试者先静息10分钟，再完成20分钟Stroop任务，并继续静息恢复120分钟",
+        "finding_detail": "任务结束后，较快、常跟呼吸一起变化的起伏和快慢起伏比例很快回到休息水平，最慢的背景变化恢复得更慢",
+        "condition_detail": "",
+        "evidence_level": "study",
+        "transfer_note": ""
+      }
+    ]
+  },
+  {
+    "code": "STEADY_EVEN",
+    "name": "平稳而均匀",
+    "priority": 35,
+    "test_state": "多个主要节律指标长期接近个人近期参照，没有明显单方向偏移，且窗口内部变化较小。",
+    "user_narrative": "过去一段时间，心跳起伏的强弱和快慢都比较稳定，没有哪一种变化持续占上风。这是一种描述性的节律形态，不代表某种特定情绪。",
+    "semantic_phrases": [
+      {
+        "text": "平稳",
+        "base_weight": 1.0
+      },
+      {
+        "text": "均匀",
+        "base_weight": 0.96
+      },
+      {
+        "text": "有序",
+        "base_weight": 0.82
+      },
+      {
+        "text": "少游移",
+        "base_weight": 0.76
+      }
+    ],
+    "source_ids": [],
+    "sources": []
+  },
+  {
+    "code": "WHOLE_VARIABILITY_RISE",
+    "name": "起伏整体变强",
+    "priority": 62,
+    "test_state": "RMSSD与总功率相对个人参照共同上升，LF/HF绝对功率可以同向增强。",
+    "user_narrative": "这一段心跳整体更有起伏，较慢和较快的节律可以一起变明显。慢呼吸和部分安抚练习研究中出现过相似的整体增强。",
+    "semantic_phrases": [
+      {
+        "text": "起伏更丰富",
+        "base_weight": 1.0
+      },
+      {
+        "text": "快慢一起增强",
+        "base_weight": 0.96
+      },
+      {
+        "text": "弹性增加",
+        "base_weight": 0.82
+      },
+      {
+        "text": "呼吸相关起伏明显",
+        "base_weight": 0.56
+      }
+    ],
+    "source_ids": [
+      9,
+      10
+    ],
+    "sources": [
+      {
+        "source_id": 9,
+        "authors": "Sylvain Laborde, Mark S Allen, Uwe Borges, Fabien Dosseville, Thomas J Hosang, Martin Iskra, Emma Mosley, Chiara Salvotti, Luca Spolverato, Nicholas Zammit, Fabien Javelle",
+        "title": "Effects of voluntary slow breathing on heart rate and heart rate variability: A systematic review and a meta-analysis",
+        "year": 2022,
+        "journal": "Neuroscience & Biobehavioral Reviews",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/35623448/",
+        "study_detail": "系统综述与荟萃分析纳入223项自主慢呼吸研究，其中172项观察练习当下、16项观察单次练习后、49项观察多次训练后",
+        "finding_detail": "慢呼吸期间、单次练习后以及多次训练后，反映心跳间隔起伏的多项指标总体都出现增强",
+        "condition_detail": "自主放慢呼吸速度，包括腹式呼吸、膈肌呼吸和心率变异性反馈等做法",
+        "evidence_level": "systematic_review_meta_analysis",
+        "transfer_note": "适合支持缓慢而规律、整体起伏增强等形态；不能单独推出用户正在放松或冥想"
+      },
+      {
+        "source_id": 10,
+        "authors": "Hans Kirschner, Willem Kuyken, Kim Wright, Henrietta Roberts, Claire Brejcha, Anke Karl",
+        "title": "Soothing Your Heart and Feeling Connected: A New Experimental Paradigm to Study the Benefits of Self-Compassion",
+        "year": 2019,
+        "journal": "Clinical Psychological Science",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32655984/",
+        "study_detail": "135名参与者随机进入两种短时自我关怀练习，以及反刍、中性和积极兴奋三种对照条件",
+        "finding_detail": "两种自我关怀练习都出现心率下降、皮肤电活动下降和心跳间隔起伏增强的组合，反刍条件呈相反方向",
+        "condition_detail": "短时自我关怀练习与三类对照条件比较",
+        "evidence_level": "randomized_experiment",
+        "transfer_note": "只支持安抚型身体组合的研究类比，不用于判断安全感、焦虑或其他心理状态"
+      }
+    ]
+  },
+  {
+    "code": "WHOLE_VARIABILITY_NARROW",
+    "name": "起伏整体收窄",
+    "priority": 61,
+    "test_state": "RMSSD与总功率相对个人参照共同下降，多个快慢成分整体收窄。",
+    "user_narrative": "这一段心跳起伏整体变小，较慢和较快的变化都比刚才更收敛。持续注意和部分任务研究中出现过相似形态。",
+    "semantic_phrases": [
+      {
+        "text": "起伏收窄",
+        "base_weight": 1.0
+      },
+      {
+        "text": "集中",
+        "base_weight": 0.88
+      },
+      {
+        "text": "少游移",
+        "base_weight": 0.82
+      },
+      {
+        "text": "有序",
+        "base_weight": 0.66
+      }
+    ],
+    "source_ids": [
+      11,
+      13
+    ],
+    "sources": [
+      {
+        "source_id": 11,
+        "authors": "Hye-Geum Kim, Eun-Jin Cheon, Dai-Seg Bai, Young Hwan Lee, Bon-Hoon Koo",
+        "title": "Stress and Heart Rate Variability: A Meta-Analysis and Review of the Literature",
+        "year": 2018,
+        "journal": "Psychiatry Investigation",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29486547/",
+        "study_detail": "综述筛选出37篇使用心跳间隔变化观察人类心理压力反应的研究",
+        "finding_detail": "多数研究在压力任务中观察到心跳间隔起伏发生变化，但不同任务和指标的方向并不完全一致",
+        "condition_detail": "实验室心理压力与任务反应研究的综合整理",
+        "evidence_level": "systematic_review",
+        "transfer_note": "只用于支持投入或起伏收窄等形态可在压力任务中出现，不能据此诊断压力"
+      },
+      {
+        "source_id": 13,
+        "authors": "Antonio Luque-Casado, José C Perales, David Cárdenas, Daniel Sanabria",
+        "title": "Heart rate variability and cognitive processing: The autonomic response to task demands",
+        "year": 2016,
+        "journal": "Biological Psychology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26638762/",
+        "study_detail": "参与者完成持续注意、工作记忆和时长判断任务，并与控制条件比较，同时报告主观任务负荷",
+        "finding_detail": "心跳间隔起伏会随任务要求改变，工作记忆任务中的整体起伏最低，并且随着持续做任务而进一步减小",
+        "condition_detail": "持续注意与认知任务",
+        "evidence_level": "controlled_experiment",
+        "transfer_note": "适合支持进入专注或整体起伏收窄的研究类比，不等同于用户主观专注程度"
+      }
+    ]
+  },
+  {
+    "code": "SOOTHING_DOWNSHIFT",
+    "name": "安抚下来",
+    "priority": 76,
+    "test_state": "心率相对近期参照下降，同时RMSSD与较快起伏增强，形成低唤醒方向的组合。",
+    "user_narrative": "心跳速度在慢下来，同时心跳之间的自然起伏变得更明显。自我关怀练习研究中观察到过类似的身体组合。",
+    "semantic_phrases": [
+      {
+        "text": "舒缓",
+        "base_weight": 1.0
+      },
+      {
+        "text": "慢下来",
+        "base_weight": 0.96
+      },
+      {
+        "text": "平稳",
+        "base_weight": 0.86
+      },
+      {
+        "text": "起伏更丰富",
+        "base_weight": 0.66
+      }
+    ],
+    "source_ids": [
+      10
+    ],
+    "sources": [
+      {
+        "source_id": 10,
+        "authors": "Hans Kirschner, Willem Kuyken, Kim Wright, Henrietta Roberts, Claire Brejcha, Anke Karl",
+        "title": "Soothing Your Heart and Feeling Connected: A New Experimental Paradigm to Study the Benefits of Self-Compassion",
+        "year": 2019,
+        "journal": "Clinical Psychological Science",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32655984/",
+        "study_detail": "135名参与者随机进入两种短时自我关怀练习，以及反刍、中性和积极兴奋三种对照条件",
+        "finding_detail": "两种自我关怀练习都出现心率下降、皮肤电活动下降和心跳间隔起伏增强的组合，反刍条件呈相反方向",
+        "condition_detail": "短时自我关怀练习与三类对照条件比较",
+        "evidence_level": "randomized_experiment",
+        "transfer_note": "只支持安抚型身体组合的研究类比，不用于判断安全感、焦虑或其他心理状态"
+      }
+    ]
+  },
+  {
+    "code": "FOCUSED_ENGAGEMENT",
+    "name": "进入专注状态",
+    "priority": 58,
+    "test_state": "心跳间隔总体起伏收窄，并在数分钟内持续；心率不要求同步升高。",
+    "user_narrative": "心跳之间的变化持续收窄，节律更集中、更少游移。持续注意和认知任务研究中出现过类似变化，但它不能单独说明你主观上是否专注或紧张。",
+    "semantic_phrases": [
+      {
+        "text": "集中",
+        "base_weight": 1.0
+      },
+      {
+        "text": "少游移",
+        "base_weight": 0.96
+      },
+      {
+        "text": "有序",
+        "base_weight": 0.86
+      },
+      {
+        "text": "持续投入",
+        "base_weight": 0.84
+      }
+    ],
+    "source_ids": [
+      13,
+      11
+    ],
+    "sources": [
+      {
+        "source_id": 13,
+        "authors": "Antonio Luque-Casado, José C Perales, David Cárdenas, Daniel Sanabria",
+        "title": "Heart rate variability and cognitive processing: The autonomic response to task demands",
+        "year": 2016,
+        "journal": "Biological Psychology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/26638762/",
+        "study_detail": "参与者完成持续注意、工作记忆和时长判断任务，并与控制条件比较，同时报告主观任务负荷",
+        "finding_detail": "心跳间隔起伏会随任务要求改变，工作记忆任务中的整体起伏最低，并且随着持续做任务而进一步减小",
+        "condition_detail": "持续注意与认知任务",
+        "evidence_level": "controlled_experiment",
+        "transfer_note": "适合支持进入专注或整体起伏收窄的研究类比，不等同于用户主观专注程度"
+      },
+      {
+        "source_id": 11,
+        "authors": "Hye-Geum Kim, Eun-Jin Cheon, Dai-Seg Bai, Young Hwan Lee, Bon-Hoon Koo",
+        "title": "Stress and Heart Rate Variability: A Meta-Analysis and Review of the Literature",
+        "year": 2018,
+        "journal": "Psychiatry Investigation",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29486547/",
+        "study_detail": "综述筛选出37篇使用心跳间隔变化观察人类心理压力反应的研究",
+        "finding_detail": "多数研究在压力任务中观察到心跳间隔起伏发生变化，但不同任务和指标的方向并不完全一致",
+        "condition_detail": "实验室心理压力与任务反应研究的综合整理",
+        "evidence_level": "systematic_review",
+        "transfer_note": "只用于支持投入或起伏收窄等形态可在压力任务中出现，不能据此诊断压力"
+      }
+    ]
+  },
+  {
+    "code": "REBOUND_RECOVERY",
+    "name": "从紧绷中回弹",
+    "priority": 82,
+    "test_state": "此前存在心率上移或HRV收窄，随后数分钟内RMSSD/总功率回升且心率回落。",
+    "user_narrative": "前面一段较收敛的节律正在松开，心跳之间的自然起伏重新变得明显。任务结束后的恢复研究中出现过类似的回弹过程。",
+    "semantic_phrases": [
+      {
+        "text": "恢复",
+        "base_weight": 1.0
+      },
+      {
+        "text": "逐渐回稳",
+        "base_weight": 0.92
+      },
+      {
+        "text": "松开",
+        "base_weight": 0.86
+      },
+      {
+        "text": "起伏更丰富",
+        "base_weight": 0.72
+      }
+    ],
+    "source_ids": [
+      12,
+      14,
+      15
+    ],
+    "sources": [
+      {
+        "source_id": 12,
+        "authors": "E S Mezzacappa, R M Kelsey, E S Katkin, R P Sloan",
+        "title": "Vagal rebound and recovery from psychological stress",
+        "year": 2001,
+        "journal": "Psychosomatic Medicine",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/11485119/",
+        "study_detail": "两组实验让参与者完成冷刺激、心算或Stroop等任务，并比较任务前、任务中和任务后的心率与心跳间隔变化",
+        "finding_detail": "任务结束后的恢复阶段，心率可低于基线，而心跳间隔起伏可高于基线；最明显的回弹常出现在恢复开始阶段",
+        "condition_detail": "急性任务结束后的短时恢复",
+        "evidence_level": "controlled_experiment",
+        "transfer_note": "支持从紧绷样变化向恢复样变化过渡的时间结构，不代表用户经历了同样的压力任务"
+      },
+      {
+        "source_id": 14,
+        "authors": "Amy R Borchardt, Peggy M Zoccola",
+        "title": "Recovery from stress: an experimental examination of focused attention meditation in novices",
+        "year": 2018,
+        "journal": "Journal of Behavioral Medicine",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29850971/",
+        "study_detail": "99名没有冥想经验的大学生在标准化压力任务后，被随机分配到专注冥想、听有声书或安静坐着三种恢复条件",
+        "finding_detail": "三组的心跳间隔起伏在恢复期都回到基线；冥想组还出现了皮肤电恢复，以及更完整的情绪自评回归",
+        "condition_detail": "压力任务后的恢复与短时专注练习",
+        "evidence_level": "randomized_experiment",
+        "transfer_note": "支持恢复过程可能有多种路径；不能把某种恢复形态直接解释成正在冥想"
+      },
+      {
+        "source_id": 15,
+        "authors": "Valerie L Jentsch, Oliver T Wolf",
+        "title": "The impact of emotion regulation on cardiovascular, neuroendocrine and psychological stress responses",
+        "year": 2020,
+        "journal": "Biological Psychology",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/32437903/",
+        "study_detail": "86名女性在压力任务中分别采用重新评价、表达抑制或对照策略",
+        "finding_detail": "重新评价组在任务中一度出现更小的心跳间隔起伏，但任务结束后的回升比表达抑制组更强",
+        "condition_detail": "压力任务中的情绪调节策略及任务后恢复",
+        "evidence_level": "controlled_experiment",
+        "transfer_note": "支持先收窄、随后回弹的时序结构；不能由腕带数据推断用户采用了某种情绪调节策略"
+      }
+    ]
+  },
+  {
+    "code": "MIXED_TRANSITION",
+    "name": "混合过渡中",
+    "priority": 20,
+    "test_state": "多个指标发生中等幅度偏移，但方向不形成单一一致模式；作为可靠数据下的过渡性兜底形态。",
+    "user_narrative": "这一段有几种变化同时存在，还没有收拢成单一方向。这类过渡并不罕见，研究也显示不同任务和练习中的心跳变化并不会只有一种固定模式。",
+    "semantic_phrases": [
+      {
+        "text": "过渡中",
+        "base_weight": 1.0
+      },
+      {
+        "text": "逐步调整",
+        "base_weight": 0.92
+      },
+      {
+        "text": "多种变化并存",
+        "base_weight": 0.9
+      },
+      {
+        "text": "尚未定型",
+        "base_weight": 0.76
+      }
+    ],
+    "source_ids": [
+      11,
+      16
+    ],
+    "sources": [
+      {
+        "source_id": 11,
+        "authors": "Hye-Geum Kim, Eun-Jin Cheon, Dai-Seg Bai, Young Hwan Lee, Bon-Hoon Koo",
+        "title": "Stress and Heart Rate Variability: A Meta-Analysis and Review of the Literature",
+        "year": 2018,
+        "journal": "Psychiatry Investigation",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/29486547/",
+        "study_detail": "综述筛选出37篇使用心跳间隔变化观察人类心理压力反应的研究",
+        "finding_detail": "多数研究在压力任务中观察到心跳间隔起伏发生变化，但不同任务和指标的方向并不完全一致",
+        "condition_detail": "实验室心理压力与任务反应研究的综合整理",
+        "evidence_level": "systematic_review",
+        "transfer_note": "只用于支持投入或起伏收窄等形态可在压力任务中出现，不能据此诊断压力"
+      },
+      {
+        "source_id": 16,
+        "authors": "Lydia Brown, Alora A Rando, Kristina Eichel, Nicholas T Van Dam, Christopher M Celano, Jeff C Huffman, Meg E Morris",
+        "title": "The Effects of Mindfulness and Meditation on Vagally Mediated Heart Rate Variability: A Meta-Analysis",
+        "year": 2021,
+        "journal": "Psychosomatic Medicine",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/33395216/",
+        "study_detail": "荟萃分析纳入19项以静坐为主的正念或冥想随机对照试验，比较训练后静息状态的心跳间隔变化",
+        "finding_detail": "总体结果没有显示训练相对对照能稳定提高静息时的心跳间隔起伏，而且不同研究之间差异很大",
+        "condition_detail": "正念与冥想随机对照研究的综合结果",
+        "evidence_level": "meta_analysis_caution",
+        "transfer_note": "作为解释边界：相似节律只能表示形态相似，不能把更大的起伏直接等同于冥想效果"
+      }
+    ]
+  }
+]
