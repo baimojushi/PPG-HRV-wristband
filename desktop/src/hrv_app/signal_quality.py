@@ -43,10 +43,34 @@ def evaluate_signal_quality(
         )
 
     raw = np.asarray([s.raw for s in samples], dtype=float)
+    filtered = np.asarray([s.filtered for s in samples], dtype=float)
     flags = np.asarray([s.flags for s in samples], dtype=np.int64)
 
     wear = (flags & 0x01) != 0
     wear_ratio = float(np.mean(wear))
+
+    # 数值边界和固件 flags 双重检查，兼容历史 CSV。
+    clip_low = (raw <= cfg.adc_low) | ((flags & 0x02) != 0)
+    clip_high = (raw >= cfg.adc_high) | ((flags & 0x04) != 0)
+    clip_low_ratio = float(np.mean(clip_low))
+    clip_high_ratio = float(np.mean(clip_high))
+    clipping_ratio = min(clip_low_ratio + clip_high_ratio, 1.0)
+
+    # Filtered 信号质量指标（v0.4.7 修复：检测固件 filtered 输出的负值/基线漂移）
+    filtered_negative_ratio = float(np.mean(filtered < 0))
+    # 1秒滑动窗口标准差，检测基线漂移
+    if len(filtered) >= 125:
+        baseline = np.convolve(filtered, np.ones(125)/125, mode='valid')
+        filtered_baseline_std = float(np.std(baseline))
+    else:
+        filtered_baseline_std = 0.0
+
+    # Filtered 信号质量：负值比例 + 基线漂移惩罚
+    filtered_quality = float(np.clip(
+        1.0 - filtered_negative_ratio / 0.10
+        - np.clip(filtered_baseline_std / 50.0, 0.0, 1.0),
+        0.0, 1.0
+    ))
 
     # 数值边界和固件 flags 双重检查，兼容历史 CSV。
     clip_low = (raw <= cfg.adc_low) | ((flags & 0x02) != 0)
@@ -93,11 +117,12 @@ def evaluate_signal_quality(
     ))
 
     sqi = (
-        0.45 * clipping_score
-        + 0.20 * wear_score
+        0.35 * clipping_score
+        + 0.15 * wear_score
         + 0.15 * timing_score
         + 0.10 * sequence_score
         + 0.10 * protocol_score
+        + 0.15 * filtered_quality
     )
     sqi = float(
         np.clip(
@@ -145,7 +170,7 @@ def evaluate_signal_quality(
         )
 
     contact_score = float(np.clip(
-        0.65 * clipping_score + 0.35 * wear_score,
+        0.40 * clipping_score + 0.25 * wear_score + 0.35 * filtered_quality,
         0.0,
         1.0,
     ))

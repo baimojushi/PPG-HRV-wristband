@@ -91,6 +91,13 @@ def preprocess_ppg(
         idx = np.arange(values.size, dtype=float)
         values = np.interp(idx, idx[finite], values[finite])
 
+    # v0.4.7: 修正固件 filtered 信号的系统性负值偏移（固件滤波器基线漂移导致 60%+ 负值）
+    # 固件 filtered 已带通，但基线漂移导致大量负值；桌面端做零点校正，不再做二次带通
+    if np.mean(values < 0) > 0.2:  # 负值比例 > 20% 判定为基线漂移
+        values = values - float(np.median(values))  # 零点校正到中位数
+    else:
+        values = values - float(np.median(values))
+
     fs = _infer_sample_rate_hz(t_us, cfg.sample_rate_hz)
     dt_ms = np.diff(t_us.astype(float)) / 1000.0
     positive_dt_ms = dt_ms[dt_ms > 0]
@@ -110,13 +117,16 @@ def preprocess_ppg(
     )
 
     # 去除常量偏置；如果 filtfilt 需要的点数不够，则退化为稳健中心化。
-    centered = values - float(np.median(values))
+    # 注意：values 已经是零点校正后的信号，直接使用
+    centered = values
     cleaned = centered
     nyquist = fs * 0.5
     low = 0.5 / nyquist
     high = min(8.0 / nyquist, 0.95)
 
-    if 0 < low < high < 1.0 and values.size >= max(64, int(fs * 2.5)):
+    # v0.4.7: 临时强制关闭桌面端带通滤波，避免对固件已滤波信号二次带通导致基线漂移/极性翻转
+    # TODO: 改为基于固件滤波质量的自动检测 (config.preprocess_enable_bandpass)
+    if False and 0 < low < high < 1.0 and values.size >= max(64, int(fs * 2.5)):
         try:
             sos = signal.butter(2, [low, high], btype="bandpass", output="sos")
             cleaned = signal.sosfiltfilt(sos, centered)
