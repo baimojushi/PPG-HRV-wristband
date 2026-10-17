@@ -1,6 +1,25 @@
 # PPG / HRV 实时分析系统 v0.4.7
 
 
+# PPG / HRV 实时分析系统 v0.4.8
+
+
+## v0.4.8 · 焦点仪表板与联动刷选
+
+v0.4.8 在 v0.4.7 的证据链与重采样审计基础上，重构桌面端 UI 为**单屏点选聚焦式仪表板**：
+
+- 单屏仪表板：所有核心图块同屏可见（3×3 宽屏 / 4×2 中屏 / 9×1 窄屏），单击图块高亮、双击进入居中放大聚焦视图，Esc/返回键恢复总览；
+- **链表刷选**：`trend_plot`、`prototype_score_plot`、`frequency_trend_plot` 三条时间曲线共享统一 `LinearRegionItem` 刷选区间；拖动任一曲线上的半透明区间，其他两条同步高亮，并同步更新右侧 6 个文案标签（匹配摘要、时段、心态、转场、研究匹配、频段状态）；
+- **单块聚焦**：双击任意图块进入居中放大层，Esc/点击空白/右下“返回总览”恢复概览；聚焦态下仍保留刷选联动；
+- 响应式三档布局：`wide` (3×3) / `medium` (4×2→3 列) / `narrow` (9×1)；窗口大小变化自动重排；
+- Hero 区自动压缩，预留图块空间；`ESC` / 右下“返回总览”按钮双重保险退出聚焦；
+- `linked_brushing` / `tile_focus` 状态通过 `linkage_banner` 顶部横幅同步提示，右侧提供“清除刷选”按钮；
+- UI 增加 `DashboardTile` 组件（单击/双击信号、激活态样式、自适应布局）、`linkage_banner` 联动横幅、`focus_overlay` 聚焦遮罩层；
+- **关键词云**与 `research_prototypes` 的关键词权重计算复用 v0.4.5 逻辑；`hour_experience`、`prototype_score`、`trend_plot`、`frequency_trend_plot`、`research_state_frame`、`psd_plot`、`tf_plot` 复用原有绘图逻辑。
+
+设计说明：`docs/FOCUS_DASHBOARD_v0.4.8.md`；验证记录：`docs/VALIDATION_v0.4.8_FOCUS_DASHBOARD.md`。
+
+
 ## v0.4.7 · Beat 证据链与重采样审计加固
 
 v0.4.7 不改变固件、协议帧格式或 v0.4.6 的 125 Hz / 31.25 Hz 采样契约；本轮只把桌面端 Beat 时间可信度、固件相位差和重采样误差拆成可审计的独立证据，避免“波形形态分高 = 时间一定准”的过度自信。

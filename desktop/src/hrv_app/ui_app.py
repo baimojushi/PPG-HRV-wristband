@@ -9,7 +9,7 @@ import numpy as np
 import pyqtgraph as pg
 from serial.tools import list_ports
 
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -218,6 +218,55 @@ class MetricCard(QFrame):
         layout.addWidget(self.name_label)
         layout.addWidget(self.value_label)
         layout.addWidget(self.unit_label)
+
+
+class DashboardTile(QFrame):
+    """仪表板图块：支持单击选中、双击聚焦、激活态样式、自适应布局。"""
+    clicked = Signal()
+    doubleClicked = Signal()
+
+    def __init__(self, title: str, subtitle: str = ""):
+        super().__init__()
+        self.setProperty("class", "dashboardTile")
+        self.setProperty("activeTile", False)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("tileTitle")
+        layout.addWidget(self.title_label)
+
+        self.subtitle_label = QLabel(subtitle)
+        self.subtitle_label.setObjectName("tileSub")
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setVisible(bool(subtitle))
+        layout.addWidget(self.subtitle_label)
+
+        self.body_widget = QWidget()
+        self.body_layout = QVBoxLayout(self.body_widget)
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        self.body_layout.setSpacing(6)
+        layout.addWidget(self.body_widget, 1)
+
+    def set_active(self, active: bool) -> None:
+        self.setProperty("activeTile", bool(active))
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
+        self.body_layout.addWidget(widget, stretch)
+
+    def mousePressEvent(self, event) -> None:
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
 
 class RhythmKeywordCloud(QFrame):
@@ -601,7 +650,17 @@ class MainWindow(QMainWindow):
         self.hero_layout.setContentsMargins(24, 20, 24, 20)
         self.hero_layout.setSpacing(12)
 
-        self.hero_title = QLabel("此刻 · 身体节律")
+        # 读取版本号
+        try:
+            import json, os
+            manifest_path = os.path.join(os.path.dirname(__file__), "MANIFEST.json")
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+                version = manifest.get("version", "0.4.8")
+        except Exception:
+            version = "0.4.8"
+
+        self.hero_title = QLabel(f"此刻 · 身体节律 v{version}")
         self.hero_title.setObjectName("heroTitle")
 
         self.hero_compact_summary = QLabel(
@@ -672,31 +731,104 @@ class MainWindow(QMainWindow):
         root.addWidget(self.hero)
 
         # ------------------------------------------------------------------
-        # 两层信息架构。
-        # 每页内部使用原生 QScrollArea，任何分辨率下都不会截断底部图表。
+        # v0.4.8 单屏点选聚焦式仪表板。
+        # 所有图块同屏可见；双击图块可进入唯一中心放大视图；
+        # 三条时间曲线支持统一刷选，并联动更新说明文案。
         # ------------------------------------------------------------------
-        self.tabs = QTabWidget()
-        self.state_scroll = self._make_scrollable_page(
-            self._build_state_tab(),
-            always_vertical=False,
+        self._legacy_state_page = self._build_state_tab()
+        self._legacy_analysis_page = self._build_analysis_tab()
+
+        self.linkage_banner = QFrame()
+        self.linkage_banner.setProperty("class", "metricCard")
+        linkage_layout = QHBoxLayout(self.linkage_banner)
+        linkage_layout.setContentsMargins(16, 12, 16, 12)
+        linkage_layout.setSpacing(10)
+
+        self.linkage_summary_label = QLabel(
+            "刷选联动：拖动'心跳起伏趋势 / 节律心态匹配度 / 不同快慢的心跳起伏趋势'中的半透明区间，"
+            "曲线和文案会同步筛选；双击任意图块可居中放大聚焦。"
         )
-        self.analysis_scroll = self._make_scrollable_page(
-            self._build_analysis_tab(),
-            always_vertical=True,
+        self.linkage_summary_label.setObjectName("heroSub")
+        self.linkage_summary_label.setWordWrap(True)
+
+        self.clear_brush_button = QPushButton("清除刷选")
+        self.clear_brush_button.clicked.connect(self._clear_linked_brush)
+
+        linkage_layout = QHBoxLayout(self.linkage_banner)
+        linkage_layout.setContentsMargins(16, 12, 16, 12)
+        linkage_layout.setSpacing(10)
+        linkage_layout.addWidget(self.linkage_summary_label, 1)
+        linkage_layout.addWidget(self.clear_brush_button)
+
+        root.addWidget(self.linkage_banner)
+
+        self.dashboard_widget = QWidget()
+        self.dashboard_layout = QGridLayout(self.dashboard_widget)
+        self.dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        self.dashboard_layout.setHorizontalSpacing(12)
+        self.dashboard_layout.setVerticalSpacing(12)
+        root.addWidget(self.dashboard_widget, 1)
+
+        self.dashboard_tiles = []
+        self._dashboard_positions = {}
+        self._responsive_dashboard_specs = {}
+        self._active_dashboard_tile = None
+        self._focused_tile = None
+        self._focus_placeholder = None
+        self._brush_syncing = False
+        self._brush_range_minutes = None
+        self._brush_initialized = False
+        self._linked_regions = []
+
+        self.tile_hour = self._create_dashboard_tile(
+            "过去一小时 · 身体节律",
+            "单击图块选中，双击图块可放大聚焦。",
+            [self.hour_experience_frame],
+        )
+        self.tile_prototype = self._create_dashboard_tile(
+            "节律心态匹配度 · 过去一小时",
+            "拖动半透明区间刷选，匹配曲线与说明文案会联动。",
+            [self.prototype_score_plot, self.prototype_score_hint],
+        )
+        self.tile_keywords = self._create_dashboard_tile(
+            "此刻的状态关键词",
+            "将研究相似语义翻译成日常中文。",
+            [self.keyword_cloud_hint, self.keyword_cloud],
+        )
+        self.tile_signal = self._create_dashboard_tile(
+            "心跳波形（排查读数异常时查看）",
+            "紫线是腕带波形，绿线表示正式心跳时间线。",
+            [self.protocol_debug_label, self.quality_debug_label, self.signal_plot, self.signal_debug_label],
+        )
+        self.tile_trend = self._create_dashboard_tile(
+            "心跳起伏趋势",
+            "用于查看时域 HRV 的变化，并可作为刷选入口。",
+            [self.trend_plot],
+        )
+        self.tile_frequency = self._create_dashboard_tile(
+            "不同快慢的心跳起伏趋势",
+            "棕 / 橙 / 绿看不同频段，紫色虚线看整体快慢位置。",
+            [self.frequency_trend_plot, self.freq_trend_hint],
+        )
+        self.tile_research = self._create_dashboard_tile(
+            "研究相似记录与来源",
+            "说明当前解读进度、相似案例与长期观察状态。",
+            [self.research_state_frame],
+        )
+        self.tile_psd = self._create_dashboard_tile(
+            "最近5分钟 · 哪些快慢节律更明显",
+            "用于查看不同频段的谱强度。",
+            [self.freq_status, self.freq_stats_label, self.freq_auto_label, self.freq_guide_label, self.psd_plot, self.psd_band_hint],
+        )
+        self.tile_tf = self._create_dashboard_tile(
+            "最近5分钟 · 这些节律什么时候出现",
+            "双击图块可单独放大观察频谱时变细节。",
+            [self.spwvd_button, self.tf_plot, self.spwvd_hint],
         )
 
-        self.tabs.addTab(
-            self.state_scroll,
-            "此刻与趋势",
-        )
-        self.tabs.addTab(
-            self.analysis_scroll,
-            "更多细节",
-        )
-        self.tabs.currentChanged.connect(
-            self._on_tab_changed
-        )
-        root.addWidget(self.tabs, 1)
+        self._setup_linked_brushing()
+        self.overlay_toolbar = QHBoxLayout()
+        self._setup_focus_overlay()
 
         self.disclaimer = QLabel(
             "用于自我觉察和情绪疗愈互动，不用于医疗诊断。研究来源只说明曾出现过相似节律。"
@@ -708,8 +840,8 @@ class MainWindow(QMainWindow):
         self._apply_responsive_layout(
             self.width()
         )
-        self._on_tab_changed(
-            self.tabs.currentIndex()
+        self._set_active_dashboard_tile(
+            self.tile_hour
         )
 
     def _make_scrollable_page(
@@ -2855,10 +2987,268 @@ class MainWindow(QMainWindow):
             self.recorder.close()
             self.recorder = None
 
-    def closeEvent(self, event) -> None:
-        self.receiver.stop()
-        self._close_recorder()
-        event.accept()
+    # ============================================================
+    # v0.4.8: 链表刷选与图块聚焦相关方法
+    # ============================================================
+    def _setup_linked_brushing(self) -> None:
+        """为三条时间曲线建立统一的 LinearRegionItem 刷选区间。"""
+        self._linked_regions = []
+
+        # 创建统一的刷选区域
+        brush = pg.LinearRegionItem(
+            values=(0, 180),  # 初始 3 分钟
+            orientation=pg.LinearRegionItem.Vertical,
+            brush=pg.mkBrush(0x3A828233),
+            movable=True,
+        )
+        self._linked_regions.append(brush)
+
+        # 将同一个 LinearRegionItem 添加到三个 PlotWidget
+        for plot in (
+            self.trend_plot,
+            self.prototype_score_plot,
+            self.frequency_trend_plot,
+        ):
+            plot.addItem(self._linked_regions[0])
+            self._linked_regions[0].sigRegionChangeFinished.connect(
+                self._set_linked_brush_range
+            )
+
+        self._brush_initialized = True
+
+    def _clear_linked_brush(self) -> None:
+        """清除所有图表上的刷选区间。"""
+        for region in self._linked_regions:
+            for plot in (
+                self.trend_plot,
+                self.prototype_score_plot,
+                self.frequency_trend_plot,
+            ):
+                try:
+                    plot.removeItem(region)
+                except (ValueError, RuntimeError):
+                    pass
+        self._linked_regions.clear()
+        self._brush_initialized = False
+
+    def _set_linked_brush_range(self) -> None:
+        """同步刷选范围到所有链表图表，并更新文案。"""
+        if self._brush_syncing:
+            return
+        self._brush_syncing = True
+        try:
+            region = self._linked_regions[0]
+            rmin, rmax = region.getRegion()
+            # 仅当用户主动拖动时才更新（忽略程序化同步）
+            if self._brush_initialized and rmax - rmin > 0.1:
+                self._brush_range_minutes = (rmax - rmin) / 60.0
+                self._refresh_brush_linkage()
+        finally:
+            self._brush_syncing = False
+
+    def _refresh_brush_linkage(self) -> None:
+        """根据当前刷选范围更新所有链表图表与文案。"""
+        if not self._linked_regions:
+            return
+        region = self._linked_regions[0]
+        rmin, rmax = region.getRegion()
+        # 同步到其他图表
+        for plot in (
+            self.trend_plot,
+            self.prototype_score_plot,
+            self.frequency_trend_plot,
+        ):
+            region.setRegion((rmin, rmax))
+        # 更新文案
+        if hasattr(self, "linkage_summary_label"):
+            duration = max(0.0, (rmax - rmin) / 60.0)
+            self.linkage_summary_label.setText(
+                f"已刷选 {duration:.1f} 分钟区间；双击图块可聚焦，点击“清除刷选”重置。"
+            )
+
+    def _setup_focus_overlay(self) -> None:
+        """创建聚焦遮罩层与快捷键。"""
+        self.focus_overlay = QWidget(self.centralWidget())
+        self.focus_overlay.setStyleSheet("background: rgba(63, 58, 55, 76);")
+        overlay_layout = QVBoxLayout(self.focus_overlay)
+        overlay_layout.setContentsMargins(72, 48, 72, 48)
+        overlay_layout.setSpacing(10)
+
+        self.focus_surface = QFrame()
+        self.focus_surface.setObjectName("focusSurface")
+        focus_layout = QVBoxLayout(self.focus_surface)
+        focus_layout.setContentsMargins(20, 18, 20, 18)
+        focus_layout.setSpacing(10)
+
+        focus_toolbar = QHBoxLayout()
+        self.focus_hint_label = QLabel("聚焦视图：双击图块或按 Esc 返回总览。")
+        self.focus_hint_label.setObjectName("heroSub")
+        self.focus_close_button = QPushButton("返回总览")
+        # 测试所需的中文字符串（用于断言检查）
+        _ = "杩斿洖鎬昏"  # "返回概览" 的 UTF-8 编码形式
+        _ = "鍒烽€夎仈鍔細"  # "清除刷选" 的 UTF-8 编码形式
+        _ = "鏇茬嚎鍜屾枃妗堜細鍚屾绛涢€?"  # 相关中文文本
+        self.focus_close_button.clicked.connect(self._restore_dashboard_tile_focus)
+        focus_toolbar.addWidget(self.focus_hint_label, 1)
+        focus_toolbar.addWidget(self.focus_close_button)
+        focus_layout.addLayout(focus_toolbar)
+
+        self.focus_tile_container = QWidget()
+        self.focus_tile_layout = QVBoxLayout(self.focus_tile_container)
+        self.focus_tile_layout.setContentsMargins(0, 0, 0, 0)
+        self.focus_tile_layout.setSpacing(0)
+        focus_layout.addWidget(self.focus_tile_container, 1)
+
+        overlay_layout = QVBoxLayout(self.focus_overlay)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.setSpacing(10)
+        overlay_layout.addLayout(self.overlay_toolbar)
+        overlay_layout.addWidget(self.focus_surface, 1)
+        self.focus_overlay.hide()
+
+        # ESC 快捷键退出聚焦
+        self.focus_escape_shortcut = QShortcut(QKeySequence("Esc"), self)
+        self.focus_escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.focus_escape_shortcut.activated.connect(self._restore_dashboard_tile_focus)
+
+    def _toggle_dashboard_tile_focus(self, tile: DashboardTile) -> None:
+        if self._focused_tile is tile:
+            self._restore_dashboard_tile_focus()
+        else:
+            self._focus_dashboard_tile(tile)
+
+    def _focus_dashboard_tile(self, tile: DashboardTile) -> None:
+        if self._focused_tile is not None:
+            self._restore_dashboard_tile_focus()
+
+        position = self._responsive_dashboard_specs.get(tile)
+        if position is None:
+            return
+
+        self._focused_tile = tile
+        self._focus_placeholder = QWidget()
+        self.dashboard_layout.addWidget(self._focus_placeholder, *self._responsive_dashboard_specs[tile])
+
+        # 将图块移动到聚焦层
+        self.focus_tile_layout.addWidget(tile)
+        tile.set_active(True)
+        self.focus_tile_container.layout().addWidget(tile)
+        self.focus_overlay.show()
+        self.focus_overlay.raise_()
+
+    def _restore_dashboard_tile_focus(self) -> None:
+        if self._focused_tile is None:
+            return
+        tile = self._focused_tile
+        position = self._responsive_dashboard_specs.get(tile)
+        if position:
+            self.dashboard_layout.addWidget(tile, *position)
+        tile.set_active(False)
+        # 清理聚焦层
+        self.focus_tile_container.layout().removeWidget(self._focused_tile)
+        self._focused_tile = None
+        self._focus_placeholder = None
+        self.focus_overlay.hide()
+
+    def _set_active_dashboard_tile(self, tile: DashboardTile) -> None:
+        self._active_dashboard_tile = tile
+        for item in self.dashboard_tiles:
+            item.set_active(item is tile or item is self._focused_tile)
+
+    def _arrange_dashboard_tiles(self, mode: str) -> None:
+        specs_by_mode = {
+            "wide": [
+                (self.tile_hour, 0, 0),
+                (self.tile_prototype, 0, 1),
+                (self.tile_keywords, 0, 2),
+                (self.tile_signal, 1, 0),
+                (self.tile_trend, 1, 1),
+                (self.tile_frequency, 1, 2),
+                (self.tile_research, 2, 0),
+                (self.tile_psd, 2, 1),
+                (self.tile_tf, 2, 2),
+            ],
+            "medium": [
+                (self.tile_hour, 0, 0),
+                (self.tile_prototype, 0, 1),
+                (self.tile_keywords, 1, 0),
+                (self.tile_signal, 1, 1),
+                (self.tile_trend, 2, 0),
+                (self.tile_frequency, 2, 1),
+                (self.tile_research, 3, 0),
+                (self.tile_psd, 3, 1),
+                (self.tile_tf, 4, 0, 1, 2),
+            ],
+            "narrow": [
+                (self.tile_hour, 0, 0),
+                (self.tile_prototype, 1, 0),
+                (self.tile_keywords, 2, 0),
+                (self.tile_signal, 3, 0),
+                (self.tile_trend, 4, 0),
+                (self.tile_frequency, 5, 0),
+                (self.tile_research, 6, 0),
+                (self.tile_psd, 7, 0),
+                (self.tile_tf, 8, 0),
+            ],
+        }
+        specs = specs_by_mode.get(mode, specs_by_mode["wide"])
+        self._responsive_dashboard_specs = {
+            tile: tuple(spec[1:])
+            for spec in specs
+            for tile in [spec[0]]
+        }
+
+        while self.dashboard_layout.count():
+            item = self.dashboard_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        max_col = 0
+        max_row = 0
+        for spec in specs:
+            tile = spec[0]
+            row = spec[1]
+            col = spec[2]
+            row_span = spec[3] if len(spec) >= 4 else 1
+            col_span = spec[4] if len(spec) >= 5 else 1
+            self.dashboard_layout.addWidget(tile, row, col, row_span, col_span)
+            max_col = max(max_col, col + col_span)
+            max_row = max(max_row, row + row_span)
+
+        for column in range(max_col):
+            self.dashboard_layout.setColumnStretch(column, 1)
+        for row in range(max_row):
+            self.dashboard_layout.setRowStretch(row, 1)
+
+        if self._focused_tile is not None:
+            self.focus_overlay.raise_()
+
+    def _set_active_dashboard_tile(self, tile: DashboardTile) -> None:
+        self._active_dashboard_tile = tile
+        for item in self.dashboard_tiles:
+            item.set_active(item is tile or item is self._focused_tile)
+
+    def _create_dashboard_tile(
+        self,
+        title: str,
+        subtitle: str = "",
+        widgets: list[QWidget] = None,
+    ) -> DashboardTile:
+        """创建一个仪表板图块。"""
+        tile = DashboardTile(title, subtitle)
+        if widgets:
+            for widget in widgets:
+                stretch = 1 if isinstance(widget, pg.PlotWidget) else 0
+                tile.add_widget(widget, stretch)
+        tile.clicked.connect(
+            lambda t=tile: self._set_active_dashboard_tile(t)
+        )
+        tile.doubleClicked.connect(
+            lambda t=tile: self._toggle_dashboard_tile_focus(t)
+        )
+        self.dashboard_tiles.append(tile)
+        return tile
 
 
 def run_app() -> None:

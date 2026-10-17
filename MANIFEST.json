@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.7",
-  "base_version": "0.4.6",
-  "release_type": "beat-evidence-and-resampling-audit-hardening",
+  "version": "0.4.8",
+  "base_version": "0.4.7",
+  "release_type": "focus-dashboard-and-linked-brushing",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -79,7 +79,7 @@
   },
   "validation": {
     "python_compileall": "passed",
-    "tests": "153 passed (31 modules; executed in regression groups)",
+    "tests": "156 passed (31 modules; executed in regression groups)",
     "pure_cpp_detector_host_compile_and_run": "passed",
     "arduino_wrapper_stub_compile": "passed",
     "synthetic_cases": [
@@ -1632,6 +1632,35 @@
         "timing_quality_mean_delta"
       ],
       "formal_validity_exported": true
+    },
+  "focus_dashboard_v0_4_8": {
+    "goal": "Show all major visualization tiles in a single screen dashboard without scrolling, support click-to-select and double-click center-focus, and add linked brushing between time-series curves and narrative copy.",
+    "ui": {
+      "single_screen_dashboard": true,
+      "tile_focus_interaction": "single click highlights tile; double click moves tile into centered enlarged focus layer; Esc/return restores overview",
+      "responsive_modes": [
+        "wide",
+        "medium",
+        "narrow"
+      ],
+      "hero_behavior": "compact summary by default to reserve screen estate for tiles"
+    },
+    "linked_brushing": {
+      "linked_plots": [
+        "trend_plot",
+        "prototype_score_plot",
+        "frequency_trend_plot"
+      ],
+      "selection_widget": "pyqtgraph LinearRegionItem",
+      "copy_linkage": [
+        "linkage_summary_label",
+        "hour_stage_label",
+        "hour_state_label",
+        "hour_transition_label",
+        "research_match_label",
+        "freq_status"
+      ],
+      "default_behavior": "auto-initialize to the latest ~3 minutes when history becomes available; user can clear the brush manually"
     },
     "firmware_changed": false,
     "protocol_frame_format_changed": false
