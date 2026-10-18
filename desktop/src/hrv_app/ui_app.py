@@ -9,7 +9,7 @@ import numpy as np
 import pyqtgraph as pg
 from serial.tools import list_ports
 
-from PySide6.QtCore import Qt, QTimer, QRectF, Signal
+from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QEvent
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -33,13 +33,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QProgressBar,
-    QScrollArea,
     QSizePolicy,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from .dashboard_brush import selected_xy, format_brush_summary
 from .engine import AnalysisEngine
 from .frequency_insights import (
     AUTONOMIC_ZONES,
@@ -61,18 +60,18 @@ from .storage import SessionRecorder, export_engine_results
 
 APP_STYLE = """
 QWidget {
-    background: #F7F3EE;
-    color: #3F3A37;
+    background: #F7F4F0;
+    color: #363D40;
     font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-    font-size: 14px;
+    font-size: 13px;
 }
 QMainWindow {
-    background: #F7F3EE;
+    background: #F7F4F0;
 }
 QFrame#hero {
-    background: #EEE8F2;
-    border: 1px solid #E2D9E7;
-    border-radius: 22px;
+    background: #EBE8F1;
+    border: 1px solid #DED8E7;
+    border-radius: 12px;
 }
 QFrame[class="metricCard"] {
     background: #FCFAF7;
@@ -80,7 +79,7 @@ QFrame[class="metricCard"] {
     border-radius: 18px;
 }
 QLabel#heroTitle {
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 650;
 }
 QLabel#heroSub {
@@ -97,12 +96,12 @@ QLabel#sourceText {
     font-size: 12px;
 }
 QLabel#disclaimerBanner {
-    color: #665E58;
-    font-size: 12px;
-    background: #EFE7E0;
-    border: 1px solid #E2D7CE;
-    border-radius: 10px;
-    padding: 8px 10px;
+    color: #6A625C;
+    font-size: 11px;
+    background: #EFE9E3;
+    border: 1px solid #E6DCD4;
+    border-radius: 7px;
+    padding: 3px 9px;
 }
 QLabel[class="metricValue"] {
     font-size: 28px;
@@ -113,11 +112,11 @@ QLabel[class="metricName"] {
     font-size: 13px;
 }
 QPushButton {
-    min-height: 38px;
-    padding: 0 16px;
-    border: 1px solid #D9D0C8;
-    border-radius: 12px;
-    background: #FCFAF7;
+    min-height: 30px;
+    padding: 0 12px;
+    border: 1px solid #DDD6D0;
+    border-radius: 9px;
+    background: #FCFBF9;
 }
 QPushButton:hover {
     background: #F1ECE6;
@@ -137,11 +136,11 @@ QPushButton#mark:hover {
     background: #A9605A;
 }
 QComboBox {
-    min-height: 38px;
-    padding: 0 12px;
-    border: 1px solid #D9D0C8;
-    border-radius: 12px;
-    background: #FCFAF7;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid #DDD6D0;
+    border-radius: 9px;
+    background: #FCFBF9;
 }
 QProgressBar {
     min-height: 12px;
@@ -155,42 +154,34 @@ QProgressBar::chunk {
     border-radius: 6px;
     background: #91A591;
 }
-QTabWidget::pane {
-    border: 0;
+QFrame[class="dashboardTile"] {
+    background: #FFFDFC;
+    border: 1px solid #E7DED9;
+    border-radius: 12px;
 }
-QTabBar::tab {
-    padding: 10px 18px;
-    margin-right: 6px;
-    border-radius: 10px;
-    background: #EEE8E2;
+QFrame[class="dashboardTile"][activeTile="true"] {
+    border: 2px solid #877795;
 }
-QTabBar::tab:selected {
-    background: #DCD1E2;
-}
-QScrollArea {
+QFrame[class="tileInner"] {
+    background: transparent;
     border: none;
+}
+QWidget#dashboardBody {
     background: transparent;
 }
-QScrollArea > QWidget > QWidget {
-    background: transparent;
+QLabel#tileTitle {
+    color: #435257;
+    font-size: 13px;
+    font-weight: 650;
 }
-QScrollBar:vertical {
-    width: 12px;
-    margin: 2px 0 2px 0;
-    background: #EEE8E2;
-    border-radius: 6px;
+QLabel#tileSub {
+    color: #756E69;
+    font-size: 11px;
 }
-QScrollBar::handle:vertical {
-    min-height: 36px;
-    background: #B8ACA2;
-    border-radius: 6px;
-}
-QScrollBar::handle:vertical:hover {
-    background: #9D9086;
-}
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical {
-    height: 0px;
+QFrame#focusSurface {
+    background: #FCFAF7;
+    border: 2px solid #82758F;
+    border-radius: 16px;
 }
 """
 
@@ -237,6 +228,10 @@ class DashboardTile(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setObjectName("tileTitle")
+        self.title_label.setToolTip(title)
+        self.title_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(subtitle)
@@ -246,10 +241,14 @@ class DashboardTile(QFrame):
         layout.addWidget(self.subtitle_label)
 
         self.body_widget = QWidget()
+        self.body_widget.setObjectName("dashboardBody")
         self.body_layout = QVBoxLayout(self.body_widget)
         self.body_layout.setContentsMargins(0, 0, 0, 0)
         self.body_layout.setSpacing(6)
         layout.addWidget(self.body_widget, 1)
+        self._focus_hotspots = [self.title_label, self.subtitle_label]
+        for hotspot in self._focus_hotspots:
+            hotspot.installEventFilter(self)
 
     def set_active(self, active: bool) -> None:
         self.setProperty("activeTile", bool(active))
@@ -259,6 +258,19 @@ class DashboardTile(QFrame):
 
     def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
         self.body_layout.addWidget(widget, stretch)
+        if isinstance(widget, pg.PlotWidget):
+            viewport = widget.viewport()
+            self._focus_hotspots.append(viewport)
+            viewport.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched in self._focus_hotspots:
+            if event.type() == QEvent.Type.MouseButtonDblClick:
+                self.doubleClicked.emit()
+                return True
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self.clicked.emit()
+        return super().eventFilter(watched, event)
 
     def mousePressEvent(self, event) -> None:
         self.clicked.emit()
@@ -334,9 +346,10 @@ class RhythmKeywordCloud(QFrame):
         if settled:
             self._animation_timer.stop()
 
-    @staticmethod
-    def _font_for_weight(weight: float) -> QFont:
-        point_size = 13.0 + 21.0 * (float(np.clip(weight, 0.0, 1.0)) ** 0.72)
+    def _font_for_weight(self, weight: float) -> QFont:
+        compact = getattr(self, "_dashboard_compact", False)
+        base, span = (10.0, 15.0) if compact else (13.0, 21.0)
+        point_size = base + span * (float(np.clip(weight, 0.0, 1.0)) ** 0.72)
         font = QFont("Microsoft YaHei")
         font.setPointSizeF(point_size)
         font.setWeight(
@@ -356,7 +369,8 @@ class RhythmKeywordCloud(QFrame):
         candidates.sort(key=lambda item: (item[1], item[0]), reverse=True)
 
         measured: list[tuple[str, float, QFont, float, float]] = []
-        for text, score in candidates[:12]:
+        limit = 5 if getattr(self, "_dashboard_compact", False) else 12
+        for text, score in candidates[:limit]:
             font = self._font_for_weight(score)
             metrics = QFontMetricsF(font)
             text_width = min(width, metrics.horizontalAdvance(text) + 10.0)
@@ -384,7 +398,7 @@ class RhythmKeywordCloud(QFrame):
         if not rows:
             return []
 
-        row_gap = 12.0
+        row_gap = 5.0 if getattr(self, "_dashboard_compact", False) else 12.0
         row_heights = [max(item[4] for item in row) for row in rows]
         total_height = sum(row_heights) + row_gap * max(0, len(rows) - 1)
         y = max(18.0, (float(self.height()) - total_height) / 2.0)
@@ -495,12 +509,17 @@ class MainWindow(QMainWindow):
         self._spwvd_result: SPWVDResult | None = None
 
         self.setWindowTitle("此刻 · 身体节律")
-        self.resize(1180, 820)
+        # Nine charts share the same viewport; startup must not begin in the
+        # former narrow, many-row dashboard mode.
+        self.resize(1320, 820)
         self.setMinimumSize(520, 480)
         self.setStyleSheet(APP_STYLE)
 
         self._hero_compact = False
         self._responsive_mode = ""
+        self._ui_ready = False
+        self._dashboard_fit_pending = False
+        self._dashboard_row_budget = 200
 
         self._build_ui()
         self._refresh_ports()
@@ -524,8 +543,8 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         container = QWidget()
         root = QVBoxLayout(container)
-        root.setContentsMargins(24, 22, 24, 22)
-        root.setSpacing(14)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(7)
         self.root_layout = root
         self.setCentralWidget(container)
 
@@ -630,7 +649,9 @@ class MainWindow(QMainWindow):
         self.annotation_hint.setObjectName(
             "heroSub"
         )
-        self.annotation_hint.setWordWrap(True)
+        self.annotation_hint.setToolTip(self.annotation_hint.text())
+        self.annotation_hint.setText("看到波形异常时，在3秒内按 F8 标记")
+        self.annotation_hint.setWordWrap(False)
 
         self._annotation_widgets = [
             self.annotation_title_label,
@@ -653,12 +674,12 @@ class MainWindow(QMainWindow):
         # 读取版本号
         try:
             import json, os
-            manifest_path = os.path.join(os.path.dirname(__file__), "MANIFEST.json")
+            manifest_path = str(Path(__file__).resolve().parents[3] / "MANIFEST.json")
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
-                version = manifest.get("version", "0.4.8")
+                version = manifest.get("version", "0.4.9")
         except Exception:
-            version = "0.4.8"
+            version = "0.4.9"
 
         self.hero_title = QLabel(f"此刻 · 身体节律 v{version}")
         self.hero_title.setObjectName("heroTitle")
@@ -740,23 +761,23 @@ class MainWindow(QMainWindow):
 
         self.linkage_banner = QFrame()
         self.linkage_banner.setProperty("class", "metricCard")
-        linkage_layout = QHBoxLayout(self.linkage_banner)
-        linkage_layout.setContentsMargins(16, 12, 16, 12)
-        linkage_layout.setSpacing(10)
-
         self.linkage_summary_label = QLabel(
             "刷选联动：拖动'心跳起伏趋势 / 节律心态匹配度 / 不同快慢的心跳起伏趋势'中的半透明区间，"
             "曲线和文案会同步筛选；双击任意图块可居中放大聚焦。"
         )
         self.linkage_summary_label.setObjectName("heroSub")
         self.linkage_summary_label.setWordWrap(True)
+        self.linkage_summary_label.setToolTip(self.linkage_summary_label.text())
+        self.linkage_summary_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
 
         self.clear_brush_button = QPushButton("清除刷选")
         self.clear_brush_button.clicked.connect(self._clear_linked_brush)
 
         linkage_layout = QHBoxLayout(self.linkage_banner)
-        linkage_layout.setContentsMargins(16, 12, 16, 12)
-        linkage_layout.setSpacing(10)
+        linkage_layout.setContentsMargins(12, 5, 12, 5)
+        linkage_layout.setSpacing(8)
         linkage_layout.addWidget(self.linkage_summary_label, 1)
         linkage_layout.addWidget(self.clear_brush_button)
 
@@ -765,8 +786,12 @@ class MainWindow(QMainWindow):
         self.dashboard_widget = QWidget()
         self.dashboard_layout = QGridLayout(self.dashboard_widget)
         self.dashboard_layout.setContentsMargins(0, 0, 0, 0)
-        self.dashboard_layout.setHorizontalSpacing(12)
-        self.dashboard_layout.setVerticalSpacing(12)
+        self.dashboard_layout.setHorizontalSpacing(9)
+        self.dashboard_layout.setVerticalSpacing(9)
+        self.dashboard_widget.setMinimumSize(0, 0)
+        self.dashboard_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored
+        )
         root.addWidget(self.dashboard_widget, 1)
 
         self.dashboard_tiles = []
@@ -777,7 +802,7 @@ class MainWindow(QMainWindow):
         self._focus_placeholder = None
         self._brush_syncing = False
         self._brush_range_minutes = None
-        self._brush_initialized = False
+        self._brush_selection = None
         self._linked_regions = []
 
         self.tile_hour = self._create_dashboard_tile(
@@ -827,14 +852,15 @@ class MainWindow(QMainWindow):
         )
 
         self._setup_linked_brushing()
-        self.overlay_toolbar = QHBoxLayout()
         self._setup_focus_overlay()
+        self._configure_dashboard_tile_details()
 
         self.disclaimer = QLabel(
             "用于自我觉察和情绪疗愈互动，不用于医疗诊断。研究来源只说明曾出现过相似节律。"
         )
         self.disclaimer.setObjectName("disclaimerBanner")
-        self.disclaimer.setWordWrap(True)
+        self.disclaimer.setToolTip(self.disclaimer.text())
+        self.disclaimer.setWordWrap(False)
         root.addWidget(self.disclaimer)
 
         self._apply_responsive_layout(
@@ -843,31 +869,9 @@ class MainWindow(QMainWindow):
         self._set_active_dashboard_tile(
             self.tile_hour
         )
+        self._ui_ready = True
+        self._schedule_dashboard_fit()
 
-    def _make_scrollable_page(
-        self,
-        content: QWidget,
-        *,
-        always_vertical: bool,
-    ) -> QScrollArea:
-        content.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.MinimumExpanding,
-        )
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
-            if always_vertical
-            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        scroll.setWidget(content)
-        return scroll
 
     def _clear_grid_layout(
         self,
@@ -922,327 +926,157 @@ class MainWindow(QMainWindow):
             self.hero_title.setStyleSheet("")
             self.hero.setMaximumHeight(16777215)
 
-    def _on_tab_changed(
-        self,
-        index: int,
-    ) -> None:
-        # 专业分析页固定采用极简 Hero。
-        # 极小分辨率下状态页也自动折叠，优先保证图表和滚动区域可用。
-        compact = (
-            index == 1
-            or self.height() < 650
-            or self.width() < 700
-        )
-        self._set_hero_compact(
-            compact
-        )
-        self._apply_responsive_layout(
-            self.width()
-        )
 
-    def _apply_responsive_layout(
-        self,
-        width: int,
-    ) -> None:
-        width = max(
-            int(width),
-            1,
-        )
-
-        if width >= 1000:
-            mode = "wide"
-            margins = (24, 22, 24, 22)
-        elif width >= 700:
-            mode = "medium"
-            margins = (14, 12, 14, 12)
-        else:
-            mode = "narrow"
-            margins = (8, 8, 8, 8)
+    def _apply_responsive_layout(self, width: int) -> None:
+        width = max(1, int(width))
+        mode = "wide" if width >= 1120 else ("medium" if width >= 760 else "narrow")
+        tight = self.height() < 740 or width < 1120
 
         self.root_layout.setContentsMargins(
-            *margins
+            *( (12, 10, 12, 10) if mode == "wide" else (8, 6, 8, 6) )
         )
-        self.root_layout.setSpacing(
-            12 if mode == "wide" else 8
-        )
+        self.root_layout.setSpacing(7 if mode == "wide" else 5)
 
-        # 顶部连接栏换行。
-        self._clear_grid_layout(
-            self.toolbar_layout,
-            self._toolbar_widgets,
-        )
-        for column in range(8):
-            self.toolbar_layout.setColumnStretch(
-                column,
-                0,
-            )
-
+        # Device controls: grouped at the left and right rather than allowing
+        # COM5 to consume the entire toolbar width.
+        for control in self._toolbar_widgets:
+            self.toolbar_layout.removeWidget(control)
+        for col in range(8):
+            self.toolbar_layout.setColumnStretch(col, 0)
+        self.port_combo.setMinimumWidth(135 if mode == "narrow" else 180)
+        self.port_combo.setMaximumWidth(260)
+        self.toolbar_layout.setHorizontalSpacing(7)
+        self.toolbar_layout.setVerticalSpacing(4)
         if mode == "wide":
-            self.toolbar_layout.addWidget(
-                self.port_combo,
-                0,
-                0,
-                1,
-                4,
-            )
-            for column, widget in enumerate(
-                self._toolbar_widgets[1:],
-                start=4,
-            ):
-                self.toolbar_layout.addWidget(
-                    widget,
-                    0,
-                    column,
-                )
-            self.toolbar_layout.setColumnStretch(
-                0,
-                1,
-            )
+            self.toolbar_layout.addWidget(self.port_combo, 0, 0)
+            self.toolbar_layout.addWidget(self.refresh_port_button, 0, 1)
+            self.toolbar_layout.addWidget(self.connect_button, 0, 2)
+            self.toolbar_layout.addWidget(self.open_csv_button, 0, 5)
+            self.toolbar_layout.addWidget(self.export_button, 0, 6)
+            self.toolbar_layout.setColumnStretch(4, 1)
+            self.toolbar_widget.setFixedHeight(40)
         elif mode == "medium":
-            self.toolbar_layout.addWidget(
-                self.port_combo,
-                0,
-                0,
-                1,
-                4,
-            )
-            for column, widget in enumerate(
-                self._toolbar_widgets[1:]
-            ):
-                self.toolbar_layout.addWidget(
-                    widget,
-                    1,
-                    column,
-                )
-                self.toolbar_layout.setColumnStretch(
-                    column,
-                    1,
-                )
+            self.toolbar_layout.addWidget(self.port_combo, 0, 0, 1, 2)
+            self.toolbar_layout.addWidget(self.refresh_port_button, 0, 2)
+            self.toolbar_layout.addWidget(self.connect_button, 0, 3)
+            self.toolbar_layout.addWidget(self.open_csv_button, 1, 0, 1, 2)
+            self.toolbar_layout.addWidget(self.export_button, 1, 2, 1, 2)
+            self.toolbar_layout.setColumnStretch(1, 1)
+            self.toolbar_widget.setFixedHeight(70)
         else:
-            self.toolbar_layout.addWidget(
-                self.port_combo,
-                0,
-                0,
-                1,
-                2,
-            )
-            self.toolbar_layout.addWidget(
-                self.refresh_port_button,
-                1,
-                0,
-            )
-            self.toolbar_layout.addWidget(
-                self.connect_button,
-                1,
-                1,
-            )
-            self.toolbar_layout.addWidget(
-                self.open_csv_button,
-                2,
-                0,
-            )
-            self.toolbar_layout.addWidget(
-                self.export_button,
-                2,
-                1,
-            )
-            self.toolbar_layout.setColumnStretch(
-                0,
-                1,
-            )
-            self.toolbar_layout.setColumnStretch(
-                1,
-                1,
-            )
+            self.toolbar_layout.addWidget(self.port_combo, 0, 0, 1, 2)
+            self.toolbar_layout.addWidget(self.refresh_port_button, 1, 0)
+            self.toolbar_layout.addWidget(self.connect_button, 1, 1)
+            self.toolbar_layout.addWidget(self.open_csv_button, 2, 0)
+            self.toolbar_layout.addWidget(self.export_button, 2, 1)
+            self.toolbar_layout.setColumnStretch(1, 1)
+            self.toolbar_widget.setFixedHeight(106)
 
-        # 人工标注栏换行。
-        self._clear_grid_layout(
-            self.annotation_layout,
-            self._annotation_widgets,
-        )
-        for column in range(4):
-            self.annotation_layout.setColumnStretch(
-                column,
-                0,
-            )
-
-        if mode == "wide":
-            self.annotation_layout.addWidget(
-                self.annotation_title_label,
-                0,
-                0,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_type_combo,
-                0,
-                1,
-            )
-            self.annotation_layout.addWidget(
-                self.mark_annotation_button,
-                0,
-                2,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_hint,
-                0,
-                3,
-            )
-            self.annotation_layout.setColumnStretch(
-                3,
-                1,
-            )
-        elif mode == "medium":
-            self.annotation_layout.addWidget(
-                self.annotation_title_label,
-                0,
-                0,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_type_combo,
-                0,
-                1,
-            )
-            self.annotation_layout.addWidget(
-                self.mark_annotation_button,
-                0,
-                2,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_hint,
-                1,
-                0,
-                1,
-                3,
-            )
-            self.annotation_layout.setColumnStretch(
-                1,
-                1,
-            )
+        # Annotation controls stay available; never hide F8 actions for style.
+        for control in self._annotation_widgets:
+            self.annotation_layout.removeWidget(control)
+        for col in range(4):
+            self.annotation_layout.setColumnStretch(col, 0)
+        self.annotation_layout.setHorizontalSpacing(7)
+        self.annotation_layout.setVerticalSpacing(4)
+        if mode != "narrow":
+            for col, item in enumerate(self._annotation_widgets):
+                self.annotation_layout.addWidget(item, 0, col)
+            self.annotation_layout.setColumnStretch(3, 1)
+            self.annotation_widget.setFixedHeight(36)
         else:
-            self.annotation_layout.addWidget(
-                self.annotation_title_label,
-                0,
-                0,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_type_combo,
-                0,
-                1,
-            )
-            self.annotation_layout.addWidget(
-                self.mark_annotation_button,
-                1,
-                0,
-                1,
-                2,
-            )
-            self.annotation_layout.addWidget(
-                self.annotation_hint,
-                2,
-                0,
-                1,
-                2,
-            )
-            self.annotation_layout.setColumnStretch(
-                1,
-                1,
-            )
+            self.annotation_layout.addWidget(self.annotation_title_label, 0, 0)
+            self.annotation_layout.addWidget(self.annotation_type_combo, 0, 1)
+            self.annotation_layout.addWidget(self.mark_annotation_button, 0, 2)
+            self.annotation_layout.addWidget(self.annotation_hint, 1, 0, 1, 3)
+            self.annotation_layout.setColumnStretch(1, 1)
+            self.annotation_widget.setFixedHeight(64)
 
-        # 首页三张指标卡：只有完整 Hero 才参与布局。
-        self._clear_grid_layout(
-            self.card_row,
-            self._metric_cards,
-        )
-        for column in range(3):
-            self.card_row.setColumnStretch(
-                column,
-                0,
-            )
-        if width >= 700:
-            for column, card in enumerate(
-                self._metric_cards
-            ):
-                self.card_row.addWidget(
-                    card,
-                    0,
-                    column,
+        # The dashboard is *always* compact; expanded scientific detail lives
+        # only inside the unique focused tile.
+        self._set_hero_compact(True)
+        self.hero.setMaximumHeight(55)
+        self.linkage_banner.setMaximumHeight(54 if mode != "narrow" else 64)
+        self.disclaimer.setMaximumHeight(27)
+        self.linkage_summary_label.setMaximumHeight(42 if mode != "narrow" else 50)
+
+        for tile in self.dashboard_tiles:
+            pad = (10, 8, 10, 7) if not tight else (8, 6, 8, 5)
+            tile.layout().setContentsMargins(*pad)
+            tile.layout().setSpacing(4)
+
+        self.dashboard_layout.setHorizontalSpacing(9 if mode == "wide" else 6)
+        self.dashboard_layout.setVerticalSpacing(9 if mode == "wide" else 6)
+
+        # All widths use the same 9-cell 3x3 coordinate system, including focus.
+        if not self._responsive_dashboard_specs:
+            self._arrange_dashboard_tiles(mode)
+
+        if self._responsive_mode != mode:
+            for tile in self.dashboard_tiles:
+                self._set_dashboard_tile_detail_mode(
+                    tile, tile is self._focused_tile
                 )
-                self.card_row.setColumnStretch(
-                    column,
-                    1,
-                )
-        else:
-            for row, card in enumerate(
-                self._metric_cards
-            ):
-                self.card_row.addWidget(
-                    card,
-                    row,
-                    0,
-                )
-            self.card_row.setColumnStretch(
-                0,
-                1,
-            )
-
-        # 图表采用“最小高度 + 页内滚动”，不再依赖固定窗口分辨率。
-        if self.height() >= 900:
-            analysis_heights = (260, 280, 300)
-            state_heights = (280, 190)
-        elif self.height() >= 700:
-            analysis_heights = (230, 250, 270)
-            state_heights = (250, 175)
-        else:
-            analysis_heights = (200, 220, 240)
-            state_heights = (220, 160)
-
-        self.prototype_score_plot.setMinimumHeight(
-            analysis_heights[0]
-        )
-        self.frequency_trend_plot.setMinimumHeight(
-            analysis_heights[0]
-        )
-        self.psd_plot.setMinimumHeight(
-            analysis_heights[1]
-        )
-        self.tf_plot.setMinimumHeight(
-            analysis_heights[2]
-        )
-        self.signal_plot.setMinimumHeight(
-            state_heights[0]
-        )
-        self.trend_plot.setMinimumHeight(
-            state_heights[1]
-        )
-
-        should_compact = (
-            self.tabs.currentIndex() == 1
-            or self.height() < 650
-            or width < 700
-        )
-        self._set_hero_compact(
-            should_compact
-        )
         self._responsive_mode = mode
+        self._schedule_dashboard_fit()
+        # Graph axes on secondary ViewBoxes need a deferred geometry update
+        # after the responsive constraints have been applied.
+        QTimer.singleShot(0, self._sync_signal_debug_view)
+        QTimer.singleShot(0, self._sync_frequency_trend_view)
 
-        QTimer.singleShot(
-            0,
-            self._sync_signal_debug_view,
+    def _schedule_dashboard_fit(self) -> None:
+        if self._dashboard_fit_pending:
+            return
+        self._dashboard_fit_pending = True
+        QTimer.singleShot(0, self._fit_dashboard_to_viewport)
+
+    def _fit_dashboard_to_viewport(self) -> None:
+        self._dashboard_fit_pending = False
+        if not getattr(self, "_ui_ready", False):
+            return
+
+        # The child view may already be resized (e.g. Windows maximizing)
+        # while root layout's next geometry pass is pending. Prefer explicit
+        # section caps to unbounded plot size hints.
+        edges = self.root_layout.contentsMargins()
+        sections = (
+            self.toolbar_widget,
+            self.annotation_widget,
+            self.hero,
+            self.linkage_banner,
+            self.disclaimer,
         )
-        QTimer.singleShot(
-            0,
-            self._sync_frequency_trend_view,
+        header_heights = [min(w.sizeHint().height(), w.maximumHeight())
+                          for w in sections]
+        used = sum(header_heights)
+        used += edges.top() + edges.bottom()
+        used += self.root_layout.spacing() * 5
+        available = max(0, self.centralWidget().height() - used)
+        row_budget = max(
+            22,
+            (available - 2 * self.dashboard_layout.verticalSpacing()) // 3,
         )
+        if row_budget != self._dashboard_row_budget:
+            self._dashboard_row_budget = row_budget
+        for tile in self.dashboard_tiles:
+            if tile is self._focused_tile:
+                continue
+            tile.setMaximumHeight(row_budget)
+
+        self.dashboard_layout.invalidate()
+        # Do not force a full relayout synchronously from a resize event.
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if getattr(self, "_ui_ready", False):
+            self._schedule_dashboard_fit()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if hasattr(
-            self,
-            "root_layout",
-        ):
-            self._apply_responsive_layout(
-                event.size().width()
-            )
+        if getattr(self, "_ui_ready", False):
+            self._apply_responsive_layout(event.size().width())
+        if hasattr(self, "focus_overlay"):
+            self.focus_overlay.setGeometry(self.centralWidget().rect())
 
     def _style_plot(self, plot: pg.PlotWidget) -> None:
         # 图表背景保持透明 / 暖白，避免传统监护仪的强对比黑底。
@@ -1369,7 +1203,7 @@ class MainWindow(QMainWindow):
         self.hour_experience_frame = QFrame()
         self.hour_experience_frame.setProperty(
             "class",
-            "metricCard",
+            "tileInner",
         )
         hour_layout = QVBoxLayout(
             self.hour_experience_frame
@@ -1562,7 +1396,7 @@ class MainWindow(QMainWindow):
         self.research_state_frame = QFrame()
         self.research_state_frame.setProperty(
             "class",
-            "metricCard",
+            "tileInner",
         )
         research_layout = QVBoxLayout(
             self.research_state_frame
@@ -2493,7 +2327,7 @@ class MainWindow(QMainWindow):
         ]
 
         if valid_history:
-            t0 = valid_history[0]["t_us"]
+            t0 = history[0]["t_us"]
             tx = np.asarray(
                 [
                     (item["t_us"] - t0)
@@ -2976,6 +2810,9 @@ class MainWindow(QMainWindow):
                 self.tf_image.clear()
                 self._worker_status = "当前数据还不足以生成5分钟节律变化图"
 
+        # Curves above are refreshed every 500 ms; highlights must follow.
+        self._refresh_brush_linkage()
+
     def _close_recorder(self) -> None:
         # 先让 Engine 停止写，再关闭文件；否则关闭后的 recorder
         # 仍可能在后续 snapshot/force_update 时被重新打开。
@@ -2991,125 +2828,298 @@ class MainWindow(QMainWindow):
     # v0.4.8: 链表刷选与图块聚焦相关方法
     # ============================================================
     def _setup_linked_brushing(self) -> None:
-        """为三条时间曲线建立统一的 LinearRegionItem 刷选区间。"""
+        """Each pyqtgraph plot owns its own GraphicsItem, all in minutes."""
         self._linked_regions = []
+        self._brush_highlights = []
+        self._brush_selection = None
+        self._brush_prototype_names = {
+            "STEADY_EVEN": "平稳而均匀",
+            "RESONANCE_0P1": "缓慢而规律",
+            "WHOLE_VARIABILITY_RISE": "起伏整体变强",
+            "WHOLE_VARIABILITY_NARROW": "起伏整体收窄",
+            "SOOTHING_DOWNSHIFT": "安抚下来",
+            "FOCUSED_ENGAGEMENT": "进入专注状态",
+            "REBOUND_RECOVERY": "从紧绷中回弹",
+        }
 
-        # 创建统一的刷选区域
-        brush = pg.LinearRegionItem(
-            values=(0, 180),  # 初始 3 分钟
-            orientation=pg.LinearRegionItem.Vertical,
-            brush=pg.mkBrush(0x3A828233),
-            movable=True,
-        )
-        self._linked_regions.append(brush)
-
-        # 将同一个 LinearRegionItem 添加到三个 PlotWidget
         for plot in (
             self.trend_plot,
             self.prototype_score_plot,
             self.frequency_trend_plot,
         ):
-            plot.addItem(self._linked_regions[0])
-            self._linked_regions[0].sigRegionChangeFinished.connect(
-                self._set_linked_brush_range
+            region = pg.LinearRegionItem(
+                values=(0.0, 3.0),  # x axis in MINUTES, not seconds
+                orientation=pg.LinearRegionItem.Vertical,
+                brush=pg.mkBrush(130, 117, 143, 50),
+                movable=True,
+            )
+            region.setZValue(-3)
+            plot.addItem(region)
+            self._linked_regions.append(region)
+            region.sigRegionChangeFinished.connect(
+                lambda *_, own_region=region:
+                self._set_linked_brush_range(own_region)
             )
 
-        self._brush_initialized = True
+        def highlight(source, parent_plot, color):
+            item = parent_plot.plot(
+                pen=pg.mkPen(color, width=3.5), connect="finite"
+            )
+            item.setZValue(9)
+            self._brush_highlights.append((source, item))
+
+        highlight(self.trend_curve, self.trend_plot, "#376A4F")
+        for curve in self.prototype_score_curves.values():
+            highlight(curve, self.prototype_score_plot, "#7255A3")
+        highlight(self.vlf_trend_curve, self.frequency_trend_plot, "#766B62")
+        highlight(self.lf_trend_curve, self.frequency_trend_plot, "#B66745")
+        highlight(self.hf_trend_curve, self.frequency_trend_plot, "#388A61")
+
+        # The median-frequency curve belongs to the plot's RIGHT ViewBox.
+        median_overlay = pg.PlotCurveItem(
+            pen=pg.mkPen("#5E5788", width=3.5)
+        )
+        median_overlay.setZValue(9)
+        self.frequency_trend_view.addItem(median_overlay)
+        self._brush_highlights.append(
+            (self.median_freq_curve, median_overlay)
+        )
 
     def _clear_linked_brush(self) -> None:
-        """清除所有图表上的刷选区间。"""
-        for region in self._linked_regions:
-            for plot in (
-                self.trend_plot,
-                self.prototype_score_plot,
-                self.frequency_trend_plot,
-            ):
-                try:
-                    plot.removeItem(region)
-                except (ValueError, RuntimeError):
-                    pass
-        self._linked_regions.clear()
-        self._brush_initialized = False
-
-    def _set_linked_brush_range(self) -> None:
-        """同步刷选范围到所有链表图表，并更新文案。"""
-        if self._brush_syncing:
-            return
+        """Clear selection, not the region items: user may immediately brush again."""
+        self._brush_selection = None
         self._brush_syncing = True
         try:
-            region = self._linked_regions[0]
-            rmin, rmax = region.getRegion()
-            # 仅当用户主动拖动时才更新（忽略程序化同步）
-            if self._brush_initialized and rmax - rmin > 0.1:
-                self._brush_range_minutes = (rmax - rmin) / 60.0
-                self._refresh_brush_linkage()
+            for region in self._linked_regions:
+                region.setRegion((0.0, 3.0))
         finally:
             self._brush_syncing = False
+        self._refresh_brush_linkage()
+
+    def _set_linked_brush_range(self, source_region=None) -> None:
+        """Synchronize all independent regions from the one the user moved."""
+        if self._brush_syncing or not self._linked_regions:
+            return
+        source_region = source_region or self._linked_regions[0]
+        low, high = sorted(map(float, source_region.getRegion()))
+        if high - low <= 1e-6:
+            return
+
+        self._brush_syncing = True
+        try:
+            self._brush_selection = (low, high)
+            for region in self._linked_regions:
+                if region is not source_region:
+                    region.setRegion((low, high))
+        finally:
+            self._brush_syncing = False
+        self._refresh_brush_linkage()
 
     def _refresh_brush_linkage(self) -> None:
-        """根据当前刷选范围更新所有链表图表与文案。"""
+        """Selected curve highlights and copy use the same minute bounds."""
         if not self._linked_regions:
             return
-        region = self._linked_regions[0]
-        rmin, rmax = region.getRegion()
-        # 同步到其他图表
-        for plot in (
-            self.trend_plot,
-            self.prototype_score_plot,
-            self.frequency_trend_plot,
-        ):
-            region.setRegion((rmin, rmax))
-        # 更新文案
-        if hasattr(self, "linkage_summary_label"):
-            duration = max(0.0, (rmax - rmin) / 60.0)
-            self.linkage_summary_label.setText(
-                f"已刷选 {duration:.1f} 分钟区间；双击图块可聚焦，点击“清除刷选”重置。"
+        if self._brush_selection is None:
+            latest = []
+            for source in (
+                self.trend_curve,
+                *self.prototype_score_curves.values(),
+                self.vlf_trend_curve,
+                self.lf_trend_curve,
+                self.hf_trend_curve,
+            ):
+                x, _ = source.getData()
+                if x is not None:
+                    x = np.asarray(x, dtype=float).reshape(-1)
+                    finite_x = x[np.isfinite(x)]
+                    if finite_x.size:
+                        latest.append(float(np.max(finite_x)))
+            if latest:
+                end = max(3.0, max(latest))
+                bounds = (max(0.0, end - 3.0), end)
+                self._brush_syncing = True
+                try:
+                    for region in self._linked_regions:
+                        if abs(region.getRegion()[1] - end) > 0.05:
+                            region.setRegion(bounds)
+                finally:
+                    self._brush_syncing = False
+
+        for source, highlight in self._brush_highlights:
+            x, y = selected_xy(source.getData(), self._brush_selection)
+            highlight.setData(x, y)
+
+        copy = format_brush_summary(
+            self._brush_selection,
+            self.trend_curve.getData(),
+            {
+                code: curve.getData()
+                for code, curve in self.prototype_score_curves.items()
+            },
+            {
+                "VLF": self.vlf_trend_curve.getData(),
+                "LF": self.lf_trend_curve.getData(),
+                "HF": self.hf_trend_curve.getData(),
+            },
+            self._brush_prototype_names,
+        )
+        self.linkage_summary_label.setText(copy)
+        self.linkage_summary_label.setToolTip(copy)
+
+    def _configure_dashboard_tile_details(self) -> None:
+        """Overview is a 3x3 data canvas; long descriptions live in focus."""
+        self._tile_detail_widgets = {
+            self.tile_hour: [
+                self.hour_title_label, self.hour_stage_label,
+                self.hour_transition_label, self.hour_sources_label,
+                self.hour_disclaimer_label,
+            ],
+            self.tile_prototype: [self.prototype_score_hint],
+            self.tile_keywords: [self.keyword_cloud_hint],
+            self.tile_signal: [
+                self.protocol_debug_label, self.quality_debug_label,
+                self.signal_debug_label,
+            ],
+            self.tile_trend: [],
+            self.tile_frequency: [self.freq_trend_hint],
+            self.tile_research: [
+                self.research_match_label, self.research_trait_label,
+                self.research_sources_label,
+            ],
+            self.tile_psd: [
+                self.freq_stats_label, self.freq_auto_label,
+                self.freq_guide_label, self.psd_band_hint,
+            ],
+            self.tile_tf: [self.spwvd_button, self.spwvd_hint],
+        }
+        self._tile_plot_widgets = {
+            self.tile_prototype: [self.prototype_score_plot],
+            self.tile_signal: [self.signal_plot],
+            self.tile_trend: [self.trend_plot],
+            self.tile_frequency: [self.frequency_trend_plot],
+            self.tile_psd: [self.psd_plot],
+            self.tile_tf: [self.tf_plot],
+        }
+        self._dashboard_short_titles = {
+            self.tile_signal: "实时 PPG 波形 · Beat",
+            self.tile_trend: "心搏间期趋势 · RMSSD",
+            self.tile_frequency: "不同频段 · 节律趋势",
+            self.tile_hour: "过去一小时 · 节律概况",
+            self.tile_prototype: "节律相似度 · 一小时",
+            self.tile_keywords: "此刻的状态关键词",
+            self.tile_research: "研究依据与可信度",
+            self.tile_psd: "频域功率谱 · PSD",
+            self.tile_tf: "时频分布 · SPWVD",
+        }
+        for tile in self.dashboard_tiles:
+            tile._dashboard_full_title = tile.title_label.text()
+            tile._dashboard_short_title = self._dashboard_short_titles[tile]
+            tile.title_label.setToolTip(tile._dashboard_full_title)
+            tile.body_widget.setMinimumSize(0, 0)
+            tile.body_widget.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored
             )
+            tile.setMinimumSize(0, 0)
+
+        for frame in (self.hour_experience_frame, self.research_state_frame):
+            frame.setMinimumSize(0, 0)
+            frame.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored
+            )
+            frame.layout().setContentsMargins(9, 5, 9, 5)
+            frame.layout().setSpacing(3)
+        self.keyword_cloud.setMinimumHeight(0)
+        self.keyword_cloud._dashboard_compact = True
+        for tile in self.dashboard_tiles:
+            self._set_dashboard_tile_detail_mode(tile, False)
+
+    def _set_dashboard_tile_detail_mode(
+        self, tile: DashboardTile, focused: bool
+    ) -> None:
+        tile.subtitle_label.setVisible(focused)
+        tile.title_label.setText(
+            tile._dashboard_full_title if focused else tile._dashboard_short_title
+        )
+        for widget in self._tile_detail_widgets.get(tile, []):
+            widget.setVisible(focused)
+
+        if tile is self.tile_hour:
+            self.hour_state_label.setMaximumHeight(16777215 if focused else 72)
+        if tile is self.tile_research:
+            self.research_machine_label.setMaximumHeight(
+                16777215 if focused else 45
+            )
+        tile.setMaximumHeight(16777215 if focused else self._dashboard_row_budget)
+        tile.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding if focused else QSizePolicy.Policy.Ignored,
+        )
+
+        for plot in self._tile_plot_widgets.get(tile, []):
+            plot.setMinimumHeight(160 if focused else 0)
+            plot.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding if focused else QSizePolicy.Policy.Ignored,
+            )
+            for axis_name in ("left", "right", "bottom"):
+                axis = plot.getAxis(axis_name)
+                if axis is not None:
+                    axis.showLabel(focused)
+            legend = plot.getPlotItem().legend
+            if legend is not None:
+                legend.setVisible(focused)
+
+        if tile is self.tile_keywords:
+            self.keyword_cloud.setMinimumHeight(150 if focused else 0)
+            self.keyword_cloud.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding if focused else QSizePolicy.Policy.Ignored,
+            )
+            self.keyword_cloud._dashboard_compact = not focused
+            self.keyword_cloud.update()
 
     def _setup_focus_overlay(self) -> None:
-        """创建聚焦遮罩层与快捷键。"""
+        """Single properly installed layout, covering centralWidget."""
         self.focus_overlay = QWidget(self.centralWidget())
-        self.focus_overlay.setStyleSheet("background: rgba(63, 58, 55, 76);")
+        self.focus_overlay.setObjectName("focusOverlay")
+        self.focus_overlay.setStyleSheet(
+            "QWidget#focusOverlay { background-color: rgba(40, 37, 44, 200); }"
+        )
         overlay_layout = QVBoxLayout(self.focus_overlay)
-        overlay_layout.setContentsMargins(72, 48, 72, 48)
-        overlay_layout.setSpacing(10)
+        overlay_layout.setContentsMargins(28, 22, 28, 22)
 
-        self.focus_surface = QFrame()
+        self.focus_surface = QFrame(self.focus_overlay)
         self.focus_surface.setObjectName("focusSurface")
         focus_layout = QVBoxLayout(self.focus_surface)
-        focus_layout.setContentsMargins(20, 18, 20, 18)
-        focus_layout.setSpacing(10)
+        focus_layout.setContentsMargins(22, 18, 22, 18)
+        focus_layout.setSpacing(12)
 
         focus_toolbar = QHBoxLayout()
-        self.focus_hint_label = QLabel("聚焦视图：双击图块或按 Esc 返回总览。")
+        self.focus_hint_label = QLabel("聚焦视图 · Esc 返回总览")
         self.focus_hint_label.setObjectName("heroSub")
         self.focus_close_button = QPushButton("返回总览")
-        # 测试所需的中文字符串（用于断言检查）
-        _ = "杩斿洖鎬昏"  # "返回概览" 的 UTF-8 编码形式
-        _ = "鍒烽€夎仈鍔細"  # "清除刷选" 的 UTF-8 编码形式
-        _ = "鏇茬嚎鍜屾枃妗堜細鍚屾绛涢€?"  # 相关中文文本
-        self.focus_close_button.clicked.connect(self._restore_dashboard_tile_focus)
+        self.focus_close_button.clicked.connect(
+            self._restore_dashboard_tile_focus
+        )
         focus_toolbar.addWidget(self.focus_hint_label, 1)
         focus_toolbar.addWidget(self.focus_close_button)
         focus_layout.addLayout(focus_toolbar)
 
-        self.focus_tile_container = QWidget()
+        self.focus_tile_container = QWidget(self.focus_surface)
         self.focus_tile_layout = QVBoxLayout(self.focus_tile_container)
         self.focus_tile_layout.setContentsMargins(0, 0, 0, 0)
-        self.focus_tile_layout.setSpacing(0)
         focus_layout.addWidget(self.focus_tile_container, 1)
-
-        overlay_layout = QVBoxLayout(self.focus_overlay)
-        overlay_layout.setContentsMargins(0, 0, 0, 0)
-        overlay_layout.setSpacing(10)
-        overlay_layout.addLayout(self.overlay_toolbar)
         overlay_layout.addWidget(self.focus_surface, 1)
-        self.focus_overlay.hide()
 
-        # ESC 快捷键退出聚焦
+        self.focus_overlay.setGeometry(self.centralWidget().rect())
+        self.focus_overlay.hide()
         self.focus_escape_shortcut = QShortcut(QKeySequence("Esc"), self)
-        self.focus_escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        self.focus_escape_shortcut.activated.connect(self._restore_dashboard_tile_focus)
+        self.focus_escape_shortcut.setContext(
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+        self.focus_escape_shortcut.activated.connect(
+            self._restore_dashboard_tile_focus
+        )
 
     def _toggle_dashboard_tile_focus(self, tile: DashboardTile) -> None:
         if self._focused_tile is tile:
@@ -3118,109 +3128,89 @@ class MainWindow(QMainWindow):
             self._focus_dashboard_tile(tile)
 
     def _focus_dashboard_tile(self, tile: DashboardTile) -> None:
+        if tile not in self._responsive_dashboard_specs:
+            return
         if self._focused_tile is not None:
             self._restore_dashboard_tile_focus()
 
-        position = self._responsive_dashboard_specs.get(tile)
-        if position is None:
-            return
-
+        position = self._responsive_dashboard_specs[tile]
+        self.dashboard_layout.removeWidget(tile)
+        self._focus_placeholder = QWidget(self.dashboard_widget)
+        self._focus_placeholder.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored
+        )
+        self.dashboard_layout.addWidget(self._focus_placeholder, *position)
         self._focused_tile = tile
-        self._focus_placeholder = QWidget()
-        self.dashboard_layout.addWidget(self._focus_placeholder, *self._responsive_dashboard_specs[tile])
-
-        # 将图块移动到聚焦层
+        self._set_dashboard_tile_detail_mode(tile, True)
         self.focus_tile_layout.addWidget(tile)
-        tile.set_active(True)
-        self.focus_tile_container.layout().addWidget(tile)
+        self._set_active_dashboard_tile(tile)
+        self.focus_overlay.setGeometry(self.centralWidget().rect())
         self.focus_overlay.show()
         self.focus_overlay.raise_()
+        self.focus_close_button.setFocus()
 
     def _restore_dashboard_tile_focus(self) -> None:
         if self._focused_tile is None:
             return
         tile = self._focused_tile
-        position = self._responsive_dashboard_specs.get(tile)
-        if position:
-            self.dashboard_layout.addWidget(tile, *position)
-        tile.set_active(False)
-        # 清理聚焦层
-        self.focus_tile_container.layout().removeWidget(self._focused_tile)
-        self._focused_tile = None
+        self.focus_tile_layout.removeWidget(tile)
+        placeholder = self._focus_placeholder
+        if placeholder is not None:
+            self.dashboard_layout.removeWidget(placeholder)
+            placeholder.hide()
+            placeholder.setParent(None)
+            placeholder.deleteLater()
         self._focus_placeholder = None
+        self._focused_tile = None
+        self._set_dashboard_tile_detail_mode(tile, False)
+        position = self._responsive_dashboard_specs.get(tile)
+        if position is not None:
+            self.dashboard_layout.addWidget(tile, *position)
+        self._set_active_dashboard_tile(tile)
         self.focus_overlay.hide()
+        self._schedule_dashboard_fit()
 
-    def _set_active_dashboard_tile(self, tile: DashboardTile) -> None:
-        self._active_dashboard_tile = tile
-        for item in self.dashboard_tiles:
-            item.set_active(item is tile or item is self._focused_tile)
 
     def _arrange_dashboard_tiles(self, mode: str) -> None:
-        specs_by_mode = {
-            "wide": [
-                (self.tile_hour, 0, 0),
-                (self.tile_prototype, 0, 1),
-                (self.tile_keywords, 0, 2),
-                (self.tile_signal, 1, 0),
-                (self.tile_trend, 1, 1),
-                (self.tile_frequency, 1, 2),
-                (self.tile_research, 2, 0),
-                (self.tile_psd, 2, 1),
-                (self.tile_tf, 2, 2),
-            ],
-            "medium": [
-                (self.tile_hour, 0, 0),
-                (self.tile_prototype, 0, 1),
-                (self.tile_keywords, 1, 0),
-                (self.tile_signal, 1, 1),
-                (self.tile_trend, 2, 0),
-                (self.tile_frequency, 2, 1),
-                (self.tile_research, 3, 0),
-                (self.tile_psd, 3, 1),
-                (self.tile_tf, 4, 0, 1, 2),
-            ],
-            "narrow": [
-                (self.tile_hour, 0, 0),
-                (self.tile_prototype, 1, 0),
-                (self.tile_keywords, 2, 0),
-                (self.tile_signal, 3, 0),
-                (self.tile_trend, 4, 0),
-                (self.tile_frequency, 5, 0),
-                (self.tile_research, 6, 0),
-                (self.tile_psd, 7, 0),
-                (self.tile_tf, 8, 0),
-            ],
-        }
-        specs = specs_by_mode.get(mode, specs_by_mode["wide"])
-        self._responsive_dashboard_specs = {
-            tile: tuple(spec[1:])
-            for spec in specs
-            for tile in [spec[0]]
-        }
+        """One stable 3x3 layout at every viewport width and height.
 
+        Only the focused tile leaves the grid (replaced by one placeholder).
+        Keeping a single coordinate system eliminates 5/9-row overflows and
+        keeps post-focus restoration and resize deterministic.
+        """
+        specs = [
+            (self.tile_signal, 0, 0),
+            (self.tile_trend, 0, 1),
+            (self.tile_frequency, 0, 2),
+            (self.tile_hour, 1, 0),
+            (self.tile_prototype, 1, 1),
+            (self.tile_keywords, 1, 2),
+            (self.tile_research, 2, 0),
+            (self.tile_psd, 2, 1),
+            (self.tile_tf, 2, 2),
+        ]
+        self._responsive_dashboard_specs = {
+            tile: (row, col, 1, 1) for tile, row, col in specs
+        }
         while self.dashboard_layout.count():
             item = self.dashboard_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
 
-        max_col = 0
-        max_row = 0
-        for spec in specs:
-            tile = spec[0]
-            row = spec[1]
-            col = spec[2]
-            row_span = spec[3] if len(spec) >= 4 else 1
-            col_span = spec[4] if len(spec) >= 5 else 1
-            self.dashboard_layout.addWidget(tile, row, col, row_span, col_span)
-            max_col = max(max_col, col + col_span)
-            max_row = max(max_row, row + row_span)
+        for tile, row, col in specs:
+            displayed = (
+                self._focus_placeholder if tile is self._focused_tile else tile
+            )
+            if displayed is not None:
+                self.dashboard_layout.addWidget(displayed, row, col, 1, 1)
 
-        for column in range(max_col):
-            self.dashboard_layout.setColumnStretch(column, 1)
-        for row in range(max_row):
+        for col in range(3):
+            self.dashboard_layout.setColumnMinimumWidth(col, 0)
+            self.dashboard_layout.setColumnStretch(col, 1)
+        for row in range(3):
+            self.dashboard_layout.setRowMinimumHeight(row, 0)
             self.dashboard_layout.setRowStretch(row, 1)
-
         if self._focused_tile is not None:
             self.focus_overlay.raise_()
 

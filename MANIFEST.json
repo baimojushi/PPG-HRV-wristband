@@ -1,8 +1,8 @@
 {
   "project": "PPG_HRV_System",
-  "version": "0.4.8",
-  "base_version": "0.4.7",
-  "release_type": "focus-dashboard-and-linked-brushing",
+  "version": "0.4.10",
+  "base_version": "0.4.9",
+  "release_type": "three-by-three-single-screen-dashboard-layout",
   "algorithm_source": "project-local dual-detector interval core + sequence-level interval artifact classifier; firmware Beat diagnostic only",
   "external_cheezppg_runtime_dependency": false,
   "platformio_lib_deps_for_ppg": false,
@@ -1632,7 +1632,8 @@
         "timing_quality_mean_delta"
       ],
       "formal_validity_exported": true
-    },
+    }
+  },
   "focus_dashboard_v0_4_8": {
     "goal": "Show all major visualization tiles in a single screen dashboard without scrolling, support click-to-select and double-click center-focus, and add linked brushing between time-series curves and narrative copy.",
     "ui": {
@@ -1664,5 +1665,40 @@
     },
     "firmware_changed": false,
     "protocol_frame_format_changed": false
+  },
+  "dashboard_stabilization_v0_4_9": {
+    "scope": "Qt desktop dashboard only, no firmware/protocol/HRV algorithm changes",
+    "bugfixes": [
+      "drop remaining QTabWidget-based mode assumptions",
+      "call 3x3 dashboard layout during MainWindow startup",
+      "repair duplicate QLayout construction",
+      "correct centered focus overlay with restore and Esc",
+      "create three independent LinearRegionItems and synchronize minute-range selection",
+      "highlight selected data on all linked time curves and refresh range-based narrative",
+      "keep inactive brush near most recent 3 minutes",
+      "reduce overview-only heights and hide detailed text until focus",
+      "repair invalid v0.4.8 MANIFEST.json nesting"
+    ],
+    "firmware_changed": false,
+    "protocol_frame_format_changed": false
+  },
+  "dashboard_layout_v0_4_10": {
+    "fix": "Enforce nine visible dashboard cells in fixed 3x3 grid at every width; no scroll",
+    "order": [
+      "live PPG",
+      "RMSSD",
+      "frequency trend",
+      "hour summary",
+      "prototype",
+      "keywords",
+      "research",
+      "PSD",
+      "time-frequency"
+    ],
+    "interaction": "keep unique double-click focus, Escape restore, linked 3-time-curve brush and dynamic copy",
+    "compact_guide": "long captions and plot legends only in focus; font and margins responsive",
+    "firmware_changed": false,
+    "data_protocol_changed": false,
+    "hrv_algorithms_changed": false
   }
 }

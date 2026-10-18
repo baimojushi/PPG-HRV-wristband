@@ -386,3 +386,7 @@ python -m hrv_app.benchmark bidmc --records 01-05
 ```text
 docs/ECG_PUBLIC_BENCHMARK_v0.4.1.md
 ```
+
+## v0.4.9 Dashboard 修复
+
+本版本修复 v0.4.8 Dashboard 启动与九宫格、双击聚焦、三曲线刷选和联动文案的实现缺陷。详情参见 `v0.4.9-RELEASE-NOTES.md`。
